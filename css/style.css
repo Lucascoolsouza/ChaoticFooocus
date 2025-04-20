@@ -1,4 +1,31 @@
 /* based on https://github.com/AUTOMATIC1111/stable-diffusion-webui/blob/v1.6.0/style.css */
+:root {
+  --accent-color: #FF6B00;
+  --accent-color-hover: #FF874A;
+  --background-dark: #1A1A1A;
+  --background-light: #2A2A2A;
+  --text-color: #F0F0F0;
+}
+@keyframes glitch {
+  0% { transform: translate(0,0); }
+  20% { transform: translate(-2px, 2px); }
+  40% { transform: translate(2px, -2px); }
+  60% { transform: translate(-1px, 1px); }
+  80% { transform: translate(1px, -1px); }
+  100% { transform: translate(0,0); }
+}
+
+.chaotic-hover:hover {
+  animation: glitch 0.3s infinite;
+}
+.panel {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px 0 rgba(0,0,0,0.37);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.18);
+}
 
 .loader-container {
   display: flex; /* Use flex to align items horizontally */
@@ -399,6 +426,11 @@ div:has(> #positive_prompt) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+body {
+  font-family: 'Poppins', sans-serif;
+  color: var(--text-color);
+  background-color: var(--background-dark);
+}
 
 /* styles preview tooltip */
 .preview-tooltip {
@@ -411,6 +443,19 @@ div:has(> #positive_prompt) {
 
 #inpaint_canvas .canvas-tooltip-info {
   top: 2px;
+}
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--background-dark);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--accent-color);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-color-hover);
 }
 
 #inpaint_brush_color input[type=color]{
