@@ -26,9 +26,9 @@ class Interrogator:
     def interrogate(self, img_rgb):
         if self.blip_model is None:
             filename = load_file_from_url(
-                url='https://huggingface.co/lllyasviel/misc/resolve/main/model_base_caption_capfilt_large.pth',
+                url='https://huggingface.co/QuanSun/EVA-CLIP/resolve/main/EVA02_CLIP_L_336_psz14_s6B.pt',
                 model_dir=path_clip_vision,
-                file_name='model_base_caption_capfilt_large.pth',
+                file_name='EVA02_CLIP_L_336_psz14_s6B.pt',
             )
 
             model = blip_decoder(pretrained=filename, image_size=blip_image_eval_size, vit='base',
@@ -37,7 +37,7 @@ class Interrogator:
 
             self.load_device = model_management.text_encoder_device()
             self.offload_device = model_management.text_encoder_offload_device()
-            self.dtype = torch.float32
+            self.dtype = torch.float16
 
             model.to(self.offload_device)
 
@@ -55,7 +55,7 @@ class Interrogator:
             transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711))
         ])(img_rgb).unsqueeze(0).to(device=self.load_device, dtype=self.dtype)
 
-        caption = self.blip_model.model.generate(gpu_image, sample=True, num_beams=1, max_length=75)[0]
+        caption = self.blip_model.model.generate(gpu_image, sample=True, num_beams=8, max_length=200)[0]
 
         return caption
 
