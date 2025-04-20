@@ -92,7 +92,15 @@ def generate_clicked(task: worker.AsyncTask):
     print(f'Total time: {execution_time:.2f} seconds')
     return
 
-
+def list_wildcard_files():
+    directory = "wildcards"
+    if not os.path.exists(directory):
+        return "Directory 'wildcards' not found. Create it and add files."
+    files = os.listdir(directory)
+    if not files:
+        return "No files found in the 'wildcards' directory."
+    return "\n".join(files)
+  
 def sort_enhance_images(images, task):
     if not task.should_enhance or len(images) <= task.images_to_enhance_count:
         return images
@@ -618,7 +626,7 @@ with shared.gradio_root:
                 history_link = gr.HTML()
                 shared.gradio_root.load(update_history_link, outputs=history_link, queue=False, show_progress=False)
 
-            with gr.Tab(label='Styles', elem_classes=['style_selections_tab']):
+            with gr.Tab(label='Styles/Wildcards', elem_classes=['style_selections_tab']):
                 style_sorter.try_load_sorted_styles(
                     style_names=legal_style_names,
                     default_selected=modules.config.default_styles)
@@ -632,8 +640,13 @@ with shared.gradio_root:
                                                     value=copy.deepcopy(modules.config.default_styles),
                                                     label='Selected Styles',
                                                     elem_classes=['style_selections'])
+                wildcard_files = gr.Textbox(
+                label='Wildcard Files',
+                lines=5,
+                interactive=False  # Make it non-editable
+                )
                 gradio_receiver_style_selections = gr.Textbox(elem_id='gradio_receiver_style_selections', visible=False)
-
+                shared.gradio_root.load(list_wildcard_files,outputs=wildcard_files)
                 shared.gradio_root.load(lambda: gr.update(choices=copy.deepcopy(style_sorter.all_styles)),
                                         outputs=style_selections)
 
