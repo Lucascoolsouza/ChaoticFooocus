@@ -1,4 +1,5 @@
 from ldm_patched.k_diffusion import sampling as k_diffusion_sampling
+
 from ldm_patched.unipc import uni_pc
 import torch
 import collections
@@ -618,26 +619,74 @@ def sample(model, noise, positive, negative, cfg, device, sampler, sigmas, model
     samples = sampler.sample(model_wrap, sigmas, extra_args, callback, noise, latent_image, denoise_mask, disable_pbar)
     return model.process_latent_out(samples.to(torch.float32))
 
-SCHEDULER_NAMES = ["normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform"]
+SCHEDULER_NAMES = ["normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform","sinusoidal", "chaotic", "zigzag", "jitter","upscale", "mini_dalle", "grid"]
 SAMPLER_NAMES = KSAMPLER_NAMES + ["ddim", "uni_pc", "uni_pc_bh2"]
 
 def calculate_sigmas_scheduler(model, scheduler_name, steps):
-    if scheduler_name == "karras":
-        sigmas = k_diffusion_sampling.get_sigmas_karras(n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max))
-    elif scheduler_name == "exponential":
-        sigmas = k_diffusion_sampling.get_sigmas_exponential(n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max))
-    elif scheduler_name == "normal":
+    sigma_min = float(model.model_sampling.sigma_min)
+    sigma_max = float(model.model_sampling.sigma_max)
+
+    if scheduler_name == "normal":
         sigmas = normal_scheduler(model, steps)
-    elif scheduler_name == "simple":
-        sigmas = simple_scheduler(model, steps)
-    elif scheduler_name == "ddim_uniform":
-        sigmas = ddim_scheduler(model, steps)
+
+    elif scheduler_name == "karras":
+        sigmas = get_sigmas_karras(n=steps, sigma_min=sigma_min, sigma_max=sigma_max)
+
+    elif scheduler_name == "exponential":
+        sigmas = k_diffusion_sampling.get_sigmas_exponential(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+
     elif scheduler_name == "sgm_uniform":
         sigmas = normal_scheduler(model, steps, sgm=True)
+
+    elif scheduler_name == "simple":
+        sigmas = simple_scheduler(model, steps)
+
+    elif scheduler_name == "ddim_uniform":
+        sigmas = ddim_scheduler(model, steps)
+
+    # --- NEW SCHEDULES ---
+    elif scheduler_name == "sinusoidal":
+        sigmas = get_sigmas_karras_sinusoidal(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+
+    elif scheduler_name == "chaotic":
+        sigmas = get_sigmas_karras_chaotic(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+
+    elif scheduler_name == "zigzag":
+        sigmas = get_sigmas_karras_zigzag(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+
+    elif scheduler_name == "jitter":
+        sigmas = get_sigmas_karras_jitter(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+
+    elif scheduler_name == "upscale":
+        sigmas = get_sigmas_karras_upscale(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+
+    elif scheduler_name == "mini_dalle":
+        sigmas = get_sigmas_karras_mini_dalle(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+
+    elif scheduler_name == "grid":
+        sigmas = get_sigmas_karras_grid(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+
     else:
         print("error invalid scheduler", scheduler_name)
-    return sigmas
+        sigmas = None
 
+    return sigmas
 def sampler_object(name):
     if name == "uni_pc":
         sampler = UNIPC()

@@ -13,14 +13,95 @@ def append_zero(x):
     return torch.cat([x, x.new_zeros([1])])
 
 
-def get_sigmas_karras(n, sigma_min, sigma_max, rho=2., device='cpu'):
+def get_sigmas_karras(n, sigma_min, sigma_max, rho=7., device='cpu'):
     """Constructs the noise schedule of Karras et al. (2022)."""
     ramp = torch.linspace(0, 1, n, device=device)
     min_inv_rho = sigma_min ** (1 / rho)
     max_inv_rho = sigma_max ** (1 / rho)
     sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
     return append_zero(sigmas).to(device)
+    
+def append_zero(sigmas):
+    return torch.cat([
+        sigmas,
+        torch.zeros(1, device=sigmas.device, dtype=sigmas.dtype)
+    ], dim=0)
 
+def get_sigmas_karras_base(n, sigma_min, sigma_max, rho=7., device='cpu'):
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    return append_zero(sigmas)
+
+def get_sigmas_karras_sinusoidal(n, sigma_min, sigma_max, rho=7., device='cpu',
+                                 sin_freq=5.0, amp=0.1):
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    perturb = 1 + amp * torch.sin(2 * torch.pi * sin_freq * ramp)
+    sigmas = base * perturb
+    return append_zero(sigmas)
+
+def get_sigmas_karras_chaotic(n, sigma_min, sigma_max, rho=7., device='cpu',
+                              logistic_r=3.8, iters=5):
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    x = ramp.clone()
+    for _ in range(iters):
+        x = logistic_r * x * (1 - x)
+    sigmas = base * (1 + 0.5)
+    return append_zero(sigmas)
+
+def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=15., device='cpu'):
+    ramp = torch.linspace(0, 1, n, device=device)
+    zz = 0.5 * torch.abs(2 * ramp - 1) + 0.5 * ramp
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    sigmas = (max_inv_rho + ramp + zz * (min_inv_rho - max_inv_rho)) ** rho
+    return append_zero(sigmas)
+
+def get_sigmas_karras_jitter(n, sigma_min, sigma_max, rho=15., device='cpu',
+                             jitter_strength=2.05):
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    sigmas = (base * jitter_strength).clamp(min=sigma_min, max=sigma_max)
+    return append_zero(sigmas)
+
+def get_sigmas_karras_upscale(n, sigma_min, sigma_max, rho=7., device='cpu'):
+    ramp = torch.linspace(0, 1, n, device=device)
+    warp = torch.sqrt(ramp)
+    checker = torch.sin(2*3.2*freq*ramp) * torch.cos(2*3.2*freq*ramp)
+    sigmas = (max_inv_rho + warp*(min_inv_rho-max_inv_rho))**rho \
+    * (1 + 0.02 * checker)
+    return append_zero(sigmas)
+
+def get_sigmas_karras_mini_dalle(n, sigma_min, sigma_max, rho=20., device='cpu',
+                           freq=5.0, amp=0.05):
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    # smooth checker modulation
+    checker = torch.sin(2 * torch.pi * freq * ramp) * torch.cos(2 * torch.pi * freq * ramp)
+    sigmas = (base * (1 + amp * checker)).clamp(min=sigma_min, max=sigma_max)
+    return append_zero(sigmas)
+
+def get_sigmas_karras_grid(n, sigma_min, sigma_max, rho=7., device='cpu',
+                           freq=5.0, amp=0.05):
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    # smooth checker modulation
+    checker = torch.sin(2 * torch.pi * freq * ramp) * torch.cos(2 * torch.pi * freq * ramp)
+    sigmas = (base * (1 + amp * checker)).clamp(min=sigma_min, max=sigma_max)
+    return append_zero(sigmas)
 
 def get_sigmas_exponential(n, sigma_min, sigma_max, device='cpu'):
     """Constructs an exponential noise schedule."""
@@ -52,7 +133,7 @@ def get_ancestral_step(sigma_from, sigma_to, eta=1.):
     of noise to add (sigma_up) when doing an ancestral sampling step."""
     if not eta:
         return sigma_to, 0.
-    sigma_up = min(sigma_to, eta * (sigma_to ** 2 * (sigma_from ** 2 - sigma_to ** 2) / sigma_from ** 2) ** 0.5 * 0.75)  # Reduced noise addition
+    sigma_up = min(sigma_to, eta * (sigma_to ** 2 * (sigma_from ** 2 - sigma_to ** 2) / sigma_from ** 2) ** 0.5)
     sigma_down = (sigma_to ** 2 - sigma_up ** 2) ** 0.5
     return sigma_down, sigma_up
 
@@ -593,7 +674,7 @@ def sample_dpmpp_2m(model, x, sigmas, extra_args=None, callback=None, disable=No
     return x
 
 @torch.no_grad()
-def sample_dpmpp_2m_sde(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=0.5., s_noise=1., noise_sampler=None, solver_type='heun'):
+def sample_dpmpp_2m_sde(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=1., s_noise=1., noise_sampler=None, solver_type='midpoint'):
     """DPM-Solver++(2M) SDE."""
 
     if solver_type not in {'heun', 'midpoint'}:
@@ -636,11 +717,6 @@ def sample_dpmpp_2m_sde(model, x, sigmas, extra_args=None, callback=None, disabl
 
         old_denoised = denoised
         h_last = h
-    if solver_type == 'heun':
-        # Use Heun's method for better mid-step accuracy
-        x_2 = (sigma_fn(s) / sigma_fn(t)) * x - (-h * r).expm1() * denoised
-        denoised_2 = model(x_2, sigma_fn(s) * s_in, **extra_args)
-        x = (sigma_fn(t_next) / sigma_fn(t)) * x - (-h).expm1() * (denoised + denoised_2) / 2
     return x
 
 @torch.no_grad()
