@@ -109,7 +109,7 @@ class FooocusExpansion:
         tokenized_kwargs.data['attention_mask'] = tokenized_kwargs.data['attention_mask'].to(self.patcher.load_device)
 
         current_token_length = int(tokenized_kwargs.data['input_ids'].shape[1])
-        max_token_length = 75 * int(math.ceil(float(current_token_length) / 75.0))
+        max_token_length = 250 * int(math.ceil(float(current_token_length) / 75.0))
         max_new_tokens = max_token_length - current_token_length
 
         if max_new_tokens == 0:
