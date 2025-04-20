@@ -1,12 +1,12 @@
 {
-    "default_model": "juggernautXL_v8Rundiffusion.safetensors",
+    "default_model": "",
     "default_refiner": "None",
     "default_refiner_switch": 0.5,
     "default_loras": [
         [
             true,
-            "sd_xl_offset_example-lora_1.0.safetensors",
-            0.1
+            "None",
+            1.0
         ],
         [
             true,
@@ -29,32 +29,18 @@
             1.0
         ]
     ],
-    "default_cfg_scale": 4.0,
+    "default_cfg_scale": 3.0,
     "default_sample_sharpness": 2.0,
     "default_sampler": "dpmpp_2m_sde_gpu",
     "default_scheduler": "karras",
     "default_performance": "Speed",
-    "default_prompt": "",
-    "default_prompt_negative": "",
-    "default_styles": [
-        "Fooocus V2",
-        "Fooocus Enhance",
-        "Fooocus Sharp"
-    ],
+    "default_prompt": "night, out of contrast backgrond,  forest on background a portrait of a goth (ginger hair, orange hair:1.2) girl smoking cigarette, raise eyebrow, blink one eye heart shape chocker. HDR, raytracing, pathtracing, realistic shadows, masterpiece, best quality, absurdres, highres, cinematic lighting, volumetric fog, detailed skin, stunning color contrast, dramatic atmosphere (strong pink outline on character, by Gogalking, Nikichen traditional media artist:0.8)",
+    "default_prompt_negative": "worst quality,bad quality,bad hands,very displeasing,extra digit,fewer digits,jpeg artifacts,signature,username,reference,mutated,lineup,manga,comic,disembodied,futanari,yaoi,dickgirl,turnaround,2koma,4koma,monster,cropped,amputee,text,bad foreshortening,what,guro,logo,bad anatomy,bad perspective,bad proportions,artistic error,anatomical nonsense,amateur,out of frame,multiple views",
+    "default_styles": [],
     "default_aspect_ratio": "1152*896",
     "default_overwrite_step": -1,
-    "checkpoint_downloads": {
-        "juggernautXL_v8Rundiffusion.safetensors": "https://huggingface.co/lllyasviel/fav_models/resolve/main/fav/juggernautXL_v8Rundiffusion.safetensors"
-    },
+    "checkpoint_downloads": {},
     "embeddings_downloads": {},
-    "lora_downloads": {
-        "sd_xl_offset_example-lora_1.0.safetensors": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_offset_example-lora_1.0.safetensors"
-    },
-    "previous_default_models": [
-        "juggernautXL_version8Rundiffusion.safetensors",
-        "juggernautXL_version7Rundiffusion.safetensors",
-        "juggernautXL_v7Rundiffusion.safetensors",
-        "juggernautXL_version6Rundiffusion.safetensors",
-        "juggernautXL_v6Rundiffusion.safetensors"
-    ]
+    "lora_downloads": {},
+    "previous_default_models": []
 }
