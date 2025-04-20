@@ -56,21 +56,33 @@ def get_sigmas_karras_chaotic(n, sigma_min, sigma_max, rho=7., device='cpu',
     sigmas = base * (1 + 0.5)
     return append_zero(sigmas)
 
-def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=15., device='cpu'):
+def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=7., device='cpu', zigzag_strength=0.1):
     ramp = torch.linspace(0, 1, n, device=device)
-    zz = 0.5 * torch.abs(2 * ramp - 1) + 0.5 * ramp
+    
+    # Apply zig-zag by alternating offset
+    zigzag = torch.arange(n, device=device) % 2 * 2 - 1  # +1, -1, +1, -1...
+    ramp += zigzag * (zigzag_strength / n)
+
     min_inv_rho = sigma_min ** (1 / rho)
     max_inv_rho = sigma_max ** (1 / rho)
-    sigmas = (max_inv_rho + ramp + zz * (min_inv_rho - max_inv_rho)) ** rho
+    sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    
     return append_zero(sigmas)
 
-def get_sigmas_karras_jitter(n, sigma_min, sigma_max, rho=15., device='cpu',
-                             jitter_strength=2.05):
+def get_sigmas_karras_jitter(n, sigma_min, sigma_max, rho=7., device='cpu', jitter_strength=0.05):
     ramp = torch.linspace(0, 1, n, device=device)
+    
+    # Apply random jitter
+    jitter = (torch.rand(n, device=device) - 0.5) * 2 * jitter_strength / n
+    ramp += jitter
+
+    # Keep values between 0 and 1
+    ramp = torch.clamp(ramp, 0, 1)
+
     min_inv_rho = sigma_min ** (1 / rho)
     max_inv_rho = sigma_max ** (1 / rho)
-    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
-    sigmas = (base * jitter_strength).clamp(min=sigma_min, max=sigma_max)
+    sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    
     return append_zero(sigmas)
 
 def get_sigmas_karras_upscale(n, sigma_min, sigma_max, rho=7., device='cpu'):
@@ -82,7 +94,7 @@ def get_sigmas_karras_upscale(n, sigma_min, sigma_max, rho=7., device='cpu'):
     return append_zero(sigmas)
 
 def get_sigmas_karras_mini_dalle(n, sigma_min, sigma_max, rho=20., device='cpu',
-                           freq=5.0, amp=0.05):
+                           freq=10.0, amp=0.05):
     ramp = torch.linspace(0, 1, n, device=device)
     min_inv_rho = sigma_min ** (1 / rho)
     max_inv_rho = sigma_max ** (1 / rho)
