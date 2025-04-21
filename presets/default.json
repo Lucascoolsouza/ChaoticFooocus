@@ -43,7 +43,7 @@
     "default_aspect_ratio": "896*1152",
     "default_overwrite_step": -1,
     "checkpoint_downloads": {
-        "Illustrious-XL-v2.0.safetensors": "https://huggingface.co/Pinguin/888-xl-diffusion-testmodel-v02-blue-star-sdxl-SAFETENSORS/resolve/main/888XLDiffusion_v02BLUESTAR.safetensors"
+        "888XLDiffusion_v02BLUESTAR.safetensors": "https://huggingface.co/Pinguin/888-xl-diffusion-testmodel-v02-blue-star-sdxl-SAFETENSORS/resolve/main/888XLDiffusion_v02BLUESTAR.safetensors"
     },
     "embeddings_downloads": {},
     "lora_downloads": {},
