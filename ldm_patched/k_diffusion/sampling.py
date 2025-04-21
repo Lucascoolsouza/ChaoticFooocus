@@ -5,7 +5,6 @@ import torch
 from torch import nn
 import torchsde
 from tqdm.auto import trange, tqdm
-import clip  # Import CLIP
 
 from . import utils
 
