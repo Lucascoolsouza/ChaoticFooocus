@@ -682,6 +682,21 @@ def calculate_sigmas_scheduler(model, scheduler_name, steps):
             n=steps, sigma_min=sigma_min, sigma_max=sigma_max
         )
 
+    elif scheduler_name == "pixel_art":
+        sigmas = get_sigmas_karras_pixel_art(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+
+    elif scheduler_name == "golden_ratio":
+        sigmas = get_sigmas_karras_golden_ratio(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+        
+    elif scheduler_name == "dream":
+        sigmas = get_sigmas_karras_dream(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+
     else:
         print("error invalid scheduler", scheduler_name)
         sigmas = None

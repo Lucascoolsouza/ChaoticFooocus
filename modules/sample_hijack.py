@@ -200,37 +200,52 @@ def calculate_sigmas_scheduler_hacked(model, scheduler_name, steps):
     # --- NEW HACKED SCHEDULES ---
     elif scheduler_name == "sinusoidal":
         sigmas = k_diffusion_sampling.get_sigmas_karras_sinusoidal(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
         )
 
     elif scheduler_name == "chaotic":
         sigmas = k_diffusion_sampling.get_sigmas_karras_chaotic(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
         )
 
     elif scheduler_name == "zigzag":
         sigmas = k_diffusion_sampling.get_sigmas_karras_zigzag(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
         )
 
     elif scheduler_name == "jitter":
         sigmas = k_diffusion_sampling.get_sigmas_karras_jitter(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
         )
 
     elif scheduler_name == "upscale":
         sigmas = k_diffusion_sampling.get_sigmas_karras_upscale(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
         )
 
     elif scheduler_name == "mini_dalle":
         sigmas = k_diffusion_sampling.get_sigmas_karras_mini_dalle(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
         )
 
     elif scheduler_name == "grid":
         sigmas = k_diffusion_sampling.get_sigmas_karras_grid(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
+        )
+
+    elif scheduler_name == "pixel":
+        sigmas = k_diffusion_sampling.get_sigmas_karras_pixel_art(
+            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
+        )
+
+    elif scheduler_name == "golden_ratio":
+        sigmas = k_diffusion_sampling.get_sigmas_karras_golden_ratio(
+            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
+        )
+
+    elif scheduler_name == "dream":
+        sigmas = k_diffusion_sampling.get_sigmas_karras_dream(
+            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
         )
 
     else:
