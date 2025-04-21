@@ -376,7 +376,6 @@ default_vae = get_config_item_or_set_default(
 default_styles = get_config_item_or_set_default(
     key='default_styles',
     default_value=[
-         "Fooocus V2",
          "Fooocus Enhance",
          "Fooocus Sharp"
      ],
@@ -392,7 +391,7 @@ default_prompt_negative = get_config_item_or_set_default(
 )
 default_prompt = get_config_item_or_set_default(
     key='default_prompt',
-    default_value='',
+    default_value='__Seljak_prompts__',
     validator=lambda x: isinstance(x, str),
     disable_empty_as_none=True,
     expected_type=str
@@ -417,13 +416,13 @@ default_enhance_checkbox = get_config_item_or_set_default(
 )
 default_advanced_checkbox = get_config_item_or_set_default(
     key='default_advanced_checkbox',
-    default_value=False,
+    default_value=True,
     validator=lambda x: isinstance(x, bool),
     expected_type=bool
 )
 default_developer_debug_mode_checkbox = get_config_item_or_set_default(
     key='default_developer_debug_mode_checkbox',
-    default_value=False,
+    default_value=True,
     validator=lambda x: isinstance(x, bool),
     expected_type=bool
 )
@@ -507,7 +506,7 @@ default_uov_method = get_config_item_or_set_default(
 )
 default_controlnet_image_count = get_config_item_or_set_default(
     key='default_controlnet_image_count',
-    default_value=4,
+    default_value=10,
     validator=lambda x: isinstance(x, int) and x > 0,
     expected_type=int
 )
@@ -564,7 +563,7 @@ default_inpaint_method = get_config_item_or_set_default(
 )
 default_cfg_tsnr = get_config_item_or_set_default(
     key='default_cfg_tsnr',
-    default_value=7.0,
+    default_value=4.0,
     validator=lambda x: isinstance(x, numbers.Number),
     expected_type=numbers.Number
 )
@@ -594,7 +593,7 @@ default_overwrite_upscale = get_config_item_or_set_default(
 example_inpaint_prompts = get_config_item_or_set_default(
     key='example_inpaint_prompts',
     default_value=[
-        'highly detailed face', 'detailed girl face', 'detailed man face', 'detailed hand', 'beautiful eyes'
+        'highly detailed face', 'detailed girl face', 'detailed man face', 'detailed hand','hi, luisa here', 'beautiful eyes'
     ],
     validator=lambda x: isinstance(x, list) and all(isinstance(v, str) for v in x),
     expected_type=list
@@ -609,7 +608,7 @@ example_enhance_detection_prompts = get_config_item_or_set_default(
 )
 default_enhance_tabs = get_config_item_or_set_default(
     key='default_enhance_tabs',
-    default_value=3,
+    default_value=6,
     validator=lambda x: isinstance(x, int) and 1 <= x <= 5,
     expected_type=int
 )
@@ -645,13 +644,13 @@ default_black_out_nsfw = get_config_item_or_set_default(
 )
 default_save_only_final_enhanced_image = get_config_item_or_set_default(
     key='default_save_only_final_enhanced_image',
-    default_value=False,
+    default_value=True,
     validator=lambda x: isinstance(x, bool),
     expected_type=bool
 )
 default_save_metadata_to_images = get_config_item_or_set_default(
     key='default_save_metadata_to_images',
-    default_value=False,
+    default_value=True,
     validator=lambda x: isinstance(x, bool),
     expected_type=bool
 )

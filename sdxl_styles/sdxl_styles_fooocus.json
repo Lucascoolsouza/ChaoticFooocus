@@ -9,13 +9,13 @@
     },
     {
         "name": "Fooocus Sharp",
-        "prompt": "cinematic still {prompt} . emotional, harmonious, vignette, 4k epic detailed, shot on kodak, 35mm photo, sharp focus, high budget, cinemascope, moody, epic, gorgeous, film grain, grainy",
-        "negative_prompt": "anime, cartoon, graphic, (blur, blurry, bokeh), text, painting, crayon, graphite, abstract, glitch, deformed, mutated, ugly, disfigured"
+        "prompt": "{prompt} HDR, raytracing, pathtracing, realistic shadows, masterpiece, best quality, absurdres, highres, cinematic lighting, detailed skin, stunning color contrast, dramatic atmosphere",
+        "negative_prompt": "lowres, bad anatomy, bad hands, bar censor, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, out of focus, censorship, censored, ugly, old, deformed, amateur drawing, odd, fat, morphing, black and white, anime, ((simple background)), (((depth of field)))"
     },
     {
-        "name": "Fooocus Masterpiece",
-        "prompt": "(masterpiece), (best quality), (ultra-detailed), {prompt}, illustration, disheveled hair, detailed eyes, perfect composition, moist skin, intricate details, earrings",
-        "negative_prompt": "longbody, lowres, bad anatomy, bad hands, missing fingers, pubic hair,extra digit, fewer digits, cropped, worst quality, low quality"
+        "name": "Fooocus RNG",
+        "prompt": "__Seljak_prompts__",
+        "negative_prompt": ""
     },
     {
         "name": "Fooocus Photograph",
