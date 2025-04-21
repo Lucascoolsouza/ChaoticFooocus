@@ -56,12 +56,15 @@ def get_sigmas_karras_chaotic(n, sigma_min, sigma_max, rho=7., device='cpu',
     sigmas = base * (1 + 0.5)
     return append_zero(sigmas)
 
-def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=7., device='cpu', zigzag_strength=0.1):
+def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=1000., device='cpu', zigzag_strength=0.5):
     ramp = torch.linspace(0, 1, n, device=device)
     
     # Apply zig-zag by alternating offset
-    zigzag = torch.arange(n, device=device) % 2 * 2 - 1  # +1, -1, +1, -1...
-    ramp += zigzag * (zigzag_strength / n)
+    zigzag_offset = (torch.arange(n, device=device) % 2) * zigzag_strength / n
+    ramp += zigzag_offset
+
+    # Keep values between 0 and 1
+    ramp = torch.clamp(ramp, 0, 1)
 
     min_inv_rho = sigma_min ** (1 / rho)
     max_inv_rho = sigma_max ** (1 / rho)
@@ -69,7 +72,7 @@ def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=7., device='cpu', zigz
     
     return append_zero(sigmas)
 
-def get_sigmas_karras_jitter(n, sigma_min, sigma_max, rho=7., device='cpu', jitter_strength=0.05):
+def get_sigmas_karras_jitter(n, sigma_min, sigma_max, rho=7., device='cpu', jitter_strength=0.5):
     ramp = torch.linspace(0, 1, n, device=device)
     
     # Apply random jitter
@@ -85,23 +88,56 @@ def get_sigmas_karras_jitter(n, sigma_min, sigma_max, rho=7., device='cpu', jitt
     
     return append_zero(sigmas)
 
-def get_sigmas_karras_upscale(n, sigma_min, sigma_max, rho=7., device='cpu'):
-    ramp = torch.linspace(0, 1, n, device=device)
-    warp = torch.sqrt(ramp)
-    checker = torch.sin(2*3.2*freq*ramp) * torch.cos(2*3.2*freq*ramp)
-    sigmas = (max_inv_rho + warp*(min_inv_rho-max_inv_rho))**rho \
-    * (1 + 0.02 * checker)
-    return append_zero(sigmas)
-
-def get_sigmas_karras_mini_dalle(n, sigma_min, sigma_max, rho=20., device='cpu',
-                           freq=10.0, amp=0.05):
+def get_sigmas_karras_upscale(n, sigma_min, sigma_max, rho=4., device='cpu',
+                           freq=5.0, amp=0.05):
     ramp = torch.linspace(0, 1, n, device=device)
     min_inv_rho = sigma_min ** (1 / rho)
     max_inv_rho = sigma_max ** (1 / rho)
     base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
     # smooth checker modulation
     checker = torch.sin(2 * torch.pi * freq * ramp) * torch.cos(2 * torch.pi * freq * ramp)
-    sigmas = (base * (1 + amp * checker)).clamp(min=sigma_min, max=sigma_max)
+    # focus the math on upscaling
+    sigmas = (base * (1 + amp * checker * (1 + ramp * (1 - 2 * sigma_min / sigma_max))))
+    return append_zero(sigmas)
+
+def get_sigmas_karras_mini_dalle(
+    n,
+    sigma_min,
+    sigma_max,
+    rho=7.0,
+    alpha=2.5,
+    wiggle=0.1,
+    device='cpu',
+):
+    """
+    A dreamy, Karras‑based schedule:
+      1) build the base Karras sigmas exactly,
+      2) apply a small sinusoidal modulation,
+      3) clamp so we never exceed [sigma_min, sigma_max],
+      4) append the final zero.
+
+    Args:
+      n          (int):   number of nonzero steps.
+      sigma_min  (float): minimum sigma.
+      sigma_max  (float): maximum sigma.
+      rho        (float): Karras power (default 7).
+      alpha      (float): how “flat” to keep the high‑noise region.
+      wiggle     (float): relative amplitude of the jitter.
+      device     (str):   torch device.
+    """
+    # 1) exact Karras base
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / 9)
+    max_inv_rho = sigma_max ** (1 / 10)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+
+    # 2) dreamy wiggle
+    mod = 1 + wiggle * torch.sin(ramp * math.pi * 3)
+
+    # 3) apply + clamp
+    sigmas = torch.clamp(base * mod, sigma_min, sigma_max)
+
+    # 4) final zero
     return append_zero(sigmas)
 
 def get_sigmas_karras_grid(n, sigma_min, sigma_max, rho=7., device='cpu',
