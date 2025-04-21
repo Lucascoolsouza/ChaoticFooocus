@@ -73,7 +73,7 @@ def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=5., device='cpu', zigz
     
     return append_zero(sigmas)
 
-def get_sigmas_karras_piecewise(n, start_frac=0.2, end_frac=0.8):
+def get_sigmas_karras_piecewise(n, sigma_min, sigma_max, device='cpu', start_frac=0.2, end_frac=0.8):
     i = torch.arange(n, device=device) / (n-1)
     sig = torch.where(
         i < start_frac,
@@ -86,7 +86,7 @@ def get_sigmas_karras_piecewise(n, start_frac=0.2, end_frac=0.8):
     )
     return append_zero(sig)
 
-def get_sigmas_karras_jitter(n, sigma_min, sigma_max, rho=7., device='cpu', jitter_strength=0.5):
+def get_sigmas_karras_jitter(n, sigma_min, sigma_max, rho=7.,device='cpu', jitter_strength=0.5):
     ramp = torch.linspace(0, 1, n, device=device)
     
     # Apply random jitter
@@ -102,34 +102,30 @@ def get_sigmas_karras_jitter(n, sigma_min, sigma_max, rho=7., device='cpu', jitt
     
     return append_zero(sigmas)
 
-def get_sigmas_karras_upscale(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=10.):
-    """A sampler that focus on finetuning"""
-    extra_args = {} if extra_args is None else extra_args
-    s_in = x.new_ones([x.shape[0]])
-    for i in trange(len(sigmas) - 1, disable=disable):
-        gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
-        sigma_hat = sigmas[i] * (1 + gamma * (sigmas[i] / sigmas[-1]))
-        if gamma > 0:
-            eps = torch.randn_like(x) * s_noise * (sigmas[i] ** 2 - sigma_hat ** 2) ** 0.5
-            x = x + eps
-        denoised = model(x, sigma_hat * s_in, **extra_args)
-        d = to_d(x, sigma_hat, denoised)
-        if callback is not None:
-            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
-        if sigmas[i + 1] == 0:
-            # Euler method
-            dt = sigmas[i + 1] - sigma_hat
-            x = x + d * dt
-        else:
-            # DPM-Solver-2
-            sigma_mid = (sigma_hat + sigmas[i + 1]) / 2
-            dt_1 = sigma_mid - sigma_hat
-            dt_2 = sigmas[i + 1] - sigma_hat
-            x_2 = x + d * dt_1
-            denoised_2 = model(x_2, sigma_mid * s_in, **extra_args)
-            d_2 = to_d(x_2, sigma_mid, denoised_2)
-            x = x + d_2 * dt_2
-    return x
+def get_sigmas_karras_upscale(
+    n,
+    sigma_min,
+    sigma_max,
+    rho=4.0,
+    alpha=2.5,
+    wiggle=0.1,
+    device='cpu',
+):
+    # 1) exact Karras base
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / sigma_min )
+    max_inv_rho = sigma_max ** (1 / sigma_max )
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+
+    # 2) dreamy wiggle
+    mod = 1 + wiggle * torch.sin(ramp * alpha * 3)
+
+    # 3) apply + clamp
+    sigmas = torch.clamp(base * mod, sigma_min, sigma_max)
+
+    # 4) final zero
+    return append_zero(sigmas)
+
 def get_karras_trow_random_blsht(n, sigma_min, sigma_max, rho=7., device='cpu', blast_prob=0.1, blast_amp=2.0):
     """
     Random blast scheduler: with some probability, inject a sudden jump in sigma.
@@ -169,7 +165,7 @@ def get_smokeywindy(n, sigma_min, sigma_max, rho=7., device='cpu', wind_strength
     return append_zero(sigmas)
 
 
-def get_glittery(n, sigma_min, sigma_max, rho=7., device='cpu', glitter_freq=10, glitter_amp=0.2):
+def get_glittery(n, sigma_min, sigma_max, rho=2., device='cpu', glitter_freq=10, glitter_amp=0.2):
     """
     Glittery schedule: adds high-frequency oscillations for sparkle.
     """
@@ -298,53 +294,31 @@ def get_sigmas_karras_golden_ratio(n, sigma_min, sigma_max, rho=7., device='cpu'
     return append_zero(torch.tensor(sigmas[::-1], device=device, dtype=torch.float32))
 
 
-def get_sigmas_karras_pixel_art(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
-    """A sampler that focuses on generating pixel art-like images."""
-    extra_args = {} if extra_args is None else extra_args
-    s_in = x.new_ones([x.shape[0]])
-
-    # Define pixel grid size typical for pixel art
-    grid_size = 32
-    for i in trange(len(sigmas) - 1, disable=disable):
-        # Adjust gamma to favor sharp transitions, which are typical in pixel art
-        gamma = min(s_churn / (len(sigmas) - 1), 0.5) if s_tmin <= sigmas[i] <= s_tmax else 0.
-        
-        sigma_hat = sigmas[i] * (1 + gamma * (sigmas[i] / sigmas[-1]))
-        if gamma > 0:
-            # Add higher noise for stylized pixelation effects
-            eps = torch.randn_like(x) * s_noise * (sigmas[i] ** 2 - sigma_hat ** 2) ** 0.5
-            x = x + eps
-        
-        denoised = model(x, sigma_hat * s_in, **extra_args)
-        d = to_d(x, sigma_hat, denoised)
-        
-        if callback is not None:
-            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
-        
-        if sigmas[i + 1] == 0:
-            # Euler method for sharp edge transitions
-            dt = sigmas[i + 1] - sigma_hat
-            x = x + d * dt
-        else:
-            # DPM-Solver-2 with tweaks for pixel art
-            sigma_mid = (sigma_hat + sigmas[i + 1]) / 2
-            dt_1 = sigma_mid - sigma_hat
-            dt_2 = sigmas[i + 1] - sigma_hat
-            x_2 = x + d * dt_1
-            denoised_2 = model(x_2, sigma_mid * s_in, **extra_args)
-            d_2 = to_d(x_2, sigma_mid, denoised_2)
-            x = x + d_2 * dt_2
-
-        # Apply grid-like constraint for pixelation
-        x = torch.nn.functional.interpolate(x, size=grid_size, mode='nearest')
-            
-    return x
+def get_sigmas_karras_pixel_art(n, sigma_min, sigma_max, rho=7., device='cpu', grid_size=32):
+    # Generate the linear ramp from 0 to 1 over n steps
+    ramp = torch.linspace(0, 1, n, device=device)
+    
+    # Set the number of quantization levels to 32 for a 32x32 grid
+    k = grid_size
+    
+    # Quantize the ramp to k discrete levels
+    quantized_ramp = torch.floor(ramp * k) / k
+    
+    # Compute the inverse rho terms
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    
+    # Calculate sigmas using the quantized ramp
+    sigmas = (max_inv_rho + quantized_ramp * (min_inv_rho - max_inv_rho)) ** rho
+    
+    # Append zero as per the standard convention
+    return append_zero(sigmas)
 
 def get_sigmas_karras_mini_dalle(
     n,
     sigma_min,
     sigma_max,
-    rho=7.0,
+    rho=20.0,
     alpha=2.5,
     wiggle=0.1,
     device='cpu',
