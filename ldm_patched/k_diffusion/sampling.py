@@ -5,6 +5,7 @@ import torch
 from torch import nn
 import torchsde
 from tqdm.auto import trange, tqdm
+import numpy as np
 
 from . import utils
 
@@ -44,8 +45,11 @@ def get_sigmas_karras_sinusoidal(n, sigma_min, sigma_max, rho=7., device='cpu',
     sigmas = base * perturb
     return append_zero(sigmas)
 
+def append_zero(x):
+    return torch.cat([x, x.new_zeros([1])])
+
 def get_sigmas_karras_chaotic(n, sigma_min, sigma_max, rho=7., device='cpu',
-                              logistic_r=3.8,chaotic_amplitude=0.42, iters=5):
+                              logistic_r=3.6, chaotic_amplitude=0.42, iters=5):
     ramp = torch.linspace(0, 1, n, device=device)
     min_inv_rho = sigma_min ** (1 / rho)
     max_inv_rho = sigma_max ** (1 / rho)
@@ -53,8 +57,7 @@ def get_sigmas_karras_chaotic(n, sigma_min, sigma_max, rho=7., device='cpu',
     x = ramp.clone()
     for _ in range(iters):
         x = logistic_r * x * (1 - x)
-    sigmas = base * (1 + chaotic_amplitude * (2*x - 1))
-
+    sigmas = base * (1 + chaotic_amplitude * (2 * x - 1))
     return append_zero(sigmas)
 
 def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=5., device='cpu', zigzag_strength=0.5):
@@ -102,81 +105,87 @@ def get_sigmas_karras_jitter(n, sigma_min, sigma_max, rho=7.,device='cpu', jitte
     
     return append_zero(sigmas)
 
-def get_sigmas_karras_upscale(
-    n,
-    sigma_min,
-    sigma_max,
-    rho=4.0,
-    alpha=2.5,
-    wiggle=0.1,
-    device='cpu',
-):
-    # 1) exact Karras base
+def get_sigmas_karras_upscale(n, sigma_min, sigma_max, rho=7., device='cpu',
+                                    detail_freq=10.0, detail_amp=0.05, sharpness=0.1, noise_strength=0.02):
+
+    # Base ramp for sigma calculation
     ramp = torch.linspace(0, 1, n, device=device)
-    min_inv_rho = sigma_min ** (1 / sigma_min )
-    max_inv_rho = sigma_max ** (1 / sigma_max )
+    
+    # Compute base sigma values using Karras schedule
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    
+    # Add high-frequency sinusoidal perturbations for fine detail
+    detail_perturb = detail_amp * torch.sin(2 * torch.pi * detail_freq * ramp)
+    
+    # Add sharp transitions using a sigmoid-like modulation
+    sharp_transition = torch.tanh(sharpness * (ramp - 0.5)) + 1  # Centered around midpoint
+    
+    # Add controlled noise for natural irregularities
+    noise = noise_strength * (torch.rand(n, device=device) - 0.5)
+    
+    # Combine all components
+    sigmas = base * (1 + detail_perturb) * sharp_transition + noise
+    
+    return append_zero(sigmas)
+
+def get_karras_trow_random_blsht(n, sigma_min, sigma_max, rho=7., device='cpu', 
+                                   blast_strength=1.5, blast_probability=0.1):
+
+    # Base ramp and sigma calculation
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    
+    # Generate random blasts
+    blasts = torch.rand(n, device=device) < blast_probability  # Binary mask for blasts
+    blast_factors = 1 + blasts * (blast_strength - 1)  # Apply blast strength where blasts occur
+    
+    # Apply blasts to the base schedule
+    sigmas = base * blast_factors
+    
+    return append_zero(sigmas)
+
+
+def get_smokeywindy(n, sigma_min, sigma_max, rho=20., device='cpu', freq=2.0, amp=0.2):
+
+    # Linear ramp from 0 to 1
+    ramp = torch.linspace(0, 1, n, device=device)
+
+    # Compute base sigma values using Karras scheduling
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
     base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
 
-    # 2) dreamy wiggle
-    mod = 1 + wiggle * torch.sin(ramp * alpha * 3)
+    # Smooth checkerboard modulation
+    checker_modulation = torch.sin(2 * torch.pi * freq * ramp) * torch.cos(2 * torch.pi * freq * ramp)
+    sigmas = (base * (1 + amp * checker_modulation)).clamp(min=sigma_min, max=sigma_max)
 
-    # 3) apply + clamp
-    sigmas = torch.clamp(base * mod, sigma_min, sigma_max)
-
-    # 4) final zero
-    return append_zero(sigmas)
-
-def get_karras_trow_random_blsht(n, sigma_min, sigma_max, rho=7., device='cpu', blast_prob=0.1, blast_amp=2.0):
-    """
-    Random blast scheduler: with some probability, inject a sudden jump in sigma.
-    """
-    ramp = torch.linspace(0, 1, n, device=device)
-    # Base Karras curve
-    inv_min = sigma_min ** (1/rho)
-    inv_max = sigma_max ** (1/rho)
-    base = (inv_max + ramp * (inv_min - inv_max)) ** rho
-
-    # Random blasts
-    mask = (torch.rand(n, device=device) < blast_prob).float()
-    blasts = 1 + mask * (torch.rand(n, device=device) * blast_amp)
-    sigmas = base * blasts
-
-    # Clamp to [sigma_min, sigma_max]
-    sigmas = torch.clamp(sigmas, sigma_min, sigma_max)
+    # Append zero to the end of the sigma schedule (common in diffusion models)
     return append_zero(sigmas)
 
 
-def get_smokeywindy(n, sigma_min, sigma_max, rho=7., device='cpu', wind_strength=0.05):
-    """
-    Smokey-windy: smooth random walk over a Karras base curve.
-    """
+def get_glittery(n, sigma_min, sigma_max, rho=7., device='cpu',
+                             sin_freq=10.0, sin_amp=0.2,
+                             jitter_strength=0.3, randomness_scale=0.1):
+    # Base ramp calculation
     ramp = torch.linspace(0, 1, n, device=device)
-    inv_min = sigma_min ** (1/rho)
-    inv_max = sigma_max ** (1/rho)
-    base = (inv_max + ramp * (inv_min - inv_max)) ** rho
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
 
-    # Generate smooth noise via cumulative sum
-    noise = torch.randn(n, device=device) * wind_strength
-    smooth = torch.cumsum(noise, dim=0)
-    smooth = (smooth - smooth.min()) / (smooth.max() - smooth.min() + 1e-8)
+    # Sinusoidal perturbation for twinkling effect
+    sinusoidal_perturb = 1 + sin_amp * torch.sin(2 * torch.pi * sin_freq * ramp)
 
-    sigmas = base * (1 + smooth)
-    sigmas = torch.clamp(sigmas, sigma_min, sigma_max)
-    return append_zero(sigmas)
+    # Random jittering for irregular sparkle
+    jitter = (torch.rand(n, device=device) - 0.5) * 2 * jitter_strength / n
+    random_sparkle = 1 + randomness_scale * (torch.rand(n, device=device) - 0.5)
 
+    # Combine all effects
+    sigmas = base * sinusoidal_perturb * (1 + jitter) * random_sparkle
 
-def get_glittery(n, sigma_min, sigma_max, rho=2., device='cpu', glitter_freq=10, glitter_amp=0.2):
-    """
-    Glittery schedule: adds high-frequency oscillations for sparkle.
-    """
-    ramp = torch.linspace(0, 1, n, device=device)
-    inv_min = sigma_min ** (1/rho)
-    inv_max = sigma_max ** (1/rho)
-    base = (inv_max + ramp * (inv_min - inv_max)) ** rho
-
-    sparkle = 1 + glitter_amp * torch.sin(2 * math.pi * glitter_freq * ramp)
-    sigmas = base * sparkle
-    sigmas = torch.clamp(sigmas, sigma_min, sigma_max)
     return append_zero(sigmas)
 
 
@@ -314,29 +323,16 @@ def get_sigmas_karras_pixel_art(n, sigma_min, sigma_max, rho=7., device='cpu', g
     # Append zero as per the standard convention
     return append_zero(sigmas)
 
-def get_sigmas_karras_mini_dalle(
-    n,
-    sigma_min,
-    sigma_max,
-    rho=20.0,
-    alpha=2.5,
-    wiggle=0.1,
-    device='cpu',
-):
-    # 1) exact Karras base
-    ramp = torch.linspace(0, 1, n, device=device)
-    min_inv_rho = sigma_min ** (1 / 8 )
-    max_inv_rho = sigma_max ** (1 / 9 )
-    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
-
-    # 2) dreamy wiggle
-    mod = 1 + wiggle * torch.sin(ramp * alpha * 3)
-
-    # 3) apply + clamp
-    sigmas = torch.clamp(base * mod, sigma_min, sigma_max)
-
-    # 4) final zero
-    return append_zero(sigmas)
+def get_sigmas_karras_mini_dalle(n, sigma_min, sigma_max, rho=20., device='cpu',
+                            freq=10.0, amp=0.05):
+     ramp = torch.linspace(0, 1, n, device=device)
+     min_inv_rho = sigma_min ** (1 / rho)
+     max_inv_rho = sigma_max ** (1 / rho)
+     base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+     # smooth checker modulation
+     checker = torch.sin(2 * torch.pi * freq * ramp) * torch.cos(2 * torch.pi * freq * ramp)
+     sigmas = (base * (1 + amp * checker)).clamp(min=sigma_min, max=sigma_max)
+     return append_zero(sigmas)
 
 def get_color_rainbow(n, sigma_min, sigma_max, device='cpu', cycles=3):
     """
