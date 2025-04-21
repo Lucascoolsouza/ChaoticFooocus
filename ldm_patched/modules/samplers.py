@@ -691,12 +691,15 @@ def calculate_sigmas_scheduler(model, scheduler_name, steps):
         sigmas = get_sigmas_karras_golden_ratio(
             n=steps, sigma_min=sigma_min, sigma_max=sigma_max
         )
-        
+
     elif scheduler_name == "dream":
         sigmas = get_sigmas_karras_dream(
             n=steps, sigma_min=sigma_min, sigma_max=sigma_max
         )
-
+    elif scheduler_name == "piecewise":
+        sigmas = get_sigmas_karras_piecewise(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
     else:
         print("error invalid scheduler", scheduler_name)
         sigmas = None

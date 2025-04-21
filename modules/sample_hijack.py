@@ -247,7 +247,10 @@ def calculate_sigmas_scheduler_hacked(model, scheduler_name, steps):
         sigmas = k_diffusion_sampling.get_sigmas_karras_dream(
             n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
         )
-
+    elif scheduler_name == "piecewise":
+        sigmas = k_diffusion_sampling.get_sigmas_karras_piecewise(
+            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
+        )
     else:
         raise TypeError(f"error invalid scheduler: {scheduler_name}")
 

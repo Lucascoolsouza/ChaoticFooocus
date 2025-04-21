@@ -54,10 +54,11 @@ def get_sigmas_karras_chaotic(n, sigma_min, sigma_max, rho=7., device='cpu',
     x = ramp.clone()
     for _ in range(iters):
         x = logistic_r * x * (1 - x)
-    sigmas = base * (1 + 0.5)
+    sigmas = base * (1 + chaotic_amplitude * (2*x - 1))
+
     return append_zero(sigmas)
 
-def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=1000., device='cpu', zigzag_strength=0.5):
+def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=2., device='cpu', zigzag_strength=0.5):
     ramp = torch.linspace(0, 1, n, device=device)
     
     # Apply zig-zag by alternating offset
@@ -72,6 +73,19 @@ def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=1000., device='cpu', z
     sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
     
     return append_zero(sigmas)
+
+def get_sigmas_karras_piecewise(n, start_frac=0.2, end_frac=0.8):
+    i = torch.arange(n, device=device) / (n-1)
+    sig = torch.where(
+        i < start_frac,
+        sigma_max,
+        torch.where(
+          i > end_frac,
+          sigma_min,
+          sigma_max + (i - start_frac) / (end_frac - start_frac) * (sigma_min - sigma_max)
+        )
+    )
+    return append_zero(sig)
 
 def get_sigmas_karras_jitter(n, sigma_min, sigma_max, rho=7., device='cpu', jitter_strength=0.5):
     ramp = torch.linspace(0, 1, n, device=device)
@@ -101,6 +115,9 @@ def get_sigmas_karras_upscale(model, x, sigmas, extra_args=None, callback=None, 
             x = x + eps
         denoised = model(x, sigma_hat * s_in, **extra_args)
         d = to_d(x, sigma_hat, denoised)
+        res = torch.abs(denoised - x).mean()
+        gamma = min(max((res - res_ema) / res_ema, 0), γ_max)
+        sigma_hat = sigmas[i] * (1 + gamma)
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
         if sigmas[i + 1] == 0:
@@ -126,7 +143,7 @@ def get_sigmas_karras_dream(n, sigma_min, sigma_max, rho=7., device='cpu'):
         sigmas.append(curr)
         prev = curr
     sigmas.append(sigma_min)
-    return append_zero(torch.tensor(sigmas[::-1], device=device))
+    return append_zero(torch.tensor(sigmas[::-1], device=device, dtype=torch.float32))
 
 def get_sigmas_karras_golden_ratio(n, sigma_min, sigma_max, rho=7., device='cpu'):
     """Constructs the noise schedule of Karras et al. (2022) with the golden ratio."""
@@ -138,7 +155,7 @@ def get_sigmas_karras_golden_ratio(n, sigma_min, sigma_max, rho=7., device='cpu'
         sigmas.append(curr)
         prev = curr
     sigmas.append(sigma_min)
-    return append_zero(torch.tensor(sigmas[::-1], device=device))
+    return append_zero(torch.tensor(sigmas[::-1], device=device, dtype=torch.float32))
 
 
 def get_sigmas_karras_pixel_art(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
@@ -194,12 +211,12 @@ def get_sigmas_karras_mini_dalle(
 ):
     # 1) exact Karras base
     ramp = torch.linspace(0, 1, n, device=device)
-    min_inv_rho = sigma_min ** (1 / alpha)
-    max_inv_rho = sigma_max ** (1 / alpha)
+    min_inv_rho = sigma_min ** (1 / 9 * alpha)
+    max_inv_rho = sigma_max ** (1 / 9 * alpha)
     base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
 
     # 2) dreamy wiggle
-    mod = 1 + wiggle * torch.sin(ramp * math.pi * 3)
+    mod = 1 + wiggle * torch.sin(ramp * torch.pi * 3)
 
     # 3) apply + clamp
     sigmas = torch.clamp(base * mod, sigma_min, sigma_max)
