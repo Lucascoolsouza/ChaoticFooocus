@@ -205,7 +205,7 @@ def calculate_sigmas_scheduler_hacked(model, scheduler_name, steps):
 
     elif scheduler_name == "chaotic":
         sigmas = k_diffusion_sampling.get_sigmas_karras_chaotic(
-            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(sigma_min)
+            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
         )
 
     elif scheduler_name == "zigzag":
@@ -220,12 +220,12 @@ def calculate_sigmas_scheduler_hacked(model, scheduler_name, steps):
 
     elif scheduler_name == "upscale":
         sigmas = k_diffusion_sampling.get_sigmas_karras_upscale(
-            n=400, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
+            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
         )
 
     elif scheduler_name == "mini_dalle":
         sigmas = k_diffusion_sampling.get_sigmas_karras_mini_dalle(
-            n=4, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
+            n=150, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
         )
 
     elif scheduler_name == "grid":
