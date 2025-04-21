@@ -45,7 +45,7 @@ def get_sigmas_karras_sinusoidal(n, sigma_min, sigma_max, rho=7., device='cpu',
     return append_zero(sigmas)
 
 def get_sigmas_karras_chaotic(n, sigma_min, sigma_max, rho=7., device='cpu',
-                              logistic_r=3.8, iters=5):
+                              logistic_r=3.8,chaotic_amplitude=0.42, iters=5):
     ramp = torch.linspace(0, 1, n, device=device)
     min_inv_rho = sigma_min ** (1 / rho)
     max_inv_rho = sigma_max ** (1 / rho)
@@ -57,7 +57,7 @@ def get_sigmas_karras_chaotic(n, sigma_min, sigma_max, rho=7., device='cpu',
 
     return append_zero(sigmas)
 
-def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=2., device='cpu', zigzag_strength=0.5):
+def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=5., device='cpu', zigzag_strength=0.5):
     ramp = torch.linspace(0, 1, n, device=device)
     
     # Apply zig-zag by alternating offset
@@ -102,7 +102,7 @@ def get_sigmas_karras_jitter(n, sigma_min, sigma_max, rho=7., device='cpu', jitt
     
     return append_zero(sigmas)
 
-def get_sigmas_karras_upscale(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
+def get_sigmas_karras_upscale(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=10.):
     """A sampler that focus on finetuning"""
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
@@ -114,9 +114,6 @@ def get_sigmas_karras_upscale(model, x, sigmas, extra_args=None, callback=None, 
             x = x + eps
         denoised = model(x, sigma_hat * s_in, **extra_args)
         d = to_d(x, sigma_hat, denoised)
-        res = torch.abs(denoised - x).mean()
-        gamma = min(max((res - res_ema) / res_ema, 0), γ_max)
-        sigma_hat = sigmas[i] * (1 + gamma)
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
         if sigmas[i + 1] == 0:
@@ -354,18 +351,19 @@ def get_sigmas_karras_mini_dalle(
 ):
     # 1) exact Karras base
     ramp = torch.linspace(0, 1, n, device=device)
-    min_inv_rho = sigma_min ** (1 / 9 * alpha)
-    max_inv_rho = sigma_max ** (1 / 9 * alpha)
+    min_inv_rho = sigma_min ** (1 / 8 )
+    max_inv_rho = sigma_max ** (1 / 9 )
     base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
 
     # 2) dreamy wiggle
-    mod = 1 + wiggle * torch.sin(ramp * torch.pi * 3)
+    mod = 1 + wiggle * torch.sin(ramp * alpha * 3)
 
     # 3) apply + clamp
     sigmas = torch.clamp(base * mod, sigma_min, sigma_max)
 
     # 4) final zero
     return append_zero(sigmas)
+
 def get_color_rainbow(n, sigma_min, sigma_max, device='cpu', cycles=3):
     """
     Rainbow: per‑channel sine waves with 120° phase shifts.
