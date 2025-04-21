@@ -700,6 +700,58 @@ def calculate_sigmas_scheduler(model, scheduler_name, steps):
         sigmas = get_sigmas_karras_piecewise(
             n=steps, sigma_min=sigma_min, sigma_max=sigma_max
         )
+    elif scheduler_name == "trow_random_blsht":
+        sigmas = get_karras_trow_random_blsht(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+    elif scheduler_name == "smokeywindy":
+        sigmas = get_smokeywindy(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+    elif scheduler_name == "glittery":
+        sigmas = get_glittery(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+    elif scheduler_name == "claylike":
+        sigmas = get_claylike(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+    elif scheduler_name == "extreme_closeup_detail":
+        sigmas = get_extreme_closeup_detail(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+    elif scheduler_name == "rhythmic_beats":
+        sigmas = get_rhythmic_beats(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+    elif scheduler_name == "chaotic_swirl":
+        sigmas = get_chaotic_swirl(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+    elif scheduler_name == "dropout_spikes":
+        sigmas = get_dropout_spikes(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+    elif scheduler_name == "inception_ramp":
+        sigmas = get_inception_ramp(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+    elif scheduler_name == "double_cosine":
+        sigmas = get_double_cosine(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+    elif scheduler_name == "color_rainbow":
+        sigmas = get_color_rainbow(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+    elif scheduler_name == "rgb_split":
+        sigmas = get_rgb_split(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+    elif scheduler_name == "hsv_cycle":
+        sigmas = get_hsv_cycle(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
     else:
         print("error invalid scheduler", scheduler_name)
         sigmas = None
