@@ -60,7 +60,7 @@ def get_sigmas_karras_chaotic(n, sigma_min, sigma_max, rho=7., device='cpu',
     sigmas = base * (1 + chaotic_amplitude * (2 * x - 1))
     return append_zero(sigmas)
 
-def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=5., device='cpu', zigzag_strength=0.5):
+def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=10., device='cpu', zigzag_strength=0.5):
     ramp = torch.linspace(0, 1, n, device=device)
     
     # Apply zig-zag by alternating offset
