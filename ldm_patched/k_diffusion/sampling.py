@@ -33,7 +33,7 @@ def get_sigmas_karras_base(n, sigma_min, sigma_max, rho=7., device='cpu'):
     min_inv_rho = sigma_min ** (1 / rho)
     max_inv_rho = sigma_max ** (1 / rho)
     sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
-    return append_zero(sigmas)
+    return append_zero(sigmas).to(device)
 
 def get_sigmas_karras_sinusoidal(n, sigma_min, sigma_max, rho=7., device='cpu',
                                  sin_freq=5.0, amp=0.1):
@@ -43,13 +43,13 @@ def get_sigmas_karras_sinusoidal(n, sigma_min, sigma_max, rho=7., device='cpu',
     base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
     perturb = 1 + amp * torch.sin(2 * torch.pi * sin_freq * ramp)
     sigmas = base * perturb
-    return append_zero(sigmas)
+    return append_zero(sigmas).to(device)
 
 def append_zero(x):
     return torch.cat([x, x.new_zeros([1])])
 
 def get_sigmas_karras_chaotic(n, sigma_min, sigma_max, rho=7., device='cpu',
-                              logistic_r=3.6, chaotic_amplitude=0.42, iters=5):
+                              logistic_r=3.6, chaotic_amplitude=0.12, iters=5):
     ramp = torch.linspace(0, 1, n, device=device)
     min_inv_rho = sigma_min ** (1 / rho)
     max_inv_rho = sigma_max ** (1 / rho)
@@ -58,7 +58,7 @@ def get_sigmas_karras_chaotic(n, sigma_min, sigma_max, rho=7., device='cpu',
     for _ in range(iters):
         x = logistic_r * x * (1 - x)
     sigmas = base * (1 + chaotic_amplitude * (2 * x - 1))
-    return append_zero(sigmas)
+    return append_zero(sigmas).to(device)
 
 def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=10., device='cpu', zigzag_strength=0.5):
     ramp = torch.linspace(0, 1, n, device=device)
@@ -74,7 +74,7 @@ def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=10., device='cpu', zig
     max_inv_rho = sigma_max ** (1 / rho)
     sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
     
-    return append_zero(sigmas)
+    return append_zero(sigmas).to(device)
 
 def get_sigmas_karras_piecewise(n, sigma_min, sigma_max, device='cpu', start_frac=0.2, end_frac=0.8):
     i = torch.arange(n, device=device) / (n-1)
@@ -87,7 +87,7 @@ def get_sigmas_karras_piecewise(n, sigma_min, sigma_max, device='cpu', start_fra
           sigma_max + (i - start_frac) / (end_frac - start_frac) * (sigma_min - sigma_max)
         )
     )
-    return append_zero(sig)
+    return append_zero(sig).to(device)
 
 def get_sigmas_karras_jitter(n, sigma_min, sigma_max, rho=7.,device='cpu', jitter_strength=0.5):
     ramp = torch.linspace(0, 1, n, device=device)
@@ -103,7 +103,7 @@ def get_sigmas_karras_jitter(n, sigma_min, sigma_max, rho=7.,device='cpu', jitte
     max_inv_rho = sigma_max ** (1 / rho)
     sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
     
-    return append_zero(sigmas)
+    return append_zero(sigmas).to(device)
 
 def get_sigmas_karras_upscale(n, sigma_min, sigma_max, rho=7., device='cpu',
                                     detail_freq=10.0, detail_amp=0.05, sharpness=0.1, noise_strength=0.02):
@@ -128,9 +128,9 @@ def get_sigmas_karras_upscale(n, sigma_min, sigma_max, rho=7., device='cpu',
     # Combine all components
     sigmas = base * (1 + detail_perturb) * sharp_transition + noise
     
-    return append_zero(sigmas)
+    return append_zero(sigmas).to(device)
 
-def get_karras_trow_random_blsht(n, sigma_min, sigma_max, rho=7., device='cpu', 
+def get_sigmas_karras__trow_random_blsht(n, sigma_min, sigma_max, rho=7., device='cpu', 
                                    blast_strength=1.5, blast_probability=0.1):
 
     # Base ramp and sigma calculation
@@ -146,10 +146,10 @@ def get_karras_trow_random_blsht(n, sigma_min, sigma_max, rho=7., device='cpu',
     # Apply blasts to the base schedule
     sigmas = base * blast_factors
     
-    return append_zero(sigmas)
+    return append_zero(sigmas).to(device)
 
 
-def get_smokeywindy(n, sigma_min, sigma_max, rho=20., device='cpu', freq=2.0, amp=0.2):
+def get_sigmas_karras_smokeywindy(n, sigma_min, sigma_max, rho=20., device='cpu', freq=2.0, amp=0.2):
 
     # Linear ramp from 0 to 1
     ramp = torch.linspace(0, 1, n, device=device)
@@ -164,10 +164,10 @@ def get_smokeywindy(n, sigma_min, sigma_max, rho=20., device='cpu', freq=2.0, am
     sigmas = (base * (1 + amp * checker_modulation)).clamp(min=sigma_min, max=sigma_max)
 
     # Append zero to the end of the sigma schedule (common in diffusion models)
-    return append_zero(sigmas)
+    return append_zero(sigmas).to(device)
 
 
-def get_glittery(n, sigma_min, sigma_max, rho=7., device='cpu',
+def get_sigmas_karras_glittery(n, sigma_min, sigma_max, rho=7., device='cpu',
                              sin_freq=10.0, sin_amp=0.2,
                              jitter_strength=0.3, randomness_scale=0.1):
     # Base ramp calculation
@@ -186,10 +186,10 @@ def get_glittery(n, sigma_min, sigma_max, rho=7., device='cpu',
     # Combine all effects
     sigmas = base * sinusoidal_perturb * (1 + jitter) * random_sparkle
 
-    return append_zero(sigmas)
+    return append_zero(sigmas).to(device)
 
 
-def get_claylike(n, sigma_min, sigma_max, rho=7., device='cpu', clay_strength=0.3):
+def get_sigmas_karras_claylike(n, sigma_min, sigma_max, rho=7., device='cpu', clay_strength=0.3):
     """
     Clay-like: heavy smoothing to emulate sculpting, low-frequency dampening.
     """
@@ -203,10 +203,13 @@ def get_claylike(n, sigma_min, sigma_max, rho=7., device='cpu', clay_strength=0.
     low = cum / torch.arange(1, n+1, device=device).float()
     sigmas = base * (1 - clay_strength * low)
     sigmas = torch.clamp(sigmas, sigma_min, sigma_max)
-    return append_zero(sigmas)
-
-
-def get_extreme_closeup_detail(n, sigma_min, sigma_max, device='cpu'):
+    
+    # Append zero for initial timestep
+    sigmas = torch.cat([torch.tensor([0.0], device=device), sigmas]) 
+    
+    return append_zero(sigmas).to(device)
+    
+def get_sigmas_karras_extreme_closeup_detail(n, sigma_min, sigma_max, device='cpu'):
     """
     Extreme close-up detail: start with very low sigma (fine detail), then ramp up.
     """
@@ -214,10 +217,11 @@ def get_extreme_closeup_detail(n, sigma_min, sigma_max, device='cpu'):
     ramp = torch.linspace(1, 0, n, device=device)
     sigmas = sigma_min + (sigma_max - sigma_min) * ((1 - ramp) ** 2)
     sigmas = torch.clamp(sigmas, sigma_min, sigma_max)
+    sigmas = torch.cat([torch.tensor([0.0], device=device), sigmas]) 
     return append_zero(sigmas)
 # ————— New Fun Schedulers —————
 
-def get_rhythmic_beats(n, sigma_min, sigma_max, cycles=5, amp=0.3, device='cpu'):
+def get_sigmas_karras_rhythmic_beats(n, sigma_min, sigma_max, cycles=5, amp=0.3, device='cpu'):
     """
     Rhythmic beats: periodic rises/drops in sigma like a heartbeat.
     """
@@ -225,10 +229,11 @@ def get_rhythmic_beats(n, sigma_min, sigma_max, cycles=5, amp=0.3, device='cpu')
     base = sigma_min + (sigma_max - sigma_min) * (1 - ramp)
     beat = 1 + amp * torch.sin(2 * math.pi * cycles * ramp) ** 3
     sigmas = base * beat
-    return append_zero(torch.clamp(sigmas, sigma_min, sigma_max))
+    sigmas = torch.cat([torch.tensor([0.0], device=device), sigmas]) 
+    return append_zero(sigmas).to(device)
 
 
-def get_chaotic_swirl(n, sigma_min, sigma_max, rho=7., device='cpu', logistic_r=3.9, iters=8):
+def get_sigmas_karras_chaotic_swirl(n, sigma_min, sigma_max, rho=7., device='cpu', logistic_r=3.9, iters=8):
     """
     Chaotic swirl: use logistic map to twist the Karras curve.
     """
@@ -242,10 +247,10 @@ def get_chaotic_swirl(n, sigma_min, sigma_max, rho=7., device='cpu', logistic_r=
         x = logistic_r * x * (1 - x)
     swirl = 0.5 + 0.5 * x  # normalize into [0.5,1]
     sigmas = base * swirl
-    return append_zero(torch.clamp(sigmas, sigma_min, sigma_max))
+    return append_zero(sigmas).to(device)
 
 
-def get_inception_ramp(n, sigma_min, sigma_max, layers=3, device='cpu'):
+def get_sigmas_karras_inception_ramp(n, sigma_min, sigma_max, layers=3, device='cpu'):
     """
     Inception ramp: nested Karras ramps at multiple scales, summed.
     """
@@ -254,10 +259,10 @@ def get_inception_ramp(n, sigma_min, sigma_max, layers=3, device='cpu'):
         ramp = torch.linspace(0, 1, n, device=device) ** (1.0 / k)
         total += sigma_min + (sigma_max - sigma_min) * (1 - ramp)
     sigmas = total / layers
-    return append_zero(torch.clamp(sigmas, sigma_min, sigma_max))
+    return append_zero(sigmas).to(device)
 
 
-def get_double_cosine(n, sigma_min, sigma_max, device='cpu'):
+def get_sigmas_karras_double_cosine(n, sigma_min, sigma_max, device='cpu'):
     """
     Double-cosine: two cosine annealings blended for peaks.
     """
@@ -269,7 +274,7 @@ def get_double_cosine(n, sigma_min, sigma_max, device='cpu'):
     return append_zero(torch.clamp(sigmas, sigma_min, sigma_max))
 
 
-def get_dropout_spikes(n, sigma_min, sigma_max, drop_prob=0.1, spike_amp=1.5, device='cpu'):
+def get_sigmas_karras_dropout_spikes(n, sigma_min, sigma_max, drop_prob=0.1, spike_amp=1.5, device='cpu'):
     """
     Dropout spikes: random positions where sigma is boosted.
     """
@@ -278,7 +283,7 @@ def get_dropout_spikes(n, sigma_min, sigma_max, drop_prob=0.1, spike_amp=1.5, de
     mask = (torch.rand(n, device=device) < drop_prob).float()
     spikes = 1 + mask * spike_amp
     sigmas = base * spikes
-    return append_zero(torch.clamp(sigmas, sigma_min, sigma_max))
+    return append_zero(sigmas).to(device)
 def get_sigmas_karras_dream(n, sigma_min, sigma_max, rho=7., device='cpu'):
     """Constructs the noise schedule of Karras et al. (2022) with a google-dream like schedule"""
     sigmas = []
@@ -288,7 +293,7 @@ def get_sigmas_karras_dream(n, sigma_min, sigma_max, rho=7., device='cpu'):
         sigmas.append(curr)
         prev = curr
     sigmas.append(sigma_min)
-    return append_zero(torch.tensor(sigmas[::-1], device=device, dtype=torch.float32))
+    return append_zero(sigmas).to(device)
 
 def get_sigmas_karras_golden_ratio(n, sigma_min, sigma_max, rho=7., device='cpu'):
     """Constructs the noise schedule of Karras et al. (2022) with the golden ratio."""
@@ -300,10 +305,10 @@ def get_sigmas_karras_golden_ratio(n, sigma_min, sigma_max, rho=7., device='cpu'
         sigmas.append(curr)
         prev = curr
     sigmas.append(sigma_min)
-    return append_zero(torch.tensor(sigmas[::-1], device=device, dtype=torch.float32))
+    return append_zero(sigmas).to(device)
 
 
-def get_sigmas_karras_pixel_art(n, sigma_min, sigma_max, rho=7., device='cpu', grid_size=32):
+def get_sigmas_karras_pixel_art(n, sigma_min, sigma_max, rho=2., device='cpu', grid_size=32):
     # Generate the linear ramp from 0 to 1 over n steps
     ramp = torch.linspace(0, 1, n, device=device)
     
@@ -321,7 +326,7 @@ def get_sigmas_karras_pixel_art(n, sigma_min, sigma_max, rho=7., device='cpu', g
     sigmas = (max_inv_rho + quantized_ramp * (min_inv_rho - max_inv_rho)) ** rho
     
     # Append zero as per the standard convention
-    return append_zero(sigmas)
+    return append_zero(sigmas).to(device)
 
 def get_sigmas_karras_mini_dalle(n, sigma_min, sigma_max, rho=20., device='cpu',
                             freq=10.0, amp=0.05):
@@ -332,9 +337,9 @@ def get_sigmas_karras_mini_dalle(n, sigma_min, sigma_max, rho=20., device='cpu',
      # smooth checker modulation
      checker = torch.sin(2 * torch.pi * freq * ramp) * torch.cos(2 * torch.pi * freq * ramp)
      sigmas = (base * (1 + amp * checker)).clamp(min=sigma_min, max=sigma_max)
-     return append_zero(sigmas)
+     return append_zero(sigmas).to(device)
 
-def get_color_rainbow(n, sigma_min, sigma_max, device='cpu', cycles=3):
+def get_sigmas_karras_color_rainbow(n, sigma_min, sigma_max, device='cpu', cycles=3):
     """
     Rainbow: per‑channel sine waves with 120° phase shifts.
     Returns a tensor of shape (3, n+1) for RGB channels.
@@ -351,7 +356,7 @@ def get_color_rainbow(n, sigma_min, sigma_max, device='cpu', cycles=3):
     return torch.cat([stacked, zero], dim=1)
 
 
-def get_rgb_split(n, sigma_min, sigma_max, device='cpu', offset=0.05):
+def get_sigmas_karras__rgb_split(n, sigma_min, sigma_max, device='cpu', offset=0.05):
     """
     RGB Split: staggered linear ramps per channel for color-separation.
     Returns shape (3, n+1).
@@ -367,7 +372,7 @@ def get_rgb_split(n, sigma_min, sigma_max, device='cpu', offset=0.05):
     return torch.cat([stacked, zero], dim=1)
 
 
-def get_hsv_cycle(n, sigma_min, sigma_max, device='cpu'):
+def get_sigmas_hsv_cycle(n, sigma_min, sigma_max, device='cpu'):
     """
     HSV Cycle: map hue cycle to per-channel sigma modulation.
     Returns shape (3, n+1) for RGB.
@@ -381,7 +386,7 @@ def get_hsv_cycle(n, sigma_min, sigma_max, device='cpu'):
     waves = torch.tensor(arr, device=device)
     sigmas = sigma_min + (sigma_max - sigma_min) * waves  # n x 3
     sigmas = torch.cat([sigmas, torch.zeros(1, 3, device=device)], dim=0)
-    return sigmas.T  # 3 x (n+1)
+    return append_zero(sigmas).to(device)
 def get_sigmas_karras_grid(n, sigma_min, sigma_max, rho=7., device='cpu',
                            freq=5.0, amp=0.05):
     ramp = torch.linspace(0, 1, n, device=device)
@@ -391,7 +396,7 @@ def get_sigmas_karras_grid(n, sigma_min, sigma_max, rho=7., device='cpu',
     # smooth checker modulation
     checker = torch.sin(2 * torch.pi * freq * ramp) * torch.cos(2 * torch.pi * freq * ramp)
     sigmas = (base * (1 + amp * checker)).clamp(min=sigma_min, max=sigma_max)
-    return append_zero(sigmas)
+    return append_zero(sigmas).to(device)
 
 def get_sigmas_exponential(n, sigma_min, sigma_max, device='cpu'):
     """Constructs an exponential noise schedule."""
