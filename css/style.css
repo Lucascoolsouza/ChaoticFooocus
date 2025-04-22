@@ -8,7 +8,7 @@
 
 .loader {
   border: 8px solid #f3f3f3; /* Light grey */
-  border-top: 8px solid #3498db; /* Blue */
+  border-top: 8px solid #e7901d; /* Blue */
   border-radius: 50%;
   width: 30px;
   height: 30px;
@@ -39,11 +39,11 @@ progress {
 
 /* Set the color of the progress bar fill */
 progress::-webkit-progress-value {
-  background-color: #3498db; /* Blue color for the fill */
+  background-color: #f39f22; /* Blue color for the fill */
 }
 
 progress::-moz-progress-bar {
-  background-color: #3498db; /* Blue color for the fill in Firefox */
+  background-color: #d64b20; /* Blue color for the fill in Firefox */
 }
 
 /* Style the text on the progress bar */
@@ -350,11 +350,11 @@ div:has(> #positive_prompt) {
     position: fixed;
     top: 0px;
     left: 0px;
-    border: solid 1px lightgrey;
+    border: solid 1px rgb(0, 0, 0);
     transform: translate(-140px, 20px);
     background-size: cover;
     background-position: center;
-    background-color: rgba(0, 0, 0, 0.3);
+    background-color: rgb(97, 97, 97);
     border-radius: 5px;
     z-index: 100;
     transition: transform 0.1s ease, opacity 0.3s ease;
