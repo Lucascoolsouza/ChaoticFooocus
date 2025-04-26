@@ -536,7 +536,7 @@ def sample_euler_dreamy(model, x, sigmas, extra_args=None, callback=None, disabl
 
 @torch.no_grad()
 def sample_euler_dreamy_pp(model, x, sigmas, extra_args=None, callback=None, disable=None,
-                       noise_factor=0.5, extrapolation_factor=0.2, s_noise=1.0):
+                       noise_factor=0.005, extrapolation_factor=0.002, s_noise=0.2):
     extra_args = {} if extra_args is None else extra_args
     noise_sampler = default_noise_sampler(x) # Use a basic noise sampler here for perturbation
     s_in = x.new_ones([x.shape[0]])
@@ -629,7 +629,7 @@ def sample_euler_chaotic(model, x, sigmas, extra_args=None, callback=None, disab
 
 @torch.no_grad()
 def sample_euler_triangle_wave(model, x, sigmas, extra_args=None, callback=None, disable=None,
-                               oscillation_amplitude=0.8, oscillation_periods=2.0, s_noise=1.0):
+                               oscillation_amplitude=0.4, oscillation_periods=1.6, s_noise=1.0):
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     n_steps = len(sigmas) - 1
