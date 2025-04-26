@@ -253,7 +253,7 @@ def calculate_sigmas_scheduler_hacked(model, scheduler_name, steps):
         )
 
     elif scheduler_name == "trow_random_blsht":
-        sigmas = k_diffusion_sampling.get_karras_trow_random_blsht(
+        sigmas = k_diffusion_sampling.get_sigmas_karras_trow_random_blsht(
             n=8, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
         )
 
@@ -262,8 +262,8 @@ def calculate_sigmas_scheduler_hacked(model, scheduler_name, steps):
             n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
         )
 
-    elif scheduler_name == "glittery":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_glittery(
+    elif scheduler_name == "🔥attention_context":
+        sigmas = k_diffusion_sampling.get_sigmas_karras_attention_context(
             n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
         )
 
