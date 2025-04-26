@@ -522,7 +522,7 @@ class UNIPCBH2(Sampler):
     def sample(self, model_wrap, sigmas, extra_args, callback, noise, latent_image=None, denoise_mask=None, disable_pbar=False):
         return uni_pc.sample_unipc(model_wrap, noise, latent_image, sigmas, max_denoise=self.max_denoise(model_wrap, sigmas), extra_args=extra_args, noise_mask=denoise_mask, callback=callback, variant='bh2', disable=disable_pbar)
 
-KSAMPLER_NAMES = ["euler", "euler_ancestral","euler_chaotic","euler_triangle_wave","euler_dreamy","euler_dreamy_pp","heun", "heunpp2","dpm_2", "dpm_2_ancestral",
+KSAMPLER_NAMES = ["euler", "euler_ancestral","euler_chaotic","euler_triangle_wave","euler_dreamy","euler_dreamy_pp","triangular","pixelart","dreamy","comic","fractal","heun", "heunpp2","dpm_2", "dpm_2_ancestral",
                   "lms", "dpm_fast", "dpm_adaptive", "dpmpp_2s_ancestral", "dpmpp_sde", "dpmpp_sde_gpu",
                   "dpmpp_2m", "dpmpp_2m_sde", "dpmpp_2m_sde_gpu", "dpmpp_3m_sde", "dpmpp_3m_sde_gpu", "ddpm", "lcm", "tcd", "edm_playground_v2.5", "restart"]
 
@@ -619,7 +619,12 @@ def sample(model, noise, positive, negative, cfg, device, sampler, sigmas, model
     samples = sampler.sample(model_wrap, sigmas, extra_args, callback, noise, latent_image, denoise_mask, disable_pbar)
     return model.process_latent_out(samples.to(torch.float32))
 
-SCHEDULER_NAMES = ["normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform","sinusoidal", "chaotic", "zigzag", "jitter","upscale", "mini_dalle", "grid"]
+SCHEDULER_NAMES = ["normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform","comic_panel","sinusoidal", "chaotic", "zigzag",
+                    "jitter", "upscale", "mini_dalle", "grid","pixel_art",
+                    "golden_ratio","dream","piecewise","trow_random_blsht",
+                    "smokeywindy","attention_context","claylike","extreme_closeup_detail",
+                    "rhythmic_beats","chaotic_swirl","dropout_spikes","inception_ramp","double_cosine",
+                    "color_rainbow","rgb_split","hsv_cycle"]
 SAMPLER_NAMES = KSAMPLER_NAMES + ["ddim", "uni_pc", "uni_pc_bh2"]
 
 def calculate_sigmas_scheduler(model, scheduler_name, steps):
@@ -710,8 +715,13 @@ def calculate_sigmas_scheduler(model, scheduler_name, steps):
             n=steps, sigma_min=sigma_min, sigma_max=sigma_max
         )
 
-    elif scheduler_name == "glittery":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_glittery(
+    elif scheduler_name == "attention_context":
+        sigmas = k_diffusion_sampling.get_sigmas_karras_attention_context(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+
+    elif scheduler_name == "comic_panel":
+        sigmas = k_diffusion_sampling.get_sigmas_comic(
             n=steps, sigma_min=sigma_min, sigma_max=sigma_max
         )
 

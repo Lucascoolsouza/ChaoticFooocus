@@ -234,12 +234,12 @@ def calculate_sigmas_scheduler_hacked(model, scheduler_name, steps):
 
     elif scheduler_name == "pixel_art":
         sigmas = k_diffusion_sampling.get_sigmas_karras_pixel_art(
-            n=200, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
+            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
         )
 
     elif scheduler_name == "golden_ratio":
         sigmas = k_diffusion_sampling.get_sigmas_karras_golden_ratio(
-            n=15, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
+            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
         )
 
     elif scheduler_name == "dream":
@@ -257,12 +257,17 @@ def calculate_sigmas_scheduler_hacked(model, scheduler_name, steps):
             n=8, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
         )
 
+    elif scheduler_name == "comic_panel":
+        sigmas = k_diffusion_sampling.get_sigmas_comic(
+            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
+        )
+
     elif scheduler_name == "smokeywindy":
         sigmas = k_diffusion_sampling.get_sigmas_karras_smokeywindy(
             n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
         )
 
-    elif scheduler_name == "🔥attention_context":
+    elif scheduler_name == "attention_context":
         sigmas = k_diffusion_sampling.get_sigmas_karras_attention_context(
             n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
         )
