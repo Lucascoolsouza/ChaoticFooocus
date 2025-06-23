@@ -35,15 +35,49 @@ import importlib
 
 import ldm_patched.utils.path_utils
 import ldm_patched.utils.latent_visualization
+from ChenDarYen.NormalizedAttentionGuidance.nag import normalize_attention # if you clone/add the NAG module
+
 
 def before_node_execution():
     ldm_patched.modules.model_management.throw_exception_if_processing_interrupted()
 
 def interrupt_processing(value=True):
     ldm_patched.modules.model_management.interrupt_current_processing(value)
+# --- NAG logic integration (add this import, or implement normalize_attention below) ---
+# from ChenDarYen.Normalized-Attention-Guidance.nag import normalize_attention
+
+def normalize_attention(tensor, eps=1e-6):
+    """
+    Simple normalization logic for attention maps.
+    Replace or extend with the actual implementation from the NAG repo as needed.
+    """
+    norm = tensor.norm(p=2, dim=-1, keepdim=True)
+    return tensor / (norm + eps)
 
 MAX_RESOLUTION=8192
+class StableDiffusionXLPipelinePatched:
+    def generate(
+        self, prompt, negative_prompt=None, width=1024, height=1024, steps=30, **kwargs
+    ):
+        # Step 1: Tokenize and encode prompts as usual
+        pos_cond = self.encode_prompt(prompt)
+        neg_cond = self.encode_prompt(negative_prompt) if negative_prompt else None
 
+        # Step 2: Apply NAG to the negative prompt, if present
+        if neg_cond is not None:
+            neg_cond = self.apply_nag_to_conditioning(neg_cond)
+
+        # Step 3: Pass both conditionings to the diffusion process
+        output = self.diffusion_process(
+            pos_cond, neg_cond, width=width, height=height, steps=steps, **kwargs
+        )
+        return output
+        def apply_nag_to_conditioning(self, cond):
+        # This is where you use NAG logic, e.g., normalization
+        # Replace with actual call from NAG repo as needed
+        cond_normalized = normalize_attention(cond)
+        return cond_normalized
+        
 class CLIPTextEncode:
     @classmethod
     def INPUT_TYPES(s):
