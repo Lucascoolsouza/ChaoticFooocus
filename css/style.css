@@ -126,7 +126,7 @@ input[type='checkbox'], input[type='radio'] {
 
 /* --- Progress Bar --- */
 #progress-bar {
-    height: 15px;
+    height: 5px;
     background-color: var(--dark-matter-grey);
     border-radius: 7px;
     overflow: hidden;

@@ -306,12 +306,17 @@ def calculate_sigmas_all(sampler, model, scheduler, steps):
 @torch.no_grad()
 @torch.inference_mode()
 def calculate_sigmas(sampler, model, scheduler, steps, denoise):
+    print(f"calculate_sigmas: steps={steps}, denoise={denoise}")
     if denoise is None or denoise > 0.9999:
         sigmas = calculate_sigmas_all(sampler, model, scheduler, steps)
+        print(f"calculate_sigmas: sigmas (full) = {sigmas}")
     else:
         new_steps = int(steps / denoise)
-        sigmas = calculate_sigmas_all(sampler, model, scheduler, new_steps)
-        sigmas = sigmas[-(steps + 1):]
+        print(f"calculate_sigmas: new_steps={new_steps}")
+        sigmas_all = calculate_sigmas_all(sampler, model, scheduler, new_steps)
+        print(f"calculate_sigmas: sigmas_all (before slicing) = {sigmas_all}")
+        sigmas = sigmas_all[-(steps + 1):]
+        print(f"calculate_sigmas: sigmas (after slicing) = {sigmas}")
     return sigmas
 
 
@@ -365,9 +370,6 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         initial_latent = latent
 
     minmax_sigmas = calculate_sigmas(sampler=sampler_name, scheduler=scheduler_name, model=final_unet.model, steps=steps, denoise=denoise)
-    positive_sigmas = minmax_sigmas[minmax_sigmas > 0]
-    if positive_sigmas.numel() == 0:
-        raise ValueError("No positive sigma values found. This indicates an issue with the sampler or model configuration.")
     positive_sigmas = minmax_sigmas[minmax_sigmas > 0]
     if positive_sigmas.numel() == 0:
         raise ValueError("No positive sigma values found. This indicates an issue with the sampler or model configuration.")
