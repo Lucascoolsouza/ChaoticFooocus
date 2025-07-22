@@ -26,6 +26,7 @@ def load_gguf_model():
     if not GGUF_AVAILABLE:
         print("GGUF support not available. Installing llama-cpp-python...")
         try:
+            global GGUF_AVAILABLE
             import subprocess
             import sys
             subprocess.check_call([sys.executable, "-m", "pip", "install", "llama-cpp-python[server]"])
@@ -33,7 +34,6 @@ def load_gguf_model():
             # Re-import after installation
             from llama_cpp import Llama
             from llama_cpp.llama_chat_format import Llava15ChatHandler
-            global GGUF_AVAILABLE
             GGUF_AVAILABLE = True
         except Exception as e:
             print(f"Failed to install llama-cpp-python: {e}")

@@ -42,8 +42,6 @@ class AsyncTask:
         self.read_wildcards_in_order = args.pop()
         self.sharpness = args.pop()
         self.cfg_scale = args.pop()
-        self.nag_enabled = args.pop()
-        self.nag_scale = args.pop()
         self.base_model_name = args.pop()
         self.refiner_model_name = args.pop()
         self.refiner_switch = args.pop()
@@ -280,7 +278,7 @@ def worker():
         async_task.results = async_task.results + [wall]
         return
 
-    from modules.nag import NAGStableDiffusionXLPipeline
+    
 
     def process_task(all_steps, async_task, callback, controlnet_canny_path, controlnet_cpds_path, current_task_id,
                      denoising_strength, final_scheduler_name, goals, initial_latent, steps, switch, positive_cond,
@@ -315,9 +313,7 @@ def worker():
             tiled=tiled,
             cfg_scale=async_task.cfg_scale,
             refiner_swap_method=async_task.refiner_swap_method,
-            disable_preview=async_task.disable_preview,
-            nag_enabled=async_task.nag_enabled,
-            nag_scale=async_task.nag_scale
+            disable_preview=async_task.disable_preview
         )
 
         del positive_cond, negative_cond  # Save memory

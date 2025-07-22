@@ -712,9 +712,6 @@ with shared.gradio_root:
                 guidance_scale = gr.Slider(label='Guidance Scale', minimum=1.0, maximum=30.0, step=0.01,
                                            value=modules.config.default_cfg_scale,
                                            info='Higher value means style is cleaner, vivider, and more artistic.')
-                nag_enabled = gr.Checkbox(label='Enable NAG', value=False)
-                nag_scale = gr.Slider(label='NAG Scale', minimum=0.0, maximum=10.0, step=0.1, value=3.0, visible=False)
-                nag_enabled.change(lambda x: gr.update(visible=x), inputs=nag_enabled, outputs=nag_scale, queue=False, show_progress=False)
                 sharpness = gr.Slider(label='Image Sharpness', minimum=0.0, maximum=30.0, step=0.001,
                                       value=modules.config.default_sample_sharpness,
                                       info='Higher value means image and texture are sharper.')
@@ -920,7 +917,7 @@ with shared.gradio_root:
                              adm_scaler_negative, adm_scaler_end, refiner_swap_method, adaptive_cfg, clip_skip,
                              base_model, refiner_model, refiner_switch, sampler_name, scheduler_name, vae_name,
                              seed_random, image_seed, inpaint_engine, inpaint_engine_state,
-                             inpaint_mode, nag_enabled, nag_scale] + enhance_inpaint_mode_ctrls + [generate_button,
+                             inpaint_mode] + enhance_inpaint_mode_ctrls + [generate_button,
                              load_parameter_button] + freeu_ctrls + lora_ctrls
 
         if not args_manager.args.disable_preset_selection:
