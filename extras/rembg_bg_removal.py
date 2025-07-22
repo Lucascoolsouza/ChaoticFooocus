@@ -103,7 +103,7 @@ class BackgroundRemover:
                 **kwargs
             )
             
-            return result
+            return np.array(result)
             
         except Exception as e:
             print(f"Error in background removal: {str(e)}")

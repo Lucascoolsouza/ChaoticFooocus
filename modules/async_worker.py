@@ -1378,11 +1378,22 @@ def worker():
             if enhance_uov_before:
                 current_task_id += 1
                 persist_image = not async_task.save_final_enhanced_image_only or active_enhance_tabs == 0
-                current_task_id, done_steps_inpainting, done_steps_upscaling, img, exception_result = enhance_upscale(
-                    all_steps, async_task, base_progress, callback, controlnet_canny_path, controlnet_cpds_path,
-                    current_task_id, denoising_strength, done_steps_inpainting, done_steps_upscaling, enhance_steps,
-                    async_task.prompt, async_task.negative_prompt, final_scheduler_name, height, img, preparation_steps,
-                    switch, tiled, total_count, use_expansion, use_style, use_synthetic_refiner, width, persist_image)
+                if async_task.enhance_uov_method == flags.remove_background:
+                    # Directly yield the image if only background removal is performed
+                    if modules.config.default_black_out_nsfw or async_task.black_out_nsfw:
+                        progressbar(async_task, current_progress, 'Checking for NSFW content ...')
+                        img = default_censor(img)
+                    progressbar(async_task, current_progress, f'Saving image {current_task_id + 1}/{total_count} to system ...')
+                    uov_image_path = log(img, [('Background Removed', 'background_removed', 'True')], output_format=async_task.output_format, persist_image=persist_image)
+                    yield_result(async_task, uov_image_path, current_progress, async_task.black_out_nsfw, False,
+                                 do_not_show_finished_images=not show_intermediate_results or async_task.disable_intermediate_results)
+                    exception_result = 'continue' # Skip further processing for this image
+                else:
+                    current_task_id, done_steps_inpainting, done_steps_upscaling, img, exception_result = enhance_upscale(
+                        all_steps, async_task, base_progress, callback, controlnet_canny_path, controlnet_cpds_path,
+                        current_task_id, denoising_strength, done_steps_inpainting, done_steps_upscaling, enhance_steps,
+                        async_task.prompt, async_task.negative_prompt, final_scheduler_name, height, img, preparation_steps,
+                        switch, tiled, total_count, use_expansion, use_style, use_synthetic_refiner, width, persist_image)
                 async_task.enhance_stats[index] += 1
 
                 if exception_result == 'continue':
