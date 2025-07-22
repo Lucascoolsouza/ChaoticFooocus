@@ -424,7 +424,7 @@ def get_sigmas_karras_quantum(n, sigma_min, sigma_max, rho=7., device='cpu',
     quantum_ramp = torch.floor(ramp * quantum_levels) / quantum_levels
     
     # Add quantum tunneling effects
-    torch.manual_seed(42)  # For reproducible quantum effects
+    
     tunnel_mask = torch.rand(n, device=device) < tunnel_probability
     
     # When tunneling occurs, jump to a different energy level
@@ -462,11 +462,11 @@ def get_sigmas_karras_organic(n, sigma_min, sigma_max, rho=7., device='cpu',
         t = ramp[i].item()
         # Fibonacci-inspired growth with branching
         fib_component = (phi ** t - (-1/phi) ** t) / math.sqrt(5)
-        branch_component = torch.sin(2 * math.pi * branching_factor * t * 5)
-        growth_pattern[i] = 1.0 + 0.2 * (fib_component % 1.0) + 0.1 * branch_component
+        branch_component = torch.sin(2 * torch.pi * branching_factor * t * 5)
+        growth_pattern[i] = 1.0 + 0.2 * (fib_component % 1.0) + 0.1 * branch_component + (torch.rand(1).item() - 0.5) * 0.01 # Add small random variation
     
     # Add natural variation (like leaf patterns)
-    leaf_pattern = 1.0 + 0.08 * torch.sin(2 * math.pi * 8 * ramp) * torch.cos(2 * math.pi * 3 * ramp)
+    leaf_pattern = 1.0 + 0.08 * torch.sin(2 * torch.pi * 8 * ramp) * torch.cos(2 * torch.pi * 3 * ramp) + (torch.rand(n, device=device) - 0.5) * 0.02 # Add small random variation
     
     # Combine organic patterns
     organic_modulation = growth_pattern * leaf_pattern
