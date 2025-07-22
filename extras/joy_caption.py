@@ -21,12 +21,12 @@ except ImportError:
 
 def load_gguf_model():
     """Load Joy Caption GGUF model - more efficient for Colab"""
-    global global_gguf_model
+    global global_gguf_model, GGUF_AVAILABLE
     
     if not GGUF_AVAILABLE:
-        print("GGUF support not available. Installing llama-cpp-python...")
+        print("GGUF support not available. Install with: pip install llama-cpp-python")
         try:
-            global GGUF_AVAILABLE
+            
             import subprocess
             import sys
             subprocess.check_call([sys.executable, "-m", "pip", "install", "llama-cpp-python[server]"])
