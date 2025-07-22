@@ -14,12 +14,6 @@ from . import utils
 def append_zero(x):
     return torch.cat([x, x.new_zeros([1])])
 
-def append_zero(sigmas):
-    return torch.cat([
-        sigmas,
-        torch.zeros(1, device=sigmas.device, dtype=sigmas.dtype)
-    ], dim=0)
-
 def get_sigmas_karras(n, sigma_min, sigma_max, rho=7., device='cpu'):
     """Constructs the noise schedule of Karras et al. (2022)."""
     ramp = torch.linspace(0, 1, n, device=device)
@@ -279,76 +273,19 @@ def get_sigmas_karras_golden_ratio(n, sigma_min, sigma_max, rho=7., device='cpu'
     return append_zero(torch.tensor(sigmas[::-1], device=device, dtype=torch.float32)).to(device)
 
 
-def get_sigmas_karras_pixel_art(n, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
-    """A sampler that focuses on generating pixel art-like images."""
-    extra_args = {} if extra_args is None else extra_args
-    s_in = x.new_ones([x.shape[0]])
-
-    # Define pixel grid size typical for pixel art
-    grid_size = 32
-    for i in trange(len(sigmas) - 1, disable=disable):
-        # Adjust gamma to favor sharp transitions, which are typical in pixel art
-        gamma = min(s_churn / (len(sigmas) - 1), 0.5) if s_tmin <= sigmas[i] <= s_tmax else 0.
-        
-        sigma_hat = sigmas[i] * (1 + gamma * (sigmas[i] / sigmas[-1]))
-        if gamma > 0:
-            # Add higher noise for stylized pixelation effects
-            eps = torch.randn_like(x) * s_noise * (sigmas[i] ** 2 - sigma_hat ** 2) ** 0.5
-            x = x + eps
-        
-        denoised = n(x, sigma_hat * s_in, **extra_args)
-        d = to_d(x, sigma_hat, denoised)
-        
-        if callback is not None:
-            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
-        
-        if sigmas[i + 1] == 0:
-            # Euler method for sharp edge transitions
-            dt = sigmas[i + 1] - sigma_hat
-            x = x + d * dt
-        else:
-            # DPM-Solver-2 with tweaks for pixel art
-            sigma_mid = (sigma_hat + sigmas[i + 1]) / 2
-            dt_1 = sigma_mid - sigma_hat
-            dt_2 = sigmas[i + 1] - sigma_hat
-            x_2 = x + d * dt_1
-            denoised_2 = n(x_2, sigma_mid * s_in, **extra_args)
-            d_2 = to_d(x_2, sigma_mid, denoised_2)
-            x = x + d_2 * dt_2
-
-        # Apply grid-like constraint for pixelation
-        x = torch.nn.functional.interpolate(x, size=grid_size, mode='nearest')
-            
-    return torch.clamp(x, 0, 1)
-
-def get_sigmas_karras_mini_dalle(
-    n,
-    sigma_min,
-    sigma_max,
-    rho=7.0,
-    alpha=2.5,
-    wiggle=0.1,
-    device='cpu',
-    grid_size=8,
-):
-    # 1) exact Karras base
+def get_sigmas_karras_pixel_art(n, sigma_min, sigma_max, rho=7., device='cpu', quantize_levels=8):
+    """Constructs a quantized noise schedule for pixel art-like generation."""
     ramp = torch.linspace(0, 1, n, device=device)
-    
-    # Set the number of quantization levels to 32 for a 32x32 grid
-    k = grid_size
-    
-    # Quantize the ramp to k discrete levels
-    quantized_ramp = torch.floor(ramp * k) / k
-    
-    # Compute the inverse rho terms
     min_inv_rho = sigma_min ** (1 / rho)
     max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
     
-    # Calculate sigmas using the quantized ramp
-    sigmas = (max_inv_rho + quantized_ramp * (min_inv_rho - max_inv_rho)) ** rho
-    
-    # Append zero as per the standard convention
+    # Quantize the sigmas to create step-like transitions typical in pixel art
+    quantized = torch.round(base * quantize_levels) / quantize_levels
+    sigmas = torch.clamp(quantized, sigma_min, sigma_max)
     return append_zero(sigmas).to(device)
+
+
 
 def get_sigmas_karras_mini_dalle(n, sigma_min, sigma_max, rho=20., device='cpu',
                             freq=10.0, amp=0.05):
@@ -364,50 +301,53 @@ def get_sigmas_karras_mini_dalle(n, sigma_min, sigma_max, rho=20., device='cpu',
 
 def get_sigmas_karras_color_rainbow(n, sigma_min, sigma_max, device='cpu', cycles=3):
     """
-    Rainbow: per‑channel sine waves with 120° phase shifts.
-    Returns a tensor of shape (3, n+1) for RGB channels.
+    Rainbow: colorful sine wave modulation of Karras schedule.
     """
     ramp = torch.linspace(0, 1, n, device=device)
-    channels = []
-    for phase in [0, 2*math.pi/3, 4*math.pi/3]:
-        wave = 0.5 + 0.5 * torch.sin(2 * math.pi * cycles * ramp + phase)
-        sig = sigma_min + (sigma_max - sigma_min) * wave
-        channels.append(sig)
-    stacked = torch.stack(channels)  # 3 x n
-    # pad zero column for final step
-    zero = torch.zeros(3, 1, device=device)
-    return torch.cat([stacked, zero], dim=1).to(device)
+    min_inv_rho = sigma_min ** (1 / 7.)
+    max_inv_rho = sigma_max ** (1 / 7.)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** 7.
+    
+    # Create rainbow-like modulation with multiple sine waves
+    rainbow = (torch.sin(2 * math.pi * cycles * ramp) + 
+               torch.sin(2 * math.pi * cycles * ramp + 2*math.pi/3) + 
+               torch.sin(2 * math.pi * cycles * ramp + 4*math.pi/3)) / 3
+    rainbow = rainbow * 0.1 + 1.0  # Small modulation around 1.0
+    
+    sigmas = base * rainbow
+    return append_zero(sigmas).to(device)
 
 
 def get_sigmas_karras_rgb_split(n, sigma_min, sigma_max, device='cpu', offset=0.05):
     """
-    RGB Split: staggered linear ramps per channel for color-separation.
-    Returns shape (3, n+1).
+    RGB Split: creates a split-like effect in the sigma schedule.
     """
-    base_ramp = torch.linspace(0, 1, n, device=device)
-    splits = []
-    for i in range(3):
-        r = torch.clamp(base_ramp + i * offset, 0, 1)
-        sig = sigma_min + (sigma_max - sigma_min) * (1 - r)
-        splits.append(sig)
-    stacked = torch.stack(splits)
-    zero = torch.zeros(3, 1, device=device)
-    return torch.cat([stacked, zero], dim=1).to(device)
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / 7.)
+    max_inv_rho = sigma_max ** (1 / 7.)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** 7.
+    
+    # Create RGB split-like modulation with offset phases
+    split_r = torch.sin(2 * math.pi * 3 * ramp)
+    split_g = torch.sin(2 * math.pi * 3 * ramp + offset)
+    split_b = torch.sin(2 * math.pi * 3 * ramp + 2*offset)
+    split_effect = (split_r + split_g + split_b) / 3 * 0.1 + 1.0
+    
+    sigmas = base * split_effect
+    return append_zero(sigmas).to(device)
 
 
 def get_sigmas_karras_hsv_cycle(n, sigma_min, sigma_max, device='cpu'):
     """
-    HSV Cycle: map hue cycle to per-channel sigma modulation.
-    Returns shape (3, n+1) for RGB.
+    HSV Cycle: map hue cycle to sigma modulation based on HSV color space.
     """
-    import colorsys
     ramp = torch.linspace(0, 1, n, device=device)
-    waves = torch.zeros(n, 3, device=device)
-    for i, t in enumerate(ramp):
-        r, g, b = colorsys.hsv_to_rgb(float(t), 1.0, 1.0)
-        waves[i] = torch.tensor([r, g, b])
-    sigmas = sigma_min + (sigma_max - sigma_min) * waves  # n x 3
-    sigmas = torch.cat([sigmas, torch.zeros(1, 3, device=device)], dim=0)
+    # Create a cyclic pattern based on HSV hue cycle
+    hue_cycle = torch.sin(2 * math.pi * ramp) * 0.5 + 0.5
+    min_inv_rho = sigma_min ** (1 / 7.)
+    max_inv_rho = sigma_max ** (1 / 7.)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** 7.
+    sigmas = base * (0.8 + 0.4 * hue_cycle)  # Modulate with HSV cycle
     return append_zero(sigmas).to(device)
 def get_sigmas_karras_grid(n, sigma_min, sigma_max, rho=7., device='cpu',
                            freq=5.0, amp=0.05):
@@ -438,6 +378,101 @@ def get_sigmas_vp(n, beta_d=19.9, beta_min=0.1, eps_s=1e-3, device='cpu'):
     t = torch.linspace(1, eps_s, n, device=device)
     sigmas = torch.sqrt(torch.exp(beta_d * t ** 2 / 2 + beta_min * t) - 1)
     return append_zero(sigmas)
+
+
+def get_sigmas_karras_spiral(n, sigma_min, sigma_max, rho=7., device='cpu', 
+                            spiral_turns=3.0, spiral_tightness=0.8):
+    """
+    Spiral Scheduler: Creates a spiral-like pattern in noise scheduling.
+    The noise follows a spiral trajectory, creating unique artistic effects
+    with swirling patterns and gradual transitions.
+    """
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    
+    # Create spiral modulation
+    angle = 2 * math.pi * spiral_turns * ramp
+    radius = spiral_tightness * (1 - ramp)  # Spiral gets tighter as we progress
+    
+    # Combine radial and angular components for spiral effect
+    spiral_x = radius * torch.cos(angle)
+    spiral_y = radius * torch.sin(angle)
+    spiral_magnitude = torch.sqrt(spiral_x**2 + spiral_y**2)
+    
+    # Apply spiral modulation to base schedule
+    spiral_modulation = 1.0 + 0.15 * spiral_magnitude * torch.sin(angle * 2)
+    sigmas = base * spiral_modulation
+    
+    return append_zero(torch.clamp(sigmas, sigma_min, sigma_max)).to(device)
+
+
+def get_sigmas_karras_quantum(n, sigma_min, sigma_max, rho=7., device='cpu',
+                             tunnel_probability=0.3, quantum_levels=5):
+    """
+    Quantum Scheduler: Mimics quantum tunneling effects with probabilistic jumps.
+    Creates discrete energy levels with probabilistic transitions between them,
+    resulting in unique quantum-inspired artistic effects.
+    """
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    
+    # Create quantum energy levels
+    quantum_ramp = torch.floor(ramp * quantum_levels) / quantum_levels
+    
+    # Add quantum tunneling effects
+    torch.manual_seed(42)  # For reproducible quantum effects
+    tunnel_mask = torch.rand(n, device=device) < tunnel_probability
+    
+    # When tunneling occurs, jump to a different energy level
+    tunnel_jumps = torch.randint(0, quantum_levels, (n,), device=device) / quantum_levels
+    quantum_ramp = torch.where(tunnel_mask, tunnel_jumps, quantum_ramp)
+    
+    # Apply quantum modulation
+    quantum_base = (max_inv_rho + quantum_ramp * (min_inv_rho - max_inv_rho)) ** rho
+    
+    # Add wave-particle duality oscillation
+    wave_component = 1.0 + 0.1 * torch.sin(2 * math.pi * 7 * ramp)
+    sigmas = quantum_base * wave_component
+    
+    return append_zero(torch.clamp(sigmas, sigma_min, sigma_max)).to(device)
+
+
+def get_sigmas_karras_organic(n, sigma_min, sigma_max, rho=7., device='cpu',
+                             growth_rate=1.618, branching_factor=0.4):
+    """
+    Organic Scheduler: Simulates organic growth patterns with fibonacci-like sequences.
+    Creates natural, organic transitions that mimic biological growth patterns,
+    resulting in more natural and flowing artistic generation.
+    """
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    
+    # Golden ratio for organic growth (Fibonacci spiral)
+    phi = growth_rate  # Golden ratio
+    
+    # Create organic growth pattern
+    growth_pattern = torch.zeros_like(ramp)
+    for i in range(n):
+        t = ramp[i].item()
+        # Fibonacci-inspired growth with branching
+        fib_component = (phi ** t - (-1/phi) ** t) / math.sqrt(5)
+        branch_component = torch.sin(2 * math.pi * branching_factor * t * 5)
+        growth_pattern[i] = 1.0 + 0.2 * (fib_component % 1.0) + 0.1 * branch_component
+    
+    # Add natural variation (like leaf patterns)
+    leaf_pattern = 1.0 + 0.08 * torch.sin(2 * math.pi * 8 * ramp) * torch.cos(2 * math.pi * 3 * ramp)
+    
+    # Combine organic patterns
+    organic_modulation = growth_pattern * leaf_pattern
+    sigmas = base * organic_modulation
+    
+    return append_zero(torch.clamp(sigmas, sigma_min, sigma_max)).to(device)
 
 
 def to_d(x, sigma, denoised):
@@ -1167,9 +1202,7 @@ def sample_lms(model, x, sigmas, extra_args=None, callback=None, disable=None, n
     
     return x
 
-def to_d(x, sigma, denoised):
-    """Converts model output to the 'd' value for diffusion steps."""
-    return (x - denoised) / sigma
+
 
 
 class PIDStepSizeController:

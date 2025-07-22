@@ -624,7 +624,7 @@ SCHEDULER_NAMES = ["normal", "karras", "exponential", "sgm_uniform", "simple", "
                     "golden_ratio","dream","piecewise","trow_random_blsht",
                     "smokeywindy","attention_context","claylike","extreme_closeup_detail",
                     "rhythmic_beats","chaotic_swirl","dropout_spikes","inception_ramp","double_cosine",
-                    "color_rainbow","rgb_split","hsv_cycle"]
+                    "color_rainbow","rgb_split","hsv_cycle","spiral","quantum","organic"]
 SAMPLER_NAMES = KSAMPLER_NAMES + ["ddim", "uni_pc", "uni_pc_bh2"]
 
 def calculate_sigmas_scheduler(model, scheduler_name, steps):
@@ -706,7 +706,7 @@ def calculate_sigmas_scheduler(model, scheduler_name, steps):
         )
 
     elif scheduler_name == "trow_random_blsht":
-        sigmas = k_diffusion_sampling.get_karras_trow_random_blsht(
+        sigmas = k_diffusion_sampling.get_sigmas_karras_trow_random_blsht(
             n=steps, sigma_min=sigma_min, sigma_max=sigma_max
         )
 
@@ -776,7 +776,20 @@ def calculate_sigmas_scheduler(model, scheduler_name, steps):
             n=steps, sigma_min=sigma_min, sigma_max=sigma_max
         )
 
-    
+    elif scheduler_name == "spiral":
+        sigmas = k_diffusion_sampling.get_sigmas_karras_spiral(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+
+    elif scheduler_name == "quantum":
+        sigmas = k_diffusion_sampling.get_sigmas_karras_quantum(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
+
+    elif scheduler_name == "organic":
+        sigmas = k_diffusion_sampling.get_sigmas_karras_organic(
+            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
+        )
 
     else:
         print("error invalid scheduler", scheduler_name)

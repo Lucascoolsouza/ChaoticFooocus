@@ -254,7 +254,7 @@ def calculate_sigmas_scheduler_hacked(model, scheduler_name, steps):
 
     elif scheduler_name == "trow_random_blsht":
         sigmas = k_diffusion_sampling.get_sigmas_karras_trow_random_blsht(
-            n=8, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
+            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
         )
 
     elif scheduler_name == "comic_panel":
@@ -320,6 +320,21 @@ def calculate_sigmas_scheduler_hacked(model, scheduler_name, steps):
     elif scheduler_name == "hsv_cycle":
         sigmas = k_diffusion_sampling.get_sigmas_karras_hsv_cycle(
             n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
+        )
+
+    elif scheduler_name == "spiral":
+        sigmas = k_diffusion_sampling.get_sigmas_karras_spiral(
+            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
+        )
+
+    elif scheduler_name == "quantum":
+        sigmas = k_diffusion_sampling.get_sigmas_karras_quantum(
+            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
+        )
+
+    elif scheduler_name == "organic":
+        sigmas = k_diffusion_sampling.get_sigmas_karras_organic(
+            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
         )
         
     else:
