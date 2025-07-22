@@ -1,0 +1,51 @@
+scenery, indoor, no humans, vintage library, dusty books, sunlight rays, wooden shelves
+scenery, indoor, no humans, abandoned hospital, flickering lights, broken tiles
+scenery, indoor, no humans, futuristic lab, glowing panels, clean surfaces
+scenery, indoor, no humans, art gallery, empty halls, abstract paintings, soft lighting
+scenery, indoor, no humans, medieval kitchen, clay pots, fireplace, stone floor
+scenery, indoor, no humans, music room, grand piano, red curtains, wood floor
+scenery, indoor, no humans, classroom, chalkboard, desks askew, late afternoon light
+scenery, indoor, no humans, underground bunker, flickering LED lights, dust
+scenery, indoor, no humans, old theater, red seats, faded stage, silence
+scenery, indoor, no humans, clean bathroom, white tiles, mirror, soft blue light
+scenery, indoor, no humans, greenhouse, misted glass, tropical plants, wooden floor
+scenery, indoor, no humans, warehouse, metal shelves, concrete, dim light
+scenery, indoor, no humans, observatory, telescope, star maps, circular dome
+scenery, indoor, no humans, antique shop, cluttered, old furniture, warm lighting
+scenery, indoor, no humans, spa room, candles, wooden walls, bamboo floor
+scenery, indoor, no humans, cathedral hall, stained glass, pillars, stone floor
+scenery, indoor, no humans, dojo, bamboo mats, dim daylight, open windows
+scenery, indoor, no humans, vintage diner, red booths, neon sign outside, night
+scenery, indoor, no humans, cave dwelling, firepit, animal furs, stone walls
+scenery, indoor, no humans, futuristic bedroom, neon lights, floating bed, minimal
+scenery, indoor, no humans, apartment kitchen, dishes in sink, cozy light
+scenery, indoor, no humans, utility room, exposed pipes, buzzing light
+scenery, indoor, no humans, museum exhibit, fossils, clean layout, bright spotlights
+scenery, indoor, no humans, alchemy lab, glass bottles, candlelight, stone shelves
+scenery, indoor, no humans, tech workshop, wires, robotic arms, metal tables
+scenery, indoor, no humans, space station corridor, blinking panels, low gravity feel
+scenery, indoor, no humans, haunted nursery, broken crib, old wallpaper
+scenery, indoor, no humans, underground vault, gold bars, security lights
+scenery, indoor, no humans, prison cell, concrete bench, barred window
+scenery, indoor, no humans, cozy attic, old books, roof window, sunlight
+scenery, indoor, no humans, recording studio, soundproof walls, instruments
+scenery, indoor, no humans, luxury bathroom, marble, jacuzzi, orchids
+scenery, indoor, no humans, dusty wine cellar, old bottles, cobwebs
+scenery, indoor, no humans, living room, fireplace, messy cushions, night
+scenery, indoor, no humans, server room, glowing machines, humming
+scenery, indoor, no humans, space shuttle cockpit, stars visible, dim lights
+scenery, indoor, no humans, boiler room, rusted pipes, hot steam
+scenery, indoor, no humans, abandoned arcade, broken machines, neon reflections
+scenery, indoor, no humans, medieval dungeon, chains, moss, low light
+scenery, indoor, no humans, dressing room, empty mirror, scattered clothes
+scenery, indoor, no humans, luxury kitchen, marble island, stainless steel
+scenery, indoor, no humans, yoga studio, wood floor, morning light
+scenery, indoor, no humans, empty aquarium, water tanks, dark blue hues
+scenery, indoor, no humans, artist studio, canvas, scattered paint, natural light
+scenery, indoor, no humans, underground tunnel, water puddles, echo
+scenery, indoor, no humans, control room, monitors, static on screens
+scenery, indoor, no humans, underwater lab, pressurized doors, dim light
+scenery, indoor, no humans, magical chamber, glowing runes, enchanted items
+scenery, indoor, no humans, luxury train cabin, velvet, passing scenery
+scenery, indoor, no humans, bathhouse, steam, stone floor, hanging robes
+scenery, indoor, no humans, retro living room, CRT TV, carpet, vinyls
