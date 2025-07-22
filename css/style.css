@@ -158,6 +158,16 @@ input[type='checkbox'], input[type='radio'] {
     transition: all 0.3s ease-in-out;
 }
 
+.style_selections_tab {
+    height: 400px;
+    overflow-y: auto;
+}
+
+.wildcard_files {
+    height: 200px;
+    overflow-y: auto;
+}
+
 /* Ensure reactivity */
 @media (max-width: 768px) {
     .gradio-container {

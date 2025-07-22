@@ -652,7 +652,8 @@ with shared.gradio_root:
                 wildcard_files = gr.Textbox(
                 label='Wildcard Files',
                 lines=5,
-                interactive=False  # Make it non-editable
+                interactive=False,  # Make it non-editable
+                elem_classes=['wildcard_files']
                 )
                 gradio_receiver_style_selections = gr.Textbox(elem_id='gradio_receiver_style_selections', visible=False)
                 shared.gradio_root.load(list_wildcard_files,outputs=wildcard_files)
