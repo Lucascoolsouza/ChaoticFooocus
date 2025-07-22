@@ -95,6 +95,11 @@ class AsyncTask:
         self.inpaint_advanced_masking_checkbox = args.pop()
         self.invert_mask_checkbox = args.pop()
         self.inpaint_erode_or_dilate = args.pop()
+        self.nag_scale = args.pop()
+        self.nag_tau = args.pop()
+        self.nag_alpha = args.pop()
+        self.nag_negative_prompt = args.pop()
+        self.nag_end = args.pop()
         self.save_final_enhanced_image_only = args.pop() if not args_manager.args.disable_image_log else False
         self.save_metadata_to_images = args.pop() if not args_manager.args.disable_metadata else False
         self.metadata_scheme = MetadataScheme(
@@ -119,11 +124,6 @@ class AsyncTask:
         self.enhance_bg_removal_model = args.pop()
         self.enhance_uov_processing_order = args.pop()
         self.enhance_uov_prompt_type = args.pop()
-        self.nag_scale = args.pop()
-        self.nag_tau = args.pop()
-        self.nag_alpha = args.pop()
-        self.nag_negative_prompt = args.pop()
-        self.nag_end = args.pop()
         self.enhance_ctrls = []
         for _ in range(modules.config.default_enhance_tabs):
             enhance_enabled = args.pop()
