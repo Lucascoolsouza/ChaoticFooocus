@@ -35,7 +35,7 @@
     "default_scheduler": "exponential",
     "default_performance": "Speed",
     "default_prompt": "",
-    "default_prompt_negative": "",
+    "default_prompt_negative": "lowres, bad anatomy, bad hands, bar censor, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, out of focus, censorship, censored, ugly, old, deformed, amateur drawing, odd, fat, morphing, black and white, anime, ((simple background)), (((depth of field)))",
     "default_styles": [
     ],
     "default_aspect_ratio": "896*1152",
