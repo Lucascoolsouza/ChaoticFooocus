@@ -7,16 +7,18 @@ from torchvision.transforms.functional import InterpolationMode
 from modules.model_loader import load_file_from_url
 from modules.config import path_clip_vision
 from ldm_patched.modules.model_patcher import ModelPatcher
-from extras.BLIP.models.blip import blip_decoder
 
+# Import from transformers
+from transformers import AutoProcessor, Blip2ForConditionalGeneration
+from PIL import Image
 
 blip_image_eval_size = 384
-blip_repo_root = os.path.join(os.path.dirname(__file__), 'BLIP')
-
+# blip_repo_root = os.path.join(os.path.dirname(__file__), 'BLIP') # No longer needed
 
 class Interrogator:
     def __init__(self):
         self.blip_model = None
+        self.processor = None # Add processor
         self.load_device = torch.device('cpu')
         self.offload_device = torch.device('cpu')
         self.dtype = torch.float32
@@ -25,37 +27,35 @@ class Interrogator:
     @torch.inference_mode()
     def interrogate(self, img_rgb):
         if self.blip_model is None:
-            filename = load_file_from_url(
-                url='https://storage.googleapis.com/sfr-vision-language-research/BLIP/models/model_base_caption_capfilt_large.pth',
-                model_dir=path_clip_vision,
-                file_name='model_base_caption_capfilt_large.pth',
-            )
+            # Load BLIP-2 model and processor from Hugging Face
+            model_name = "Salesforce/blip2-opt-2.7b" # Using a specific BLIP-2 model
+            self.processor = AutoProcessor.from_pretrained(model_name)
+            model = Blip2ForConditionalGeneration.from_pretrained(model_name, torch_dtype=torch.float16)
 
-            model = blip_decoder(pretrained=filename, image_size=blip_image_eval_size, vit='base',
-                                 med_config=os.path.join(blip_repo_root, "configs", "med_config.json"))
             model.eval()
 
             self.load_device = model_management.text_encoder_device()
             self.offload_device = model_management.text_encoder_offload_device()
-            self.dtype = torch.float32
+            self.dtype = torch.float16 if model_management.should_use_fp16(device=self.load_device) else torch.float32
 
             model.to(self.offload_device)
 
-            if model_management.should_use_fp16(device=self.load_device):
+            if self.dtype == torch.float16:
                 model.half()
-                self.dtype = torch.float16
 
             self.blip_model = ModelPatcher(model, load_device=self.load_device, offload_device=self.offload_device)
 
         model_management.load_model_gpu(self.blip_model)
 
-        gpu_image = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Resize((blip_image_eval_size, blip_image_eval_size), interpolation=InterpolationMode.BICUBIC),
-            transforms.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711))
-        ])(img_rgb).unsqueeze(0).to(device=self.load_device, dtype=self.dtype)
+        # Convert img_rgb (numpy array) to PIL Image
+        pil_image = Image.fromarray(img_rgb)
 
-        caption = self.blip_model.model.generate(gpu_image, sample=True, num_beams=20, max_length=120)[0]
+        # Prepare inputs using the processor
+        inputs = self.processor(images=pil_image, return_tensors="pt").to(device=self.load_device, dtype=self.dtype)
+
+        # Generate caption
+        generated_ids = self.blip_model.model.generate(**inputs, max_new_tokens=120)
+        caption = self.processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
 
         return caption
 
