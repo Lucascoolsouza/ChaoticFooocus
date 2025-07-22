@@ -364,7 +364,13 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         initial_latent = latent
 
     minmax_sigmas = calculate_sigmas(sampler=sampler_name, scheduler=scheduler_name, model=final_unet.model, steps=steps, denoise=denoise)
-    sigma_min, sigma_max = minmax_sigmas[minmax_sigmas > 0].min(), minmax_sigmas.max()
+    positive_sigmas = minmax_sigmas[minmax_sigmas > 0]
+    if positive_sigmas.numel() == 0:
+        raise ValueError("No positive sigma values found. This indicates an issue with the sampler or model configuration.")
+    positive_sigmas = minmax_sigmas[minmax_sigmas > 0]
+    if positive_sigmas.numel() == 0:
+        raise ValueError("No positive sigma values found. This indicates an issue with the sampler or model configuration.")
+    sigma_min, sigma_max = positive_sigmas.min(), minmax_sigmas.max()
     sigma_min = float(sigma_min.cpu().numpy())
     sigma_max = float(sigma_max.cpu().numpy())
     print(f'[Sampler] sigma_min = {sigma_min}, sigma_max = {sigma_max}')

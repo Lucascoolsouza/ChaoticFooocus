@@ -125,13 +125,49 @@ input[type='checkbox'], input[type='radio'] {
 }
 
 /* --- Progress Bar --- */
-.progress-bar {
+#progress-bar {
+    height: 25px;
     background-color: var(--dark-matter-grey);
-    border-radius: 5px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+    position: relative;
 }
 
-.progress-bar > .progress {
-    background-color: var(--supernova-orange);
+#progress-bar .progress {
+    height: 100%;
+    background: linear-gradient(90deg, var(--nebula-pink) 0%, var(--supernova-orange) 100%);
+    border-radius: 12px;
+    transition: width 0.4s ease-in-out;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--starlight-white);
+    font-weight: bold;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+    position: relative;
+    overflow: hidden;
+}
+
+#progress-bar .progress::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.5) 50%, rgba(255, 255, 255, 0.1) 100%);
+    animation: progress-shine 2s infinite;
+    background-size: 200% 100%;
+}
+
+@keyframes progress-shine {
+    0% {
+        background-position: -200% 0;
+    }
+    100% {
+        background-position: 200% 0;
+    }
 }
 
 /* --- Specific Component Tweaks --- */
