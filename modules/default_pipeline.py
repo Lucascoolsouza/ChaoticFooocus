@@ -389,7 +389,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             tokenizer=model_base.clip.tokenizer.clip_l.tokenizer,
             tokenizer_2=model_base.clip.tokenizer.clip_g.tokenizer,
             unet=model_base.unet,
-            scheduler=model_base.model_sampling
+            scheduler=scheduler_name
         )
 
         # Prepare inputs for NAG pipeline
