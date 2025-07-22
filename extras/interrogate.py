@@ -28,9 +28,10 @@ class Interrogator:
     def interrogate(self, img_rgb):
         if self.blip_model is None:
             # Load BLIP-2 model and processor from Hugging Face
-            model_name = "Salesforce/blip2-flan-t5-xl" # Using a specific BLIP-2 model
-            self.processor = AutoProcessor.from_pretrained(model_name, local_files_only=False)
-            model = Blip2ForConditionalGeneration.from_pretrained(model_name, torch_dtype=torch.float16, local_files_only=False)
+            model_name = "Salesforce/blip-image-captioning-base" # Using a BLIP-1 model
+            from transformers import BlipProcessor, BlipForConditionalGeneration
+            self.processor = BlipProcessor.from_pretrained(model_name, local_files_only=False)
+            model = BlipForConditionalGeneration.from_pretrained(model_name, torch_dtype=torch.float16, local_files_only=False)
 
             model.eval()
 
@@ -54,7 +55,7 @@ class Interrogator:
         inputs = self.processor(images=pil_image, return_tensors="pt").to(device=self.load_device, dtype=self.dtype)
 
         # Generate caption
-        generated_ids = self.blip_model.model.generate(**inputs, max_new_tokens=120)
+        generated_ids = self.blip_model.model.generate(**inputs, max_new_tokens=500, num_beams=4, do_sample=False)
         caption = self.processor.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
 
         return caption
