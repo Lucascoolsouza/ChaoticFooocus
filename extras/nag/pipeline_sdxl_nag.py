@@ -23,7 +23,7 @@ from diffusers.pipelines.stable_diffusion_xl.pipeline_stable_diffusion_xl import
     rescale_noise_cfg,
 )
 
-from nag.attention_nag import NAGAttnProcessor2_0
+from .attention_nag import NAGAttnProcessor2_0
 
 
 class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
