@@ -119,6 +119,11 @@ class AsyncTask:
         self.enhance_bg_removal_model = args.pop()
         self.enhance_uov_processing_order = args.pop()
         self.enhance_uov_prompt_type = args.pop()
+        self.nag_scale = args.pop()
+        self.nag_tau = args.pop()
+        self.nag_alpha = args.pop()
+        self.nag_negative_prompt = args.pop()
+        self.nag_end = args.pop()
         self.enhance_ctrls = []
         for _ in range(modules.config.default_enhance_tabs):
             enhance_enabled = args.pop()
@@ -313,7 +318,12 @@ def worker():
             tiled=tiled,
             cfg_scale=async_task.cfg_scale,
             refiner_swap_method=async_task.refiner_swap_method,
-            disable_preview=async_task.disable_preview
+            disable_preview=async_task.disable_preview,
+            nag_scale=async_task.nag_scale,
+            nag_tau=async_task.nag_tau,
+            nag_alpha=async_task.nag_alpha,
+            nag_negative_prompt=async_task.nag_negative_prompt,
+            nag_end=async_task.nag_end
         )
 
         del positive_cond, negative_cond  # Save memory

@@ -17,6 +17,7 @@ import args_manager
 import copy
 import launch
 from extras.inpaint_mask import SAMOptions
+from modules.nag import NAGStableDiffusionXLPipeline
 
 from modules.sdxl_styles import legal_style_names
 from modules.private_logger import get_current_html_path
@@ -39,6 +40,50 @@ def generate_clicked(task: worker.AsyncTask):
 
     if len(task.args) == 0:
         return
+
+    execution_start_time = time.perf_counter()
+    finished = False
+
+    yield gr.update(visible=True, value=modules.html.make_progress_html(1, 'Waiting for task to start ...')),         gr.update(visible=True, value=None),         gr.update(visible=False, value=None),         gr.update(visible=False)
+
+    worker.async_tasks.append(task)
+
+    while not finished:
+        time.sleep(0.01)
+        if len(task.yields) > 0:
+            flag, product = task.yields.pop(0)
+            if flag == 'preview':
+
+                # help bad internet connection by skipping duplicated preview
+                if len(task.yields) > 0:  # if we have the next item
+                    if task.yields[0][0] == 'preview':   # if the next item is also a preview
+                        # print('Skipped one preview for better internet connection.')
+                        continue
+
+                percentage, title, image = product
+                yield gr.update(visible=True, value=modules.html.make_progress_html(percentage, title)),                     gr.update(visible=True, value=image) if image is not None else gr.update(),                     gr.update(),                     gr.update(visible=False)
+            if flag == 'results':
+                yield gr.update(visible=True),                     gr.update(visible=True),                     gr.update(visible=True, value=product),                     gr.update(visible=False)
+            if flag == 'finish':
+                if not args_manager.args.disable_enhance_output_sorting:
+                    product = sort_enhance_images(product, task)
+
+                yield gr.update(visible=False),
+                    gr.update(visible=False),
+                    gr.update(visible=False),
+                    gr.update(visible=True, value=product)
+                finished = True
+
+                # delete Fooocus temp images, only keep gradio temp images
+                if args_manager.args.disable_image_log:
+                    for filepath in product:
+                        if isinstance(filepath, str) and os.path.exists(filepath):
+                            os.remove(filepath)
+
+    execution_time = time.perf_counter() - execution_start_time
+    print(f'Total time: {execution_time:.2f} seconds')
+    return
+
 
     execution_start_time = time.perf_counter()
     finished = False
@@ -884,6 +929,19 @@ with shared.gradio_root:
                         freeu_s1 = gr.Slider(label='S1', minimum=0, maximum=4, step=0.01, value=0.99)
                         freeu_s2 = gr.Slider(label='S2', minimum=0, maximum=4, step=0.01, value=0.95)
                         freeu_ctrls = [freeu_enabled, freeu_b1, freeu_b2, freeu_s1, freeu_s2]
+                    with gr.Tab(label='NAG'):
+                        nag_scale = gr.Slider(label='NAG Scale', minimum=1.0, maximum=10.0, step=0.1, value=1.0,
+                                              info='Controls the strength of Normalized Attention Guidance.')
+                        nag_tau = gr.Slider(label='NAG Tau', minimum=0.0, maximum=5.0, step=0.1, value=2.5,
+                                            info='Threshold for attention guidance.')
+                        nag_alpha = gr.Slider(label='NAG Alpha', minimum=0.0, maximum=1.0, step=0.01, value=0.5,
+                                              info='Blending factor for attention guidance.')
+                        nag_negative_prompt = gr.Textbox(label='NAG Negative Prompt', show_label=True,
+                                                         placeholder="Type negative prompt for NAG here.", lines=2,
+                                                         elem_id='nag_negative_prompt')
+                        nag_end = gr.Slider(label='NAG End At Step', minimum=0.0, maximum=1.0, step=0.01, value=1.0,
+                                            info='When to end NAG guidance (0.0 to 1.0 of total steps).')
+                        nag_ctrls = [nag_scale, nag_tau, nag_alpha, nag_negative_prompt, nag_end]
 
                 def dev_mode_checked(r):
                     return gr.update(visible=r)
@@ -1017,6 +1075,7 @@ with shared.gradio_root:
         ctrls += [refiner_swap_method, controlnet_softness]
         ctrls += freeu_ctrls
         ctrls += inpaint_ctrls
+        ctrls += nag_ctrls
 
         if not args_manager.args.disable_image_log:
             ctrls += [save_final_enhanced_image_only]

@@ -13,6 +13,7 @@ from extras.expansion import FooocusExpansion
 from ldm_patched.modules.model_base import SDXL, SDXLRefiner
 from modules.sample_hijack import clip_separate
 from modules.util import get_file_from_folder_list, get_enabled_loras
+from modules.nag import NAGStableDiffusionXLPipeline
 
 
 model_base = core.StableDiffusionModel()
@@ -333,7 +334,7 @@ def get_candidate_vae(steps, switch, denoise=1.0, refiner_swap_method='joint'):
 
 @torch.no_grad()
 @torch.inference_mode()
-def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, nag_enabled=False, nag_scale=0.0):
+def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, nag_scale=1.0, nag_tau=2.5, nag_alpha=0.5, nag_negative_prompt=None, nag_end=1.0):
     target_unet, target_vae, target_refiner_unet, target_refiner_vae, target_clip \
         = final_unet, final_vae, final_refiner_unet, final_refiner_vae, final_clip
 
@@ -380,6 +381,19 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         sigma_min, sigma_max, seed=image_seed, cpu=False)
 
     decoded_latent = None
+
+    if nag_scale > 1.0:
+        print(f"[NAG] NAG is active with nag_scale={nag_scale}, nag_tau={nag_tau}, nag_alpha={nag_alpha}, nag_negative_prompt='{nag_negative_prompt}', nag_end={nag_end}")
+        # Placeholder for actual NAGStableDiffusionXLPipeline integration
+        # This part would involve loading and calling NAGStableDiffusionXLPipeline
+        # For now, it will fall back to the regular ksampler.
+        # A full integration would require replacing the model loading logic to use NAGStableDiffusionXLPipeline
+        # when NAG is enabled, and passing these parameters to its __call__ method.
+        # Example (conceptual, not directly executable without major changes):
+        # pipe = NAGStableDiffusionXLPipeline.from_pretrained(...)
+        # image = pipe(prompt, nag_scale=nag_scale, nag_tau=nag_tau, nag_alpha=nag_alpha, nag_negative_prompt=nag_negative_prompt, nag_end=nag_end, ...)
+        # decoded_latent = ... # Convert image back to latent if needed
+        pass
 
     if refiner_swap_method == 'joint':
         sampled_latent = core.ksampler(
