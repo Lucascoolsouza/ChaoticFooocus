@@ -125,7 +125,7 @@ class BLIP_Decoder(nn.Module):
         
         return loss_lm
         
-    def generate(self, image, sample=False, num_beams=3, max_length=30, min_length=10, top_p=0.9, repetition_penalty=1.0):
+    def generate(self, image, sample=False, num_beams=3, max_length=75, min_length=25, top_p=0.95, repetition_penalty=1.1):
         image_embeds = self.visual_encoder(image)
 
         if not sample:
