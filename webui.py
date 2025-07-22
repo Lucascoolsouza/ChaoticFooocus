@@ -17,7 +17,7 @@ import args_manager
 import copy
 import launch
 from extras.inpaint_mask import SAMOptions
-from modules.nag import NAGStableDiffusionXLPipeline
+from extras.nag import NAGStableDiffusionXLPipeline
 
 from modules.sdxl_styles import legal_style_names
 from modules.private_logger import get_current_html_path
