@@ -418,5 +418,20 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         )
         decoded_latent = output.images # The output is a StableDiffusionXLPipelineOutput object, access images attribute
     else:
-        pass
-        # Existing ksampler logic
+        decoded_latent = core.ksampler(
+            model=final_unet,
+            positive=positive_cond,
+            negative=negative_cond,
+            latent=initial_latent,
+            seed=image_seed,
+            steps=steps,
+            cfg=cfg_scale,
+            sampler_name=sampler_name,
+            scheduler=scheduler_name,
+            denoise=denoise,
+            disable_preview=disable_preview,
+            refiner=final_refiner_unet,
+            refiner_switch=switch,
+            sigmas=minmax_sigmas,
+            callback_function=callback
+        )['samples']
