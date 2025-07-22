@@ -1001,7 +1001,7 @@ with shared.gradio_root:
         ctrls += [
             prompt, negative_prompt, style_selections,
             performance_selection, aspect_ratios_selection, image_number, output_format, image_seed,
-            read_wildcards_in_order, sharpness, guidance_scale, nag_enabled, nag_scale
+            read_wildcards_in_order, sharpness, guidance_scale
         ]
 
         ctrls += [base_model, refiner_model, refiner_switch] + lora_ctrls
