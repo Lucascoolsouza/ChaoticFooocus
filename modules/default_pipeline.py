@@ -384,10 +384,10 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         # Instantiate NAGStableDiffusionXLPipeline
         nag_pipe = NAGStableDiffusionXLPipeline(
             vae=model_base.vae,
-            text_encoder=model_base.clip.text_encoder,
-            text_encoder_2=model_base.clip.text_encoder_2,
-            tokenizer=model_base.clip.tokenizer,
-            tokenizer_2=model_base.clip.tokenizer_2,
+            text_encoder=model_base.text_encoder,
+            text_encoder_2=model_base.text_encoder_2,
+            tokenizer=model_base.tokenizer,
+            tokenizer_2=model_base.tokenizer_2,
             unet=model_base.unet,
             scheduler=model_base.model_sampling
         )
