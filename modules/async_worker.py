@@ -326,6 +326,9 @@ def worker():
             nag_end=async_task.nag_end
         )
 
+        if imgs is None:
+            imgs = []
+
         del positive_cond, negative_cond  # Save memory
         if inpaint_worker.current_task is not None:
             imgs = [inpaint_worker.current_task.post_process(x) for x in imgs]
