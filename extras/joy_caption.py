@@ -186,7 +186,9 @@ def tag_captioner(image_rgb):
 
 # Cleanup function to free memory
 def cleanup_joy_caption():
-    """Free up memory by clearing the global model"""
+    """
+    Free up memory by clearing the global model
+    """
     global global_model, global_processor
     
     if global_model is not None:
