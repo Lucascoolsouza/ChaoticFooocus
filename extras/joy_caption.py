@@ -32,21 +32,55 @@ def default_captioner(image_rgb, caption_type="descriptive", caption_length="any
     if extra_options is None:
         extra_options = []
     
-    # Model configuration
-    model_name = "unsloth/llama-3.2-11b-vision-instruct"
+    # Model configuration - try different model variants
+    model_variants = [
+        "meta-llama/Llama-3.2-11B-Vision-Instruct",  # Official model
+        "unsloth/llama-3.2-11b-vision-instruct",     # Unsloth variant
+        "meta-llama/Llama-3.2-11B-Vision"            # Base model
+    ]
     
     try:
         # Initialize model and processor if not already loaded
         if global_model is None or global_processor is None:
             print("Loading Joy Caption model...")
-            global_processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
-            global_tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-            global_model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                torch_dtype=torch.float16,
-                device_map="auto",
-                trust_remote_code=True
-            )
+            
+            # Try different model variants until one works
+            model_loaded = False
+            for model_name in model_variants:
+                try:
+                    print(f"Trying model: {model_name}")
+                    global_processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
+                    global_tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+                    global_model = AutoModelForCausalLM.from_pretrained(
+                        model_name,
+                        torch_dtype=torch.float16,
+                        device_map="auto",
+                        trust_remote_code=True
+                    )
+                    print(f"Successfully loaded model: {model_name}")
+                    model_loaded = True
+                    break
+                except Exception as e:
+                    print(f"Failed to load {model_name}: {str(e)}")
+                    continue
+            
+            if not model_loaded:
+                # Fallback to a more reliable model
+                print("Trying fallback model: microsoft/Florence-2-large")
+                try:
+                    global_processor = AutoProcessor.from_pretrained("microsoft/Florence-2-large", trust_remote_code=True)
+                    global_model = AutoModelForCausalLM.from_pretrained(
+                        "microsoft/Florence-2-large",
+                        torch_dtype=torch.float16,
+                        device_map="auto",
+                        trust_remote_code=True
+                    )
+                    global_tokenizer = global_processor.tokenizer
+                    print("Successfully loaded fallback model: microsoft/Florence-2-large")
+                    model_loaded = True
+                except Exception as fallback_error:
+                    print(f"Fallback model also failed: {str(fallback_error)}")
+                    raise Exception("Failed to load any available vision-language model")
             print("Joy Caption model loaded successfully")
         
         # Convert numpy array to PIL Image

@@ -74,7 +74,7 @@ SCHEDULER_NAMES = ["normal", "karras", "exponential", "sgm_uniform", "simple",
                     "!golden_ratio","dream","piecewise","trow_random_blsht",
                     "smokeywindy","attention_context","claylike","!extreme_closeup_detail",
                     "!rhythmic_beats","chaotic_swirl","!!dropout_spikes","!inception_ramp","?double_cosine",
-                    "!!color_rainbow","!!rgb_split","!!hsv_cycle"]
+                    "!!color_rainbow","!!rgb_split","!!hsv_cycle","spiral","quantum","organic"]
 
 SAMPLER_NAMES = KSAMPLER_NAMES + list(SAMPLER_EXTRA.keys())
 

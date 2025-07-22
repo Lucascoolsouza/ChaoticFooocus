@@ -318,23 +318,25 @@ def worker():
             )]
         else:
             imgs = pipeline.process_diffusion(
-                positive_cond=positive_cond,
-                negative_cond=negative_cond,
-                steps=steps,
-                switch=switch,
-                width=width,
-                height=height,
-                image_seed=task['task_seed'],
-                callback=callback,
-                sampler_name=async_task.sampler_name,
-                scheduler_name=final_scheduler_name,
-                latent=initial_latent,
-                denoise=denoising_strength,
-                tiled=tiled,
-                cfg_scale=async_task.cfg_scale,
-                refiner_swap_method=async_task.refiner_swap_method,
-                disable_preview=async_task.disable_preview
-            )
+            positive_cond=positive_cond,
+            negative_cond=negative_cond,
+            steps=steps,
+            switch=switch,
+            width=width,
+            height=height,
+            image_seed=task['task_seed'],
+            callback=callback,
+            sampler_name=async_task.sampler_name,
+            scheduler_name=final_scheduler_name,
+            latent=initial_latent,
+            denoise=denoising_strength,
+            tiled=tiled,
+            cfg_scale=async_task.cfg_scale,
+            refiner_swap_method=async_task.refiner_swap_method,
+            disable_preview=async_task.disable_preview,
+            nag_enabled=async_task.nag_enabled,
+            nag_scale=async_task.nag_scale
+        )
 
         del positive_cond, negative_cond  # Save memory
         if inpaint_worker.current_task is not None:

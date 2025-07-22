@@ -260,12 +260,15 @@ def get_previewer(model):
     return preview_function
 
 
+import torch.nn.functional as F
+
 @torch.no_grad()
 @torch.inference_mode()
 def ksampler(model, positive, negative, latent, seed=None, steps=30, cfg=7.0, sampler_name='dpmpp_2m_sde_gpu',
              scheduler='karras', denoise=1.0, disable_noise=False, start_step=None, last_step=None,
              force_full_denoise=False, callback_function=None, refiner=None, refiner_switch=-1,
-             previewer_start=None, previewer_end=None, sigmas=None, noise_mean=None, disable_preview=False):
+             previewer_start=None, previewer_end=None, sigmas=None, noise_mean=None, disable_preview=False,
+             nag_enabled=False, nag_scale=0.0):
 
     if sigmas is not None:
         sigmas = sigmas.clone().to(ldm_patched.modules.model_management.get_torch_device())
@@ -306,6 +309,17 @@ def ksampler(model, positive, negative, latent, seed=None, steps=30, cfg=7.0, sa
     modules.sample_hijack.refiner_switch_step = refiner_switch
     ldm_patched.modules.samplers.sample = modules.sample_hijack.sample_hacked
 
+    if nag_enabled:
+        def model_function_wrapper(func):
+            def noisy_negative_function(args):
+                model_output = func(args)
+                if nag_scale > 0:
+                    noise_pred_nag = func({k: v for k, v in args.items() if k != 'cond'})
+                    model_output = model_output - nag_scale * F.normalize(noise_pred_nag.abs(), p=2, dim=1) * (model_output - noise_pred_nag)
+                return model_output
+            return noisy_negative_function
+        model.model_options['model_function_wrapper'] = model_function_wrapper
+
     try:
         samples = ldm_patched.modules.sample.sample(model,
                                                     noise, steps, cfg, sampler_name, scheduler,
@@ -321,6 +335,8 @@ def ksampler(model, positive, negative, latent, seed=None, steps=30, cfg=7.0, sa
         out["samples"] = samples
     finally:
         modules.sample_hijack.current_refiner = None
+        if nag_enabled:
+            del model.model_options['model_function_wrapper']
 
     return out
 
