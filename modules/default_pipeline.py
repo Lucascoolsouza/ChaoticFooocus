@@ -392,9 +392,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             refiner_switch=switch,
             previewer_start=0,
             previewer_end=steps,
-            disable_preview=disable_preview,
-            nag_enabled=nag_enabled,
-            nag_scale=nag_scale
+            disable_preview=disable_preview
         )
         decoded_latent = core.decode_vae(vae=target_vae, latent_image=sampled_latent, tiled=tiled)
 
@@ -413,9 +411,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             scheduler=scheduler_name,
             previewer_start=0,
             previewer_end=steps,
-            disable_preview=disable_preview,
-            nag_enabled=nag_enabled,
-            nag_scale=nag_scale
+            disable_preview=disable_preview
         )
         print('Refiner swapped by changing ksampler. Noise preserved.')
 
@@ -438,9 +434,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             scheduler=scheduler_name,
             previewer_start=switch,
             previewer_end=steps,
-            disable_preview=disable_preview,
-            nag_enabled=nag_enabled,
-            nag_scale=nag_scale
+            disable_preview=disable_preview
         )
 
         target_model = target_refiner_vae
@@ -468,9 +462,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             scheduler=scheduler_name,
             previewer_start=0,
             previewer_end=steps,
-            disable_preview=disable_preview,
-            nag_enabled=nag_enabled,
-            nag_scale=nag_scale
+            disable_preview=disable_preview
         )
         print('Fooocus VAE-based swap.')
 
@@ -510,9 +502,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             previewer_end=steps,
             sigmas=sigmas,
             noise_mean=noise_mean,
-            disable_preview=disable_preview,
-            nag_enabled=nag_enabled,
-            nag_scale=nag_scale
+            disable_preview=disable_preview
         )
 
         target_model = target_refiner_vae
