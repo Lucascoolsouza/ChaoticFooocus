@@ -59,7 +59,7 @@ class FooocusExpansion:
         # t198 = self.tokenizer('\n', return_tensors="np")
         # eos = self.tokenizer.eos_token_id
 
-        self.model = AutoModelForCausalLM.from_pretrained(path_fooocus_expansion)
+        self.model = AutoModelForCausalLM.from_pretrained(path_fooocus_expansion, attn_implementation="eager")
         self.model.eval()
 
         load_device = model_management.text_encoder_device()
