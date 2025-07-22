@@ -1,5 +1,5 @@
 {
-    "default_model": "",
+    "default_model": "888XLDiffusion_v02BLUESTAR.safetensors",
     "default_refiner": "None",
     "default_refiner_switch": 0.5,
     "default_loras": [
@@ -40,7 +40,7 @@
     ],
     "default_aspect_ratio": "896*1152",
     "default_overwrite_step": -1,
-    "checkpoint_downloads": {},
+    "checkpoint_downloads": {"888XLDiffusion_v02BLUESTAR.safetensors": "https://huggingface.co/Pinguin/888-xl-diffusion-testmodel-v02-blue-star-sdxl-SAFETENSORS/resolve/main/888XLDiffusion_v02BLUESTAR.safetensors"},
     "embeddings_downloads": {},
     "lora_downloads": {},
     "previous_default_models": [
