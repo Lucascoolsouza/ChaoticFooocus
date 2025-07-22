@@ -9,7 +9,7 @@ from modules.config import path_clip_vision
 from ldm_patched.modules.model_patcher import ModelPatcher
 
 # Import from transformers
-from transformers import AutoProcessor, Blip2ForConditionalGeneration
+from transformers import AutoProcessor, Blip2ForConditionalGeneration, Blip2Processor
 from PIL import Image
 
 blip_image_eval_size = 384
