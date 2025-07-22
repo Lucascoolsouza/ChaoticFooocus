@@ -152,6 +152,7 @@ def default_captioner(image_rgb, caption_type="descriptive", caption_length="any
     
     # Model configuration - try different model variants
     model_variants = [
+        "fancyfeast/llama-joycaption-beta-one-hf-llava", # New JoyCaption model
         "meta-llama/Llama-3.2-11B-Vision-Instruct",  # Official model
         "unsloth/llama-3.2-11b-vision-instruct",     # Unsloth variant
         "meta-llama/Llama-3.2-11B-Vision"            # Base model

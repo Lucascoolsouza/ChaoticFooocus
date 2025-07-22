@@ -29,8 +29,8 @@ class Interrogator:
         if self.blip_model is None:
             # Load BLIP-2 model and processor from Hugging Face
             model_name = "Salesforce/blip2-opt-2.7b" # Using a specific BLIP-2 model
-            self.processor = AutoProcessor.from_pretrained(model_name)
-            model = Blip2ForConditionalGeneration.from_pretrained(model_name, torch_dtype=torch.float16)
+            self.processor = AutoProcessor.from_pretrained(model_name, local_files_only=False)
+            model = Blip2ForConditionalGeneration.from_pretrained(model_name, torch_dtype=torch.float16, local_files_only=False)
 
             model.eval()
 
