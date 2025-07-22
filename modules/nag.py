@@ -1,50 +1,87 @@
 """
 NAG (Negative Attention Guidance) implementation for Stable Diffusion XL
+Based on: https://github.com/sag-org/negative-attention-guidance
 """
 
 import torch
 import torch.nn.functional as F
-from typing import Optional, Union, List, Dict, Any
+from typing import Optional, Union, List, Dict, Any, Callable
+import inspect
+
+try:
+    from diffusers import StableDiffusionXLPipeline
+    from diffusers.utils import logging
+    from diffusers.pipelines.stable_diffusion_xl.pipeline_stable_diffusion_xl import (
+        retrieve_timesteps,
+        rescale_noise_cfg,
+    )
+    DIFFUSERS_AVAILABLE = True
+except ImportError:
+    DIFFUSERS_AVAILABLE = False
+    print("diffusers not available - NAG will use basic implementation")
+
+logger = logging.get_logger(__name__) if DIFFUSERS_AVAILABLE else None
 
 
-class NAGStableDiffusionXLPipeline:
+class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline if DIFFUSERS_AVAILABLE else object):
     """
     NAG-enabled Stable Diffusion XL Pipeline
     
-    This pipeline implements Negative Attention Guidance (NAG) which helps improve
-    prompt adherence by using negative prompts more effectively.
+    This pipeline extends the standard StableDiffusionXLPipeline with 
+    Negative Attention Guidance (NAG) which helps improve prompt adherence 
+    by using negative prompts more effectively.
     """
     
-    def __init__(
-        self,
-        vae,
-        text_encoder,
-        text_encoder_2,
-        tokenizer,
-        tokenizer_2,
-        unet,
-        scheduler,
-        image_processor,
-        **kwargs
-    ):
-        self.vae = vae
-        self.text_encoder = text_encoder
-        self.text_encoder_2 = text_encoder_2
-        self.tokenizer = tokenizer
-        self.tokenizer_2 = tokenizer_2
-        self.unet = unet
-        self.scheduler = scheduler
-        self.image_processor = image_processor
-        
+    def __init__(self, *args, **kwargs):
+        if DIFFUSERS_AVAILABLE:
+            super().__init__(*args, **kwargs)
+        else:
+            # Fallback initialization for basic compatibility
+            self.vae = kwargs.get('vae')
+            self.text_encoder = kwargs.get('text_encoder')
+            self.text_encoder_2 = kwargs.get('text_encoder_2')
+            self.tokenizer = kwargs.get('tokenizer')
+            self.tokenizer_2 = kwargs.get('tokenizer_2')
+            self.unet = kwargs.get('unet')
+            self.scheduler = kwargs.get('scheduler')
+            self.image_processor = kwargs.get('image_processor')
+    
     def __call__(
         self,
-        prompt: str,
-        nag_negative_prompt: str = "",
-        guidance_scale: float = 7.5,
-        nag_scale: float = 3.0,
+        prompt: Union[str, List[str]] = None,
+        prompt_2: Optional[Union[str, List[str]]] = None,
+        height: Optional[int] = None,
+        width: Optional[int] = None,
         num_inference_steps: int = 50,
-        height: int = 1024,
-        width: int = 1024,
+        timesteps: List[int] = None,
+        denoising_end: Optional[float] = None,
+        guidance_scale: float = 5.0,
+        negative_prompt: Optional[Union[str, List[str]]] = None,
+        negative_prompt_2: Optional[Union[str, List[str]]] = None,
+        num_images_per_prompt: Optional[int] = 1,
+        eta: float = 0.0,
+        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
+        latents: Optional[torch.FloatTensor] = None,
+        prompt_embeds: Optional[torch.FloatTensor] = None,
+        negative_prompt_embeds: Optional[torch.FloatTensor] = None,
+        pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
+        negative_pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
+        output_type: Optional[str] = "pil",
+        return_dict: bool = True,
+        cross_attention_kwargs: Optional[Dict[str, Any]] = None,
+        guidance_rescale: float = 0.0,
+        original_size: Optional[Tuple[int, int]] = None,
+        crops_coords_top_left: Tuple[int, int] = (0, 0),
+        target_size: Optional[Tuple[int, int]] = None,
+        negative_original_size: Optional[Tuple[int, int]] = None,
+        negative_crops_coords_top_left: Tuple[int, int] = (0, 0),
+        negative_target_size: Optional[Tuple[int, int]] = None,
+        clip_skip: Optional[int] = None,
+        callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
+        callback_on_step_end_tensor_inputs: List[str] = ["latents"],
+        # NAG-specific parameters
+        nag_negative_prompt: Optional[Union[str, List[str]]] = None,
+        nag_scale: float = 3.0,
         **kwargs
     ):
         """

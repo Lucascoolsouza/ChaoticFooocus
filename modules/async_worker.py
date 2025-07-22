@@ -298,26 +298,8 @@ def worker():
                         positive_cond, negative_cond,
                         pipeline.loaded_ControlNets[cn_path], cn_img, cn_weight, 0, cn_stop)
 
-        if async_task.nag_enabled:
-            pipe = NAGStableDiffusionXLPipeline(
-                vae=pipeline.vae,
-                text_encoder=pipeline.text_encoder,
-                text_encoder_2=pipeline.text_encoder_2,
-                tokenizer=pipeline.tokenizer,
-                tokenizer_2=pipeline.tokenizer_2,
-                unet=pipeline.final_unet,
-                scheduler=pipeline.scheduler,
-                image_processor=pipeline.image_processor
-            )
-            imgs = [pipe(
-                prompt=task['task_prompt'],
-                nag_negative_prompt=task['task_negative_prompt'],
-                guidance_scale=async_task.cfg_scale,
-                nag_scale=async_task.nag_scale,
-                num_inference_steps=steps,
-            )]
-        else:
-            imgs = pipeline.process_diffusion(
+        # Use the pipeline.process_diffusion which now supports NAG
+        imgs = pipeline.process_diffusion(
             positive_cond=positive_cond,
             negative_cond=negative_cond,
             steps=steps,

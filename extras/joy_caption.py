@@ -10,6 +10,77 @@ from modules.config import path_clip_vision
 from modules.model_loader import load_file_from_url
 import os
 
+# GGUF support
+try:
+    from llama_cpp import Llama
+    from llama_cpp.llama_chat_format import Llava15ChatHandler
+    GGUF_AVAILABLE = True
+except ImportError:
+    GGUF_AVAILABLE = False
+    print("llama-cpp-python not available. Install with: pip install llama-cpp-python")
+
+def load_gguf_model():
+    """Load Joy Caption GGUF model - more efficient for Colab"""
+    global global_gguf_model
+    
+    if not GGUF_AVAILABLE:
+        print("GGUF support not available. Installing llama-cpp-python...")
+        try:
+            import subprocess
+            import sys
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "llama-cpp-python[server]"])
+            print("llama-cpp-python installed successfully")
+            # Re-import after installation
+            from llama_cpp import Llama
+            from llama_cpp.llama_chat_format import Llava15ChatHandler
+            global GGUF_AVAILABLE
+            GGUF_AVAILABLE = True
+        except Exception as e:
+            print(f"Failed to install llama-cpp-python: {e}")
+            return False
+    
+    if global_gguf_model is not None:
+        return True
+    
+    try:
+        # Create models directory
+        models_dir = os.path.join(os.getcwd(), "models", "joy_caption")
+        os.makedirs(models_dir, exist_ok=True)
+        
+        model_info = GGUF_MODELS["joy-caption-alpha-two-hf-llava"]
+        
+        # Download main model
+        model_path = os.path.join(models_dir, model_info["filename"])
+        if not os.path.exists(model_path):
+            print(f"Downloading Joy Caption GGUF model...")
+            load_file_from_url(model_info["url"], model_path)
+        
+        # Download mmproj model
+        mmproj_path = os.path.join(models_dir, model_info["mmproj_filename"])
+        if not os.path.exists(mmproj_path):
+            print(f"Downloading Joy Caption mmproj model...")
+            load_file_from_url(model_info["mmproj_url"], mmproj_path)
+        
+        # Initialize GGUF model with vision support
+        print("Loading Joy Caption GGUF model...")
+        chat_handler = Llava15ChatHandler(clip_model_path=mmproj_path)
+        
+        global_gguf_model = Llama(
+            model_path=model_path,
+            chat_handler=chat_handler,
+            n_ctx=4096,  # Context length
+            n_gpu_layers=-1,  # Use GPU if available
+            verbose=False
+        )
+        
+        print("Joy Caption GGUF model loaded successfully!")
+        return True
+        
+    except Exception as e:
+        print(f"Failed to load GGUF model: {e}")
+        global_gguf_model = None
+        return False
+
 def setup_hf_auth():
     """Setup HuggingFace authentication for Colab"""
     try:
@@ -49,6 +120,17 @@ def setup_hf_auth():
 global_model = None
 global_processor = None
 global_tokenizer = None
+global_gguf_model = None
+
+# GGUF model URLs - these are quantized and work without authentication
+GGUF_MODELS = {
+    "joy-caption-alpha-two-hf-llava": {
+        "url": "https://huggingface.co/unsloth/llama-3.2-11b-vision-instruct-bnb-4bit/resolve/main/model-q4_k_m.gguf",
+        "filename": "joy-caption-alpha-two-q4_k_m.gguf",
+        "mmproj_url": "https://huggingface.co/unsloth/llama-3.2-11b-vision-instruct-bnb-4bit/resolve/main/mmproj-model-f16.gguf",
+        "mmproj_filename": "joy-caption-mmproj-f16.gguf"
+    }
+}
 
 def default_captioner(image_rgb, caption_type="descriptive", caption_length="any", extra_options=None):
     """
@@ -76,9 +158,47 @@ def default_captioner(image_rgb, caption_type="descriptive", caption_length="any
     ]
     
     try:
+        # Try GGUF model first (most efficient for Colab)
+        if global_gguf_model is None and global_model is None:
+            print("Attempting to load Joy Caption GGUF model...")
+            if load_gguf_model():
+                # Convert numpy array to PIL Image
+                if isinstance(image_rgb, np.ndarray):
+                    image = Image.fromarray(image_rgb)
+                else:
+                    image = image_rgb
+                    
+                # Ensure RGB format
+                if image.mode != 'RGB':
+                    image = image.convert('RGB')
+                
+                # Build prompt based on caption type and length
+                prompt = build_joy_prompt(caption_type, caption_length, extra_options)
+                
+                # Generate caption using GGUF model
+                return generate_gguf_caption(image, prompt)
+        
+        # If GGUF model is already loaded, use it
+        if global_gguf_model is not None:
+            # Convert numpy array to PIL Image
+            if isinstance(image_rgb, np.ndarray):
+                image = Image.fromarray(image_rgb)
+            else:
+                image = image_rgb
+                
+            # Ensure RGB format
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            
+            # Build prompt based on caption type and length
+            prompt = build_joy_prompt(caption_type, caption_length, extra_options)
+            
+            # Generate caption using GGUF model
+            return generate_gguf_caption(image, prompt)
+        
         # Initialize model and processor if not already loaded
         if global_model is None or global_processor is None:
-            print("Loading Joy Caption model...")
+            print("GGUF model not available, trying HuggingFace models...")
             
             # Setup HuggingFace authentication for gated models
             auth_available = setup_hf_auth()
@@ -292,6 +412,52 @@ def default_captioner(image_rgb, caption_type="descriptive", caption_length="any
         print(f"Error in Joy Caption: {str(e)}")
         return f"Error generating caption: {str(e)}"
 
+def generate_gguf_caption(image, prompt):
+    """Generate caption using GGUF model"""
+    global global_gguf_model
+    
+    try:
+        # Save image temporarily for GGUF processing
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
+            image.save(tmp_file.name)
+            temp_image_path = tmp_file.name
+        
+        try:
+            # Create messages for vision model
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": f"file://{temp_image_path}"}},
+                        {"type": "text", "text": prompt}
+                    ]
+                }
+            ]
+            
+            # Generate response
+            response = global_gguf_model.create_chat_completion(
+                messages=messages,
+                max_tokens=300,
+                temperature=0.6,
+                top_p=0.9,
+                stream=False
+            )
+            
+            caption = response['choices'][0]['message']['content'].strip()
+            return caption
+            
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_image_path)
+            except:
+                pass
+                
+    except Exception as e:
+        print(f"Error generating GGUF caption: {e}")
+        return f"Error generating caption: {str(e)}"
+
 def build_joy_prompt(caption_type, caption_length, extra_options):
     """Build the appropriate prompt for Joy Caption based on parameters"""
     
@@ -379,7 +545,11 @@ def tag_captioner(image_rgb):
 # Cleanup function to free memory
 def cleanup_joy_caption():
     """Free up memory by clearing the global model"""
-    global global_model, global_processor, global_tokenizer
+    global global_model, global_processor, global_tokenizer, global_gguf_model
+    
+    if global_gguf_model is not None:
+        del global_gguf_model
+        global_gguf_model = None
     
     if global_model is not None:
         del global_model
