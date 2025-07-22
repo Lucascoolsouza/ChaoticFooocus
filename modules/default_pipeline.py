@@ -306,17 +306,12 @@ def calculate_sigmas_all(sampler, model, scheduler, steps):
 @torch.no_grad()
 @torch.inference_mode()
 def calculate_sigmas(sampler, model, scheduler, steps, denoise):
-    print(f"calculate_sigmas: steps={steps}, denoise={denoise}")
     if denoise is None or denoise > 0.9999:
         sigmas = calculate_sigmas_all(sampler, model, scheduler, steps)
-        print(f"calculate_sigmas: sigmas (full) = {sigmas}")
     else:
         new_steps = int(steps / denoise)
-        print(f"calculate_sigmas: new_steps={new_steps}")
-        sigmas_all = calculate_sigmas_all(sampler, model, scheduler, new_steps)
-        print(f"calculate_sigmas: sigmas_all (before slicing) = {sigmas_all}")
-        sigmas = sigmas_all[-(steps + 1):]
-        print(f"calculate_sigmas: sigmas (after slicing) = {sigmas}")
+        sigmas = calculate_sigmas_all(sampler, model, scheduler, new_steps)
+        sigmas = sigmas[-(steps + 1):]
     return sigmas
 
 
@@ -339,7 +334,7 @@ def get_candidate_vae(steps, switch, denoise=1.0, refiner_swap_method='joint'):
 
 @torch.no_grad()
 @torch.inference_mode()
-def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, nag_scale=1.0, nag_tau=2.5, nag_alpha=0.5, nag_negative_prompt=None, nag_end=1.0):
+def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, nag_scale=1.0, nag_tau=2.5, nag_alpha=0.5, nag_negative_prompt=None, nag_end=1.0, original_prompt=None, original_negative_prompt=None):
     target_unet, target_vae, target_refiner_unet, target_refiner_vae, target_clip \
         = final_unet, final_vae, final_refiner_unet, final_refiner_vae, final_clip
 
@@ -386,152 +381,41 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
 
     if nag_scale > 1.0:
         print(f"[NAG] NAG is active with nag_scale={nag_scale}, nag_tau={nag_tau}, nag_alpha={nag_alpha}, nag_negative_prompt='{nag_negative_prompt}', nag_end={nag_end}")
-        # Placeholder for actual NAGStableDiffusionXLPipeline integration
-        # This part would involve loading and calling NAGStableDiffusionXLPipeline
-        # For now, it will fall back to the regular ksampler.
-        # A full integration would require replacing the model loading logic to use NAGStableDiffusionXLPipeline
-        # when NAG is enabled, and passing these parameters to its __call__ method.
-        # Example (conceptual, not directly executable without major changes):
-        # pipe = NAGStableDiffusionXLPipeline.from_pretrained(...)
-        # image = pipe(prompt, nag_scale=nag_scale, nag_tau=nag_tau, nag_alpha=nag_alpha, nag_negative_prompt=nag_negative_prompt, nag_end=nag_end, ...)
-        # decoded_latent = ... # Convert image back to latent if needed
-        pass
-
-    if refiner_swap_method == 'joint':
-        sampled_latent = core.ksampler(
-            model=target_unet,
-            refiner=target_refiner_unet,
-            positive=positive_cond,
-            negative=negative_cond,
-            latent=initial_latent,
-            steps=steps, start_step=0, last_step=steps, disable_noise=False, force_full_denoise=True,
-            seed=image_seed,
-            denoise=denoise,
-            callback_function=callback,
-            cfg=cfg_scale,
-            sampler_name=sampler_name,
-            scheduler=scheduler_name,
-            refiner_switch=switch,
-            previewer_start=0,
-            previewer_end=steps,
-            disable_preview=disable_preview
-        )
-        decoded_latent = core.decode_vae(vae=target_vae, latent_image=sampled_latent, tiled=tiled)
-
-    if refiner_swap_method == 'separate':
-        sampled_latent = core.ksampler(
-            model=target_unet,
-            positive=positive_cond,
-            negative=negative_cond,
-            latent=initial_latent,
-            steps=steps, start_step=0, last_step=switch, disable_noise=False, force_full_denoise=False,
-            seed=image_seed,
-            denoise=denoise,
-            callback_function=callback,
-            cfg=cfg_scale,
-            sampler_name=sampler_name,
-            scheduler=scheduler_name,
-            previewer_start=0,
-            previewer_end=steps,
-            disable_preview=disable_preview
-        )
-        print('Refiner swapped by changing ksampler. Noise preserved.')
-
-        target_model = target_refiner_unet
-        if target_model is None:
-            target_model = target_unet
-            print('Use base model to refine itself - this may because of developer mode.')
-
-        sampled_latent = core.ksampler(
-            model=target_model,
-            positive=clip_separate(positive_cond, target_model=target_model.model, target_clip=target_clip),
-            negative=clip_separate(negative_cond, target_model=target_model.model, target_clip=target_clip),
-            latent=sampled_latent,
-            steps=steps, start_step=switch, last_step=steps, disable_noise=True, force_full_denoise=True,
-            seed=image_seed,
-            denoise=denoise,
-            callback_function=callback,
-            cfg=cfg_scale,
-            sampler_name=sampler_name,
-            scheduler=scheduler_name,
-            previewer_start=switch,
-            previewer_end=steps,
-            disable_preview=disable_preview
+        # Instantiate NAGStableDiffusionXLPipeline
+        nag_pipe = NAGStableDiffusionXLPipeline(
+            vae=model_base.vae,
+            text_encoder=model_base.clip.text_encoder,
+            text_encoder_2=model_base.clip.text_encoder_2,
+            tokenizer=model_base.clip.tokenizer,
+            tokenizer_2=model_base.clip.tokenizer_2,
+            unet=model_base.unet,
+            scheduler=model_base.model_sampling
         )
 
-        target_model = target_refiner_vae
-        if target_model is None:
-            target_model = target_vae
-        decoded_latent = core.decode_vae(vae=target_model, latent_image=sampled_latent, tiled=tiled)
+        # Prepare inputs for NAG pipeline
+        prompt = original_prompt
+        negative_prompt = original_negative_prompt
 
-    if refiner_swap_method == 'vae':
-        modules.patch.patch_settings[os.getpid()].eps_record = 'vae'
+        # Use nag_negative_prompt if provided, otherwise use the extracted negative_prompt_str
+        final_nag_negative_prompt = nag_negative_prompt if nag_negative_prompt is not None else negative_prompt
 
-        if modules.inpaint_worker.current_task is not None:
-            modules.inpaint_worker.current_task.unswap()
-
-        sampled_latent = core.ksampler(
-            model=target_unet,
-            positive=positive_cond,
-            negative=negative_cond,
-            latent=initial_latent,
-            steps=steps, start_step=0, last_step=switch, disable_noise=False, force_full_denoise=True,
-            seed=image_seed,
-            denoise=denoise,
-            callback_function=callback,
-            cfg=cfg_scale,
-            sampler_name=sampler_name,
-            scheduler=scheduler_name,
-            previewer_start=0,
-            previewer_end=steps,
-            disable_preview=disable_preview
+        # Call the NAG pipeline
+        output = nag_pipe(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            height=height,
+            width=width,
+            num_inference_steps=steps,
+            guidance_scale=cfg_scale,
+            generator=torch.Generator(device="cpu").manual_seed(image_seed),
+            latents=initial_latent["samples"],
+            nag_scale=nag_scale,
+            nag_tau=nag_tau,
+            nag_alpha=nag_alpha,
+            nag_negative_prompt=final_nag_negative_prompt,
+            nag_end=nag_end,
+            output_type="latent" # Request latent output to match existing pipeline flow
         )
-        print('Fooocus VAE-based swap.')
-
-        target_model = target_refiner_unet
-        if target_model is None:
-            target_model = target_unet
-            print('Use base model to refine itself - this may because of developer mode.')
-
-        sampled_latent = vae_parse(sampled_latent)
-
-        k_sigmas = 1.4
-        sigmas = calculate_sigmas(sampler=sampler_name,
-                                  scheduler=scheduler_name,
-                                  model=target_model.model,
-                                  steps=steps,
-                                  denoise=denoise)[switch:] * k_sigmas
-        len_sigmas = len(sigmas) - 1
-
-        noise_mean = torch.mean(modules.patch.patch_settings[os.getpid()].eps_record, dim=1, keepdim=True)
-
-        if modules.inpaint_worker.current_task is not None:
-            modules.inpaint_worker.current_task.swap()
-
-        sampled_latent = core.ksampler(
-            model=target_model,
-            positive=clip_separate(positive_cond, target_model=target_model.model, target_clip=target_clip),
-            negative=clip_separate(negative_cond, target_model=target_model.model, target_clip=target_clip),
-            latent=sampled_latent,
-            steps=len_sigmas, start_step=0, last_step=len_sigmas, disable_noise=False, force_full_denoise=True,
-            seed=image_seed+1,
-            denoise=denoise,
-            callback_function=callback,
-            cfg=cfg_scale,
-            sampler_name=sampler_name,
-            scheduler=scheduler_name,
-            previewer_start=switch,
-            previewer_end=steps,
-            sigmas=sigmas,
-            noise_mean=noise_mean,
-            disable_preview=disable_preview
-        )
-
-        target_model = target_refiner_vae
-        if target_model is None:
-            target_model = target_vae
-        decoded_latent = core.decode_vae(vae=target_model, latent_image=sampled_latent, tiled=tiled)
-
-    images = core.pytorch_to_numpy(decoded_latent)
-    modules.patch.patch_settings[os.getpid()].eps_record = None
-    return images
+        decoded_latent = output.images # The output is a StableDiffusionXLPipelineOutput object, access images attribute
+    else:
+        # Existing ksampler logic

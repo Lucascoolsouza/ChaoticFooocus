@@ -1336,7 +1336,8 @@ def worker():
                                                                  task['uc'], task, loras, tiled, use_expansion, width,
                                                                  height, current_progress, preparation_steps,
                                                                  async_task.image_number, show_intermediate_results,
-                                                                 persist_image)
+                                                                 persist_image,
+                                                                 task['task_prompt'], task['task_negative_prompt'])
 
                 current_progress = int(preparation_steps + (100 - preparation_steps) / float(all_steps) * async_task.steps * (current_task_id + 1))
                 images_to_enhance += imgs
