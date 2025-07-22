@@ -395,6 +395,10 @@ with shared.gradio_root:
                             with gr.Column():
                                 enhance_uov_method = gr.Radio(label='Upscale or Variation:', choices=flags.uov_list,
                                                               value=modules.config.default_enhance_uov_method)
+                                enhance_bg_removal_model = gr.Radio(label='Background Removal Model:', 
+                                                                   choices=flags.bg_removal_models,
+                                                                   value=modules.config.default_enhance_bg_removal_model,
+                                                                   visible=modules.config.default_enhance_uov_method == flags.remove_background)
                                 enhance_uov_processing_order = gr.Radio(label='Order of Processing',
                                                                         info='Use before to enhance small details and after to enhance large areas.',
                                                                         choices=flags.enhancement_uov_processing_order,
@@ -405,6 +409,11 @@ with shared.gradio_root:
                                                                    value=modules.config.default_enhance_uov_prompt_type,
                                                                    visible=modules.config.default_enhance_uov_processing_order == flags.enhancement_uov_after)
 
+                                enhance_uov_method.change(lambda x: gr.update(visible=x == flags.remove_background),
+                                                          inputs=enhance_uov_method,
+                                                          outputs=enhance_bg_removal_model,
+                                                          queue=False, show_progress=False)
+                                
                                 enhance_uov_processing_order.change(lambda x: gr.update(visible=x == flags.enhancement_uov_after),
                                                                     inputs=enhance_uov_processing_order,
                                                                     outputs=enhance_uov_prompt_type,
@@ -702,6 +711,9 @@ with shared.gradio_root:
                 guidance_scale = gr.Slider(label='Guidance Scale', minimum=1.0, maximum=30.0, step=0.01,
                                            value=modules.config.default_cfg_scale,
                                            info='Higher value means style is cleaner, vivider, and more artistic.')
+                nag_enabled = gr.Checkbox(label='Enable NAG', value=False)
+                nag_scale = gr.Slider(label='NAG Scale', minimum=0.0, maximum=10.0, step=0.1, value=3.0, visible=False)
+                nag_enabled.change(lambda x: gr.update(visible=x), inputs=nag_enabled, outputs=nag_scale, queue=False, show_progress=False)
                 sharpness = gr.Slider(label='Image Sharpness', minimum=0.0, maximum=30.0, step=0.001,
                                       value=modules.config.default_sample_sharpness,
                                       info='Higher value means image and texture are sharper.')
@@ -907,7 +919,7 @@ with shared.gradio_root:
                              adm_scaler_negative, adm_scaler_end, refiner_swap_method, adaptive_cfg, clip_skip,
                              base_model, refiner_model, refiner_switch, sampler_name, scheduler_name, vae_name,
                              seed_random, image_seed, inpaint_engine, inpaint_engine_state,
-                             inpaint_mode] + enhance_inpaint_mode_ctrls + [generate_button,
+                             inpaint_mode, nag_enabled, nag_scale] + enhance_inpaint_mode_ctrls + [generate_button,
                              load_parameter_button] + freeu_ctrls + lora_ctrls
 
         if not args_manager.args.disable_preset_selection:
@@ -991,7 +1003,7 @@ with shared.gradio_root:
         ctrls += [
             prompt, negative_prompt, style_selections,
             performance_selection, aspect_ratios_selection, image_number, output_format, image_seed,
-            read_wildcards_in_order, sharpness, guidance_scale
+            read_wildcards_in_order, sharpness, guidance_scale, nag_enabled, nag_scale
         ]
 
         ctrls += [base_model, refiner_model, refiner_switch] + lora_ctrls
@@ -1016,8 +1028,8 @@ with shared.gradio_root:
 
         ctrls += ip_ctrls
         ctrls += [debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox,
-                  enhance_input_image, enhance_checkbox, enhance_uov_method, enhance_uov_processing_order,
-                  enhance_uov_prompt_type]
+                  enhance_input_image, enhance_checkbox, enhance_uov_method, enhance_bg_removal_model, 
+                  enhance_uov_processing_order, enhance_uov_prompt_type]
         ctrls += enhance_ctrls
 
         def parse_meta(raw_prompt_txt, is_generating):
@@ -1087,6 +1099,11 @@ with shared.gradio_root:
                 from extras.wd14tagger import default_interrogator as default_interrogator_anime
                 describe_prompts.append(default_interrogator_anime(img))
                 styles.update(["Fooocus V2", "Fooocus Masterpiece"])
+
+            if flags.describe_type_joy in modes:
+                from extras.joy_caption import default_captioner as default_interrogator_joy
+                describe_prompts.append(default_interrogator_joy(img))
+                styles.update(["Fooocus V2", "Fooocus Enhance", "Fooocus Sharp"])
 
             if len(styles) == 0 or not apply_styles:
                 styles = gr.update()

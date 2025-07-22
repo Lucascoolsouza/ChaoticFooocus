@@ -630,6 +630,12 @@ default_enhance_uov_prompt_type = get_config_item_or_set_default(
     validator=lambda x: x in modules.flags.enhancement_uov_prompt_types,
     expected_type=int
 )
+default_enhance_bg_removal_model = get_config_item_or_set_default(
+    key='default_enhance_bg_removal_model',
+    default_value='u2net',
+    validator=lambda x: x in modules.flags.bg_removal_models,
+    expected_type=str
+)
 default_sam_max_detections = get_config_item_or_set_default(
     key='default_sam_max_detections',
     default_value=0,
@@ -713,7 +719,7 @@ default_describe_apply_prompts_checkbox = get_config_item_or_set_default(
 )
 default_describe_content_type = get_config_item_or_set_default(
     key='default_describe_content_type',
-    default_value=[modules.flags.describe_type_photo],
+    default_value=[modules.flags.describe_type_photo, modules.flags.describe_type_joy],
     validator=lambda x: all(k in modules.flags.describe_types for k in x),
     expected_type=list
 )

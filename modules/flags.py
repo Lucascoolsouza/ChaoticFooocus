@@ -8,7 +8,9 @@ upscale_15 = 'Upscale (1.5x)'
 upscale_2 = 'Upscale (2x)'
 upscale_fast = 'Upscale (Fast 2x)'
 
-uov_list = [disabled, subtle_variation, strong_variation, upscale_15, upscale_2, upscale_fast]
+remove_background = 'Remove Background'
+
+uov_list = [disabled, subtle_variation, strong_variation, upscale_15, upscale_2, upscale_fast, remove_background]
 
 enhancement_uov_before = "Before First Enhancement"
 enhancement_uov_after = "After Last Enhancement"
@@ -103,6 +105,9 @@ default_parameters = {
 output_formats = ['png', 'jpeg', 'webp']
 
 inpaint_mask_models = ['u2net', 'u2netp', 'u2net_human_seg', 'u2net_cloth_seg', 'silueta', 'isnet-general-use', 'isnet-anime', 'sam']
+
+# Background removal options for enhance
+bg_removal_models = ['u2net', 'u2netp', 'u2net_human_seg', 'silueta', 'isnet-general-use']
 inpaint_mask_cloth_category = ['full', 'upper', 'lower']
 inpaint_mask_sam_model = ['vit_b', 'vit_l', 'vit_h']
 
@@ -114,7 +119,8 @@ inpaint_options = [inpaint_option_default, inpaint_option_detail, inpaint_option
 
 describe_type_photo = 'Photograph'
 describe_type_anime = 'Art/Anime'
-describe_types = [describe_type_photo, describe_type_anime]
+describe_type_joy = 'Joy'
+describe_types = [describe_type_photo, describe_type_anime, describe_type_joy]
 
 sdxl_aspect_ratios = [
     '704*1408', '704*1344', '768*1344', '768*1280', '832*1216', '832*1152',

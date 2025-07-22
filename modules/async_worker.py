@@ -42,6 +42,8 @@ class AsyncTask:
         self.read_wildcards_in_order = args.pop()
         self.sharpness = args.pop()
         self.cfg_scale = args.pop()
+        self.nag_enabled = args.pop()
+        self.nag_scale = args.pop()
         self.base_model_name = args.pop()
         self.refiner_model_name = args.pop()
         self.refiner_switch = args.pop()
@@ -116,6 +118,7 @@ class AsyncTask:
         self.enhance_input_image = args.pop()
         self.enhance_checkbox = args.pop()
         self.enhance_uov_method = args.pop()
+        self.enhance_bg_removal_model = args.pop()
         self.enhance_uov_processing_order = args.pop()
         self.enhance_uov_prompt_type = args.pop()
         self.enhance_ctrls = []
@@ -277,6 +280,8 @@ def worker():
         async_task.results = async_task.results + [wall]
         return
 
+    from modules.nag import NAGStableDiffusionXLPipeline
+
     def process_task(all_steps, async_task, callback, controlnet_canny_path, controlnet_cpds_path, current_task_id,
                      denoising_strength, final_scheduler_name, goals, initial_latent, steps, switch, positive_cond,
                      negative_cond, task, loras, tiled, use_expansion, width, height, base_progress, preparation_steps,
@@ -292,24 +297,45 @@ def worker():
                     positive_cond, negative_cond = core.apply_controlnet(
                         positive_cond, negative_cond,
                         pipeline.loaded_ControlNets[cn_path], cn_img, cn_weight, 0, cn_stop)
-        imgs = pipeline.process_diffusion(
-            positive_cond=positive_cond,
-            negative_cond=negative_cond,
-            steps=steps,
-            switch=switch,
-            width=width,
-            height=height,
-            image_seed=task['task_seed'],
-            callback=callback,
-            sampler_name=async_task.sampler_name,
-            scheduler_name=final_scheduler_name,
-            latent=initial_latent,
-            denoise=denoising_strength,
-            tiled=tiled,
-            cfg_scale=async_task.cfg_scale,
-            refiner_swap_method=async_task.refiner_swap_method,
-            disable_preview=async_task.disable_preview
-        )
+
+        if async_task.nag_enabled:
+            pipe = NAGStableDiffusionXLPipeline(
+                vae=pipeline.vae,
+                text_encoder=pipeline.text_encoder,
+                text_encoder_2=pipeline.text_encoder_2,
+                tokenizer=pipeline.tokenizer,
+                tokenizer_2=pipeline.tokenizer_2,
+                unet=pipeline.final_unet,
+                scheduler=pipeline.scheduler,
+                image_processor=pipeline.image_processor
+            )
+            imgs = [pipe(
+                prompt=task['task_prompt'],
+                nag_negative_prompt=task['task_negative_prompt'],
+                guidance_scale=async_task.cfg_scale,
+                nag_scale=async_task.nag_scale,
+                num_inference_steps=steps,
+            )]
+        else:
+            imgs = pipeline.process_diffusion(
+                positive_cond=positive_cond,
+                negative_cond=negative_cond,
+                steps=steps,
+                switch=switch,
+                width=width,
+                height=height,
+                image_seed=task['task_seed'],
+                callback=callback,
+                sampler_name=async_task.sampler_name,
+                scheduler_name=final_scheduler_name,
+                latent=initial_latent,
+                denoise=denoising_strength,
+                tiled=tiled,
+                cfg_scale=async_task.cfg_scale,
+                refiner_swap_method=async_task.refiner_swap_method,
+                disable_preview=async_task.disable_preview
+            )
+
         del positive_cond, negative_cond  # Save memory
         if inpaint_worker.current_task is not None:
             imgs = [inpaint_worker.current_task.post_process(x) for x in imgs]
@@ -949,6 +975,36 @@ def worker():
                 current_progress += 1
             progressbar(async_task, current_progress, 'Downloading upscale models ...')
             modules.config.downloading_upscale_model()
+        elif 'remove background' in uov_method.lower():
+            goals.append('remove_background')
+            skip_prompt_processing = True
+            steps = 0
+            
+            if advance_progress:
+                current_progress += 1
+            progressbar(async_task, current_progress, 'Removing background ...')
+            
+            # Apply background removal using rembg
+            from rembg import remove, new_session
+            from PIL import Image
+            import numpy as np
+            
+            # Convert to PIL Image
+            if isinstance(uov_input_image, np.ndarray):
+                pil_image = Image.fromarray(uov_input_image.astype(np.uint8))
+            else:
+                pil_image = uov_input_image
+            
+            # Remove background using the selected model
+            bg_removal_model = async_task.enhance_bg_removal_model
+            session = new_session(bg_removal_model)
+            result_image = remove(pil_image, session=session)
+            
+            # Convert back to numpy array
+            uov_input_image = np.array(result_image)
+            
+            print(f'Background removed using {bg_removal_model} model')
+            
         return uov_input_image, skip_prompt_processing, steps
 
     def prepare_enhance_prompt(prompt: str, fallback_prompt: str):
