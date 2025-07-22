@@ -68,10 +68,7 @@ def generate_clicked(task: worker.AsyncTask):
                 if not args_manager.args.disable_enhance_output_sorting:
                     product = sort_enhance_images(product, task)
 
-                yield gr.update(visible=False),
-                    gr.update(visible=False),
-                    gr.update(visible=False),
-                    gr.update(visible=True, value=product)
+                yield gr.update(visible=False),                     gr.update(visible=False),                     gr.update(visible=False),                     gr.update(visible=True, value=product)
                 finished = True
 
                 # delete Fooocus temp images, only keep gradio temp images
