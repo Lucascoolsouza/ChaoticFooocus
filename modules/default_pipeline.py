@@ -418,4 +418,5 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         )
         decoded_latent = output.images # The output is a StableDiffusionXLPipelineOutput object, access images attribute
     else:
+        pass
         # Existing ksampler logic

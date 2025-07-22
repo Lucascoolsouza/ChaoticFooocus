@@ -954,6 +954,15 @@ def downloading_upscale_model():
     )
     return os.path.join(path_upscale_models, 'fooocus_upscaler_s409985e5.bin')
 
+
+def downloading_ultrasharp_model():
+    load_file_from_url(
+        url='https://huggingface.co/datasets/Kizi-Art/Upscale/resolve/main/4x-UltraSharp.pth',
+        model_dir=path_upscale_models,
+        file_name='4x-UltraSharp.pth'
+    )
+    return os.path.join(path_upscale_models, '4x-UltraSharp.pth')
+
 def downloading_safety_checker_model():
     load_file_from_url(
         url='https://huggingface.co/mashb1t/misc/resolve/main/stable-diffusion-safety-checker.bin',
