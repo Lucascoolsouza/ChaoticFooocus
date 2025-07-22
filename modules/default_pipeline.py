@@ -384,10 +384,10 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         # Instantiate NAGStableDiffusionXLPipeline
         nag_pipe = NAGStableDiffusionXLPipeline(
             vae=model_base.vae,
-            text_encoder=model_base.clip.text_encoder,
-            text_encoder_2=model_base.clip.text_encoder_2,
-            tokenizer=model_base.clip.tokenizer,
-            tokenizer_2=model_base.clip.tokenizer_2,
+            text_encoder=model_base.clip.clip_l.transformer,
+            text_encoder_2=model_base.clip.clip_g.transformer,
+            tokenizer=model_base.clip.clip_l.tokenizer.tokenizer,
+            tokenizer_2=model_base.clip.clip_g.tokenizer.tokenizer,
             unet=model_base.unet,
             scheduler=model_base.model_sampling
         )
@@ -414,9 +414,8 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             nag_alpha=nag_alpha,
             nag_negative_prompt=final_nag_negative_prompt,
             nag_end=nag_end,
-            output_type="latent" # Request latent output to match existing pipeline flow
-        )
-        decoded_latent = output.images # The output is a StableDiffusionXLPipelineOutput object, access images attribute
+            )
+        decoded_latent = core.decode_vae(model_base.vae, output.images)
     else:
         decoded_latent = core.ksampler(
             model=final_unet,
