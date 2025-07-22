@@ -9,7 +9,7 @@ from modules.config import path_clip_vision
 from ldm_patched.modules.model_patcher import ModelPatcher
 
 # Import from transformers
-from transformers import AutoProcessor, Blip2ForConditionalGeneration, Blip2Processor
+from transformers import AutoProcessor, Blip2ForConditionalGeneration
 from PIL import Image
 
 blip_image_eval_size = 384
@@ -29,7 +29,7 @@ class Interrogator:
         if self.blip_model is None:
             # Load BLIP-2 model and processor from Hugging Face
             model_name = "Salesforce/blip2-flan-t5-xl" # Using a specific BLIP-2 model
-            self.processor = Blip2Processor.from_pretrained(model_name, local_files_only=False)
+            self.processor = AutoProcessor.from_pretrained(model_name, local_files_only=False)
             model = Blip2ForConditionalGeneration.from_pretrained(model_name, torch_dtype=torch.float16, local_files_only=False)
 
             model.eval()

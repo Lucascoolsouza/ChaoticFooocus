@@ -265,8 +265,7 @@ def default_captioner(image_rgb, caption_type="descriptive", caption_length="any
                             global_tokenizer = global_processor.tokenizer
                         else:
                             # BLIP2 models
-                            from transformers import Blip2Processor, Blip2ForConditionalGeneration
-                            global_processor = Blip2Processor.from_pretrained(fallback_model)
+                            global_processor = AutoProcessor.from_pretrained(fallback_model)
                             global_model = Blip2ForConditionalGeneration.from_pretrained(
                                 fallback_model,
                                 torch_dtype=torch.float16,
