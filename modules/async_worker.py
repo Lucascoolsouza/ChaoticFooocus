@@ -165,12 +165,14 @@ class AsyncTask:
             enhance_mask_text_threshold = args.pop()
             enhance_mask_box_threshold = args.pop()
             enhance_mask_sam_max_detections = args.pop()
-            enhance_inpaint_disable_initial_latent = args.pop()
-            enhance_inpaint_engine = args.pop()
-            enhance_inpaint_strength = args.pop()
-            enhance_inpaint_respective_field = args.pop()
-            enhance_inpaint_erode_or_dilate = args.pop()
-            enhance_mask_invert = args.pop()
+            enhance_inpaint_disable_initial_latent = args.pop() if args else None
+            enhance_inpaint_engine = args.pop() if args else None
+            enhance_inpaint_strength = args.pop() if args else None
+            enhance_inpaint_respective_field = args.pop() if args else None
+            enhance_inpaint_erode_or_dilate = args.pop() if args else None
+            enhance_mask_invert = args.pop() if args else None
+            if not args:
+                print("Warning: Not enough arguments for enhance inpaint controls. Some values set to None.")
             if enhance_enabled:
                 self.enhance_ctrls.append([
                     enhance_mask_dino_prompt_text,
