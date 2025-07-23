@@ -643,20 +643,20 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
                 # --- add these three lines ---
                 if callback is not None:
-                    step_index = i  # current loop index
-                    # 1) decode the latent to pixel space
+                    # 1. decode only the first latent
                     with torch.no_grad():
-                        latents_for_preview = latents[:1]  # first image in batch
-                        # make sure the VAE is on the same device
-                        latents_for_preview = latents_for_preview.to(self.vae.device)
-                        # decode
-                        decoded = self.vae.decode(latents_for_preview)  # (1,3,H,W) float32, range ≈ [-1,1]
-                        decoded = torch.clamp((decoded + 1) * 0.5, 0, 1)  # rescale to [0,1]
-                        decoded = decoded.permute(0, 2, 3, 1)            # (1,H,W,3)
+                        lat_preview = latents[:1].to(self.vae.device)
+                        decoded = self.vae.decode(lat_preview)          # (1,3,H,W), float32
+                        decoded = torch.clamp((decoded + 1) * 0.5, 0, 1)
+                        decoded = decoded.permute(0, 2, 3, 1)           # (1,H,W,3)
                         decoded_np = (decoded[0] * 255).cpu().numpy().astype(np.uint8)
 
-                    # 2) hand a PIL image to the callback
-                    callback(step_index, t, decoded_np)
+                    # 2. create PIL Image and let the preview callback forward it
+                    from PIL import Image
+                    preview_img = Image.fromarray(decoded_np, mode='RGB')
+
+                    # 3. Gradio expects the *return* tuple to contain the Image, not a tensor
+                    callback(i, t, preview_img)
                 if latents.dtype != latents_dtype:
                     if torch.backends.mps.is_available():
                         # some platforms (eg. apple mps) misbehave due to a pytorch bug: https://github.com/pytorch/pytorch/pull/99272
