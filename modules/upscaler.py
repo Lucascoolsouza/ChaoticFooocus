@@ -40,7 +40,7 @@ def perform_ultrasharp_tiled(img, tile_size=512, overlap=64):
         model_ultrasharp.eval()
     
     # Convert to PyTorch tensor
-    img_tensor = core.numpy_to_pytorch(img).permute(0, 3, 1, 2)
+    img_tensor = core.numpy_to_pytorch(img)
     
     # Get image dimensions
     _, _, h, w = img_tensor.shape
@@ -194,7 +194,7 @@ def perform_tiled_upscale(img, model_name, model_var, download_func, tile_size=5
         model_var[0].eval()
 
     # Convert to PyTorch tensor
-    img_tensor = core.numpy_to_pytorch(img).permute(0, 3, 1, 2)
+    img_tensor = core.numpy_to_pytorch(img)
 
     # Get image dimensions
     _, _, h, w = img_tensor.shape
@@ -206,7 +206,7 @@ def perform_tiled_upscale(img, model_name, model_var, download_func, tile_size=5
             if torch.cuda.is_available():
                 model_var[0] = model_var[0].cuda()
 
-            result = opImageUpscaleWithModel.upscale(model_var[0], img_tensor)[0]
+            result = opImageUpscaleWithModel.upscale(model_var[0], img_tensor.permute(0, 3, 1, 2))[0]
 
             if result.shape[1] == 4:  # If the output is a latent (4 channels)
                 if vae is None:
@@ -253,7 +253,7 @@ def perform_tiled_upscale(img, model_name, model_var, download_func, tile_size=5
                 print(f"Processing tile [{y}:{y_end}, {x}:{x_end}] -> shape {tile.shape}")
 
                 # Process tile
-                tile_result = opImageUpscaleWithModel.upscale(model_var[0], tile)[0]
+                tile_result = opImageUpscaleWithModel.upscale(model_var[0], tile.permute(0, 3, 1, 2))[0]
 
                 if tile_result.shape[1] == 4:  # If the output is a latent (4 channels)
                     if vae is None:
