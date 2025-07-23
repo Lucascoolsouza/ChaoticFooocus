@@ -964,15 +964,6 @@ def downloading_ultrasharp_model():
     return os.path.join(path_upscale_models, '4x-UltraSharp.pth')
 
 
-def downloading_web_photo_model():
-    load_file_from_url(
-        url='https://huggingface.co/Pinguin/888-xl-diffusion-testmodel-v02-blue-star-sdxl-SAFETENSORS/resolve/main/4xNomosWebPhoto_atd.pth?download=true',
-        model_dir=path_upscale_models,
-        file_name='4xNomosWebPhoto_atd.pth'
-    )
-    return os.path.join(path_upscale_models, '4xNomosWebPhoto_atd.pth')
-
-
 def downloading_realistic_rescaler_model():
     load_file_from_url(
         url='https://huggingface.co/Pinguin/888-xl-diffusion-testmodel-v02-blue-star-sdxl-SAFETENSORS/resolve/main/4x_RealisticRescaler_100000_G.pth?download=true',
@@ -980,33 +971,6 @@ def downloading_realistic_rescaler_model():
         file_name='realistic_rescaler.pth'
     )
     return os.path.join(path_upscale_models, 'realistic_rescaler.pth')
-
-
-def downloading_skin_contrast_model():
-    load_file_from_url(
-        url='https://huggingface.co/Pinguin/888-xl-diffusion-testmodel-v02-blue-star-sdxl-SAFETENSORS/resolve/main/1xSkinContrast-HighAlternative-SuperUltraCompact.pth?download=true',
-        model_dir=path_upscale_models,
-        file_name='1xSkinContrast-HighAlternative-SuperUltraCompact.pth'
-    )
-    return os.path.join(path_upscale_models, '1xSkinContrast-HighAlternative-SuperUltraCompact.pth')
-
-
-def downloading_four_x_nomos_model():
-    load_file_from_url(
-        url='https://huggingface.co/Pinguin/888-xl-diffusion-testmodel-v02-blue-star-sdxl-SAFETENSORS/resolve/main/4xNomos2_hq_drct-l.pth?download=true',
-        model_dir=path_upscale_models,
-        file_name='4xNomos2_hq_drct-l.pth'
-    )
-    return os.path.join(path_upscale_models, '4xNomos2_hq_drct-l.pth')
-
-
-def downloading_faces_model():
-    load_file_from_url(
-        url='https://huggingface.co/Pinguin/888-xl-diffusion-testmodel-v02-blue-star-sdxl-SAFETENSORS/resolve/main/4xFaceUpSharpDAT.pth',
-        model_dir=path_upscale_models,
-        file_name='faces.pth'
-    )
-    return os.path.join(path_upscale_models, 'faces.pth')
 
 
 def downloading_safety_checker_model():

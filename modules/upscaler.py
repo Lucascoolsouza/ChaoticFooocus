@@ -12,14 +12,10 @@ import modules.flags
 opImageUpscaleWithModel = ImageUpscaleWithModel()
 model_default = None
 model_ultrasharp = None
-model_web_photo = None
 model_realistic_rescaler = None
-model_skin_contrast = None
-model_four_x_nomos = None
-model_faces = None
 
 def perform_upscale_without_tiling(img, model_name, model_var, download_func, async_task=None, vae=None):
-    global model_web_photo, model_realistic_rescaler, model_skin_contrast, model_four_x_nomos, model_faces, model_ultrasharp
+    global model_realistic_rescaler, model_ultrasharp
 
     print(f'Processing {model_name} on image shape {img.shape}...')
 
@@ -86,7 +82,7 @@ def perform_upscale_without_tiling(img, model_name, model_var, download_func, as
         raise e
 
 def perform_upscale(img, method, async_task=None, vae_model=None):
-    global model_default, model_ultrasharp, model_web_photo, model_realistic_rescaler, model_skin_contrast, model_four_x_nomos, model_faces, final_vae
+    global model_default, model_ultrasharp, model_realistic_rescaler, final_vae
 
     print(f'Upscaling image with shape {str(img.shape)} using method {method} ...')
 
@@ -94,16 +90,8 @@ def perform_upscale(img, method, async_task=None, vae_model=None):
 
     if method == modules.flags.ultrasharp.casefold():
         return perform_upscale_without_tiling(img, "UltraSharp", [model_ultrasharp], downloading_ultrasharp_model, async_task=async_task, vae=vae_model)
-    elif method == modules.flags.web_photo.casefold():
-        return perform_upscale_without_tiling(img, "Web Photo", [model_web_photo], downloading_web_photo_model, vae=vae_model)
     elif method == modules.flags.realistic_rescaler.casefold():
         return perform_upscale_without_tiling(img, "Realistic Rescaler", [model_realistic_rescaler], downloading_realistic_rescaler_model, vae=vae_model)
-    elif method == modules.flags.skin_contrast.casefold():
-        return perform_upscale_without_tiling(img, "Skin Contrast", [model_skin_contrast], downloading_skin_contrast_model, vae=vae_model)
-    elif method == modules.flags.four_x_nomos.casefold():
-        return perform_upscale_without_tiling(img, "4xNomos", [model_four_x_nomos], downloading_four_x_nomos_model, vae=vae_model)
-    elif method == modules.flags.faces.casefold():
-        return perform_upscale_without_tiling(img, "Faces", [model_faces], downloading_faces_model, vae=vae_model)
     else: # Default upscaling
         if model_default is None:
             model_filename = downloading_upscale_model()
