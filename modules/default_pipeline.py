@@ -455,18 +455,24 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                     self.time_cond_proj_dim = None  # Not used in SDXL
             unet_on_device.config = UNetConfig()
 
-        # Add tokenize method to tokenizers if they don't have it (for diffusers compatibility)
+        # Add missing attributes to tokenizers for diffusers compatibility
         if not hasattr(tokenizer_l_on_device, 'tokenize'):
             def tokenize_method(prompt):
                 # Simple tokenization - just split by spaces for compatibility
                 return prompt.split() if isinstance(prompt, str) else []
             tokenizer_l_on_device.tokenize = tokenize_method
         
+        if not hasattr(tokenizer_l_on_device, 'model_max_length'):
+            tokenizer_l_on_device.model_max_length = 77  # Standard CLIP tokenizer max length
+        
         if not hasattr(tokenizer_g_on_device, 'tokenize'):
             def tokenize_method(prompt):
                 # Simple tokenization - just split by spaces for compatibility
                 return prompt.split() if isinstance(prompt, str) else []
             tokenizer_g_on_device.tokenize = tokenize_method
+            
+        if not hasattr(tokenizer_g_on_device, 'model_max_length'):
+            tokenizer_g_on_device.model_max_length = 77  # Standard CLIP tokenizer max length
 
 
         # Instantiate NAGStableDiffusionXLPipeline with the components on the correct device
