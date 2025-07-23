@@ -640,6 +640,11 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 # compute the previous noisy sample x_t -> x_t-1
                 latents_dtype = latents.dtype
                 latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False).prev_sample
+
+                # --- add these three lines ---
+                if callback is not None:
+                    step_index = i  # current loop index
+                    callback(step_index, t, latents)
                 if latents.dtype != latents_dtype:
                     if torch.backends.mps.is_available():
                         # some platforms (eg. apple mps) misbehave due to a pytorch bug: https://github.com/pytorch/pytorch/pull/99272
