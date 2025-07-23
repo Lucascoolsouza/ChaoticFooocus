@@ -86,7 +86,12 @@ class AsyncTask:
         self.sampler_name = args.pop()
         self.scheduler_name = args.pop()
         self.vae_name = args.pop()
-        self.overwrite_step = args.pop()
+        # Defensive: ensure overwrite_step is always an int
+        overwrite_step_value = args.pop()
+        try:
+            self.overwrite_step = int(overwrite_step_value)
+        except (ValueError, TypeError):
+            self.overwrite_step = 0
         self.overwrite_switch = args.pop()
         self.overwrite_width = args.pop()
         self.overwrite_height = args.pop()
