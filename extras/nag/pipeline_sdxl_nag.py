@@ -715,8 +715,19 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
             # 5. build PIL image for preview (first in batch)
             from PIL import Image
-            decoded_np = (decoded[0].permute(1, 2, 0) * 255).cpu().numpy().astype(np.uint8)
-            final_image = Image.fromarray(decoded_np, mode='RGB')
+
+            if decoded is None or not isinstance(decoded, torch.Tensor):
+                raise ValueError("[VAE Decode] Decoding failed: output is not a valid tensor.")
+
+            if decoded.ndim != 4 or decoded.shape[1] < 3:
+                raise ValueError(f"[VAE Decode] Invalid decoded tensor shape: {decoded.shape}")
+
+            try:
+                decoded_np = (decoded[0].permute(1, 2, 0) * 255).cpu().numpy().astype(np.uint8)
+                final_image = Image.fromarray(decoded_np, mode='RGB')
+            except Exception as e:
+                print(f"[VAE Decode] ❌ Failed to convert tensor to image: {e}")
+                final_image = Image.new('RGB', (width or 512, height or 512), color='red')
 
         if self.do_normalized_attention_guidance and not attn_procs_recovered:
             self.unet.set_attn_processor(origin_attn_procs)
