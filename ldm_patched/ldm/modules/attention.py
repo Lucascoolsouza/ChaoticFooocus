@@ -85,8 +85,8 @@ def Normalize(in_channels, dtype=None, device=None):
     return torch.nn.GroupNorm(num_groups=32, num_channels=in_channels, eps=1e-6, affine=True, dtype=dtype, device=device)
 
 def attention_basic(q, k, v, heads, mask=None):
-    b, _, dim_head = q.shape
-    dim_head //= heads
+    b, _, inner_dim = q.shape
+    dim_head = inner_dim // heads
     scale = dim_head ** -0.5
 
     h = heads
@@ -130,8 +130,8 @@ def attention_basic(q, k, v, heads, mask=None):
 
 
 def attention_sub_quad(query, key, value, heads, mask=None):
-    b, _, dim_head = query.shape
-    dim_head //= heads
+    b, _, inner_dim = query.shape
+    dim_head = inner_dim // heads
 
     scale = dim_head ** -0.5
     query = query.unsqueeze(3).reshape(b, -1, heads, dim_head).permute(0, 2, 1, 3).reshape(b * heads, -1, dim_head)
@@ -183,8 +183,8 @@ def attention_sub_quad(query, key, value, heads, mask=None):
     return hidden_states
 
 def attention_split(q, k, v, heads, mask=None):
-    b, _, dim_head = q.shape
-    dim_head //= heads
+    b, _, inner_dim = q.shape
+    dim_head = inner_dim // heads
     scale = dim_head ** -0.5
 
     h = heads
@@ -283,8 +283,8 @@ except:
     pass
 
 def attention_xformers(q, k, v, heads, mask=None):
-    b, _, dim_head = q.shape
-    dim_head //= heads
+    b, _, inner_dim = q.shape
+    dim_head = inner_dim // heads
     if BROKEN_XFORMERS:
         if b * heads > 65535:
             return attention_pytorch(q, k, v, heads, mask)
@@ -315,8 +315,8 @@ def attention_xformers(q, k, v, heads, mask=None):
     return out
 
 def attention_pytorch(q, k, v, heads, mask=None):
-    b, _, dim_head = q.shape
-    dim_head //= heads
+    b, _, inner_dim = q.shape
+    dim_head = inner_dim // heads
     q, k, v = map(
         lambda t: t.view(b, -1, heads, dim_head).transpose(1, 2),
         (q, k, v),
