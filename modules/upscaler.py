@@ -5,12 +5,17 @@ import modules.core as core
 import torch
 from ldm_patched.contrib.external_upscale_model import ImageUpscaleWithModel
 from ldm_patched.pfn.architecture.RRDB import RRDBNet as ESRGAN
-from modules.config import downloading_upscale_model, downloading_ultrasharp_model
+from modules.config import downloading_upscale_model, downloading_ultrasharp_model, downloading_web_photo_model, downloading_realistic_rescaler_model, downloading_skin_contrast_model, downloading_four_x_nomos_model, downloading_faces_model
 import modules.flags
 
 opImageUpscaleWithModel = ImageUpscaleWithModel()
 model_default = None
 model_ultrasharp = None
+model_web_photo = None
+model_realistic_rescaler = None
+model_skin_contrast = None
+model_four_x_nomos = None
+model_faces = None
 
 
 def perform_ultrasharp_tiled(img, tile_size=512, overlap=64):
@@ -158,16 +163,152 @@ def apply_ultrasharp_vary(img, tile_size=512, overlap=64):
         return img
 
 
+def perform_tiled_upscale(img, model_name, model_var, download_func, tile_size=512, overlap=64):
+    global model_web_photo, model_realistic_rescaler, model_skin_contrast, model_four_x_nomos, model_faces, model_ultrasharp
+
+    print(f'Processing {model_name} with tiling (tile_size={tile_size}, overlap={overlap}) on image shape {img.shape}...')
+
+    # Load model if not already loaded
+    if model_var[0] is None:
+        model_filename = download_func()
+        print(f"Loading {model_name} model from {model_filename}")
+        sd = torch.load(model_filename, weights_only=True)
+        sdo = OrderedDict()
+        for k, v in sd.items():
+            sdo[k.replace('residual_block_', 'RDB')] = v
+        del sd
+        model_var[0] = ESRGAN(sdo)
+        model_var[0].cpu()
+        model_var[0].eval()
+
+    # Convert to PyTorch tensor
+    img_tensor = core.numpy_to_pytorch(img)
+
+    # Get image dimensions
+    _, _, h, w = img_tensor.shape
+
+    # If image is small enough, process without tiling
+    if h <= tile_size and w <= tile_size:
+        print("Image small enough, processing without tiling")
+        try:
+            if torch.cuda.is_available():
+                model_var[0] = model_var[0].cuda()
+
+            result = opImageUpscaleWithModel.upscale(model_var[0], img_tensor)[0]
+
+            model_var[0].cpu()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+            return core.pytorch_to_numpy(result)[0]
+        except Exception as e:
+            model_var[0].cpu()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            raise e
+
+    # Process with tiling
+    print(f"Processing with tiling: {h}x{w} -> tiles of {tile_size}x{tile_size}")
+
+    # Calculate output dimensions (4x upscale)
+    scale_factor = 4
+    out_h, out_w = h * scale_factor, w * scale_factor
+
+    # Initialize output tensor
+    output = torch.zeros((1, 3, out_h, out_w), dtype=img_tensor.dtype)
+
+    try:
+        if torch.cuda.is_available():
+            model_var[0] = model_var[0].cuda()
+
+        # Process tiles
+        for y in range(0, h, tile_size - overlap):
+            for x in range(0, w, tile_size - overlap):
+                # Calculate tile boundaries
+                y_end = min(y + tile_size, h)
+                x_end = min(x + tile_size, w)
+
+                # Extract tile
+                tile = img_tensor[:, :, y:y_end, x:x_end]
+
+                print(f"Processing tile [{y}:{y_end}, {x}:{x_end}] -> shape {tile.shape}")
+
+                # Process tile
+                tile_result = opImageUpscaleWithModel.upscale(model_var[0], tile)[0]
+
+                # Calculate output position
+                out_y = y * scale_factor
+                out_x = x * scale_factor
+                out_y_end = min(out_y + tile_result.shape[2], out_h)
+                out_x_end = min(out_x + tile_result.shape[3], out_w)
+
+                # Handle overlap blending
+                if overlap > 0 and (y > 0 or x > 0):
+                    # Simple averaging for overlapping regions
+                    overlap_scaled = overlap * scale_factor
+
+                    # Blend with existing content
+                    existing = output[:, :, out_y:out_y_end, out_x:out_x_end]
+                    new_content = tile_result[:, :, :out_y_end-out_y, :out_x_end-out_x]
+
+                    # Create blend mask for smooth transitions
+                    blend_mask = torch.ones_like(new_content)
+
+                    if y > 0:  # Top overlap
+                        for i in range(min(overlap_scaled, new_content.shape[2])):
+                            alpha = i / overlap_scaled
+                            blend_mask[:, :, i, :] = alpha
+
+                    if x > 0:  # Left overlap
+                        for i in range(min(overlap_scaled, new_content.shape[3])):
+                            alpha = i / overlap_scaled
+                            blend_mask[:, :, :, i] = alpha
+
+                    # Apply blending
+                    output[:, :, out_y:out_y_end, out_x:out_x_end] = (
+                        existing * (1 - blend_mask) + new_content * blend_mask
+                    )
+                else:
+                    # No overlap, direct copy
+                    output[:, :, out_y:out_y_end, out_x:out_x_end] = tile_result[:, :, :out_y_end-out_y, :out_x_end-out_x]
+
+                # Clear tile from memory
+                del tile, tile_result
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+        # Move model back to CPU
+        model_var[0].cpu()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        return core.pytorch_to_numpy(output)[0]
+
+    except Exception as e:
+        print(f"Tiled {model_name} processing failed: {str(e)}")
+        model_var[0].cpu()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        raise e
+
+
 def perform_upscale(img, method):
-    global model_default, model_ultrasharp
+    global model_default, model_ultrasharp, model_web_photo, model_realistic_rescaler, model_skin_contrast, model_four_x_nomos, model_faces
 
     print(f'Upscaling image with shape {str(img.shape)} using method {method} ...')
 
     if method == modules.flags.ultrasharp:
-        # Use tiled UltraSharp processing for memory efficiency
-        return perform_ultrasharp_tiled(img, tile_size=512, overlap=64)
-        
-    # Handle other upscale methods (default upscaling)
+        return perform_tiled_upscale(img, "UltraSharp", [model_ultrasharp], downloading_ultrasharp_model)
+    elif method == modules.flags.web_photo:
+        return perform_tiled_upscale(img, "Web Photo", [model_web_photo], downloading_web_photo_model)
+    elif method == modules.flags.realistic_rescaler:
+        return perform_tiled_upscale(img, "Realistic Rescaler", [model_realistic_rescaler], downloading_realistic_rescaler_model)
+    elif method == modules.flags.skin_contrast:
+        return perform_tiled_upscale(img, "Skin Contrast", [model_skin_contrast], downloading_skin_contrast_model)
+    elif method == modules.flags.four_x_nomos:
+        return perform_tiled_upscale(img, "4xNomos", [model_four_x_nomos], downloading_four_x_nomos_model)
+    elif method == modules.flags.faces:
+        return perform_tiled_upscale(img, "Faces", [model_faces], downloading_faces_model)
     else: # Default upscaling
         if model_default is None:
             model_filename = downloading_upscale_model()

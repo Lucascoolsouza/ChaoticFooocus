@@ -683,7 +683,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             latents = latents / scaling_factor
 
             # Use the custom VAE decode method
-            image = self.vae.decode({'samples': latents})
+            image = self.vae.decode(latents)
 
             # Skip cast back for custom VAE - handled internally
         else:

@@ -963,6 +963,52 @@ def downloading_ultrasharp_model():
     )
     return os.path.join(path_upscale_models, '4x-UltraSharp.pth')
 
+
+def downloading_web_photo_model():
+    load_file_from_url(
+        url='https://github.com/Phhofm/models/releases/download/4xNomosWebPhoto_atd/4xNomosWebPhoto_atd.pth',
+        model_dir=path_upscale_models,
+        file_name='4xNomosWebPhoto_atd.pth'
+    )
+    return os.path.join(path_upscale_models, '4xNomosWebPhoto_atd.pth')
+
+
+def downloading_realistic_rescaler_model():
+    load_file_from_url(
+        url='https://drive.google.com/uc?export=download&confirm=1&id=1RcqRuygqR5AwMLCT0olLIqLobs4mBkIi',
+        model_dir=path_upscale_models,
+        file_name='realistic_rescaler.pth'
+    )
+    return os.path.join(path_upscale_models, 'realistic_rescaler.pth')
+
+
+def downloading_skin_contrast_model():
+    load_file_from_url(
+        url='https://www.mediafire.com/file/5qwtnosdfuq9bgl/1xSkinContrast-HighAlternative-SuperUltraCompact.pth/file',
+        model_dir=path_upscale_models,
+        file_name='1xSkinContrast-HighAlternative-SuperUltraCompact.pth'
+    )
+    return os.path.join(path_upscale_models, '1xSkinContrast-HighAlternative-SuperUltraCompact.pth')
+
+
+def downloading_four_x_nomos_model():
+    load_file_from_url(
+        url='https://github.com/Phhofm/models/releases/download/4xNomos2_hq_drct-l/4xNomos2_hq_drct-l.pth',
+        model_dir=path_upscale_models,
+        file_name='4xNomos2_hq_drct-l.pth'
+    )
+    return os.path.join(path_upscale_models, '4xNomos2_hq_drct-l.pth')
+
+
+def downloading_faces_model():
+    load_file_from_url(
+        url='https://drive.google.com/uc?export=download&confirm=1&id=1aJLyM9xPSJErmpTAeXypXO7XisfSs2vQ',
+        model_dir=path_upscale_models,
+        file_name='faces.pth'
+    )
+    return os.path.join(path_upscale_models, 'faces.pth')
+
+
 def downloading_safety_checker_model():
     load_file_from_url(
         url='https://huggingface.co/mashb1t/misc/resolve/main/stable-diffusion-safety-checker.bin',
