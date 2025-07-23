@@ -596,7 +596,6 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     t,
                     c_crossattn=prompt_embeds,
                     transformer_options=added_cond_kwargs,
-                    y=add_text_embeds,
                 )
 
                 # perform guidance
