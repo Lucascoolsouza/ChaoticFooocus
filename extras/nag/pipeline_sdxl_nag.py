@@ -591,21 +591,12 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     prompt_embeds = prompt_embeds[:len(latent_model_input)]
                     attn_procs_recovered = True
 
-                # Use the ModelPatcher's model attribute to call the UNet
-                if hasattr(self.unet, 'model'):
-                    unet_model = self.unet.model
-                else:
-                    unet_model = self.unet
-                
-                noise_pred = unet_model(
+                noise_pred = self.unet.apply_model(
                     latent_model_input,
                     t,
-                    encoder_hidden_states=prompt_embeds,
-                    timestep_cond=timestep_cond,
-                    cross_attention_kwargs=self.cross_attention_kwargs,
-                    added_cond_kwargs=added_cond_kwargs,
-                    return_dict=False,
-                )[0]
+                    c_crossattn=prompt_embeds,
+                    transformer_options=added_cond_kwargs,
+                )
 
                 # perform guidance
                 if self.do_classifier_free_guidance:
