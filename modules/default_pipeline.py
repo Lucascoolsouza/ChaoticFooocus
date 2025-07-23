@@ -732,17 +732,19 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         
         print("[NAG] Using NAG pipeline for generation")
         
-        # Use the NAG pipeline result
-        decoded_latent = output
-        
-        # Convert PIL image back to numpy array format expected by the rest of the pipeline
+        # 2) Normalise to a PIL image
         import numpy as np
-        if hasattr(decoded_latent, 'cpu'):
-            # If it's a tensor, convert to numpy
-            decoded_latent = decoded_latent.cpu().numpy()
-        elif hasattr(decoded_latent, '__array__'):
-            # If it's a PIL image, convert to numpy
-            decoded_latent = np.array(decoded_latent)
+        from PIL import Image # Ensure PIL is imported
+
+        if isinstance(output, Image.Image):
+            decoded_latent = output
+        elif hasattr(output, "images"):
+            decoded_latent = output.images[0]
+        else:
+            raise TypeError(f"Unexpected pipeline return type: {type(output)}")
+
+        # 3) Now you can safely convert to numpy if you need it
+        decoded_latent = np.array(decoded_latent)
         
         # Ensure it's in the right format (HWC, 0-255)
         if decoded_latent.max() <= 1.0:
