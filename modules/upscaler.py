@@ -60,6 +60,13 @@ def perform_upscale_without_tiling(img, model_name, model_var, download_func, as
             if vae is None:
                 raise ValueError(f"Upscaler '{model_name}' produced a latent (4 channels) but no VAE was provided for decoding.")
             result = core.decode_vae(vae, {'samples': result})[0]
+        elif result.shape[1] == 64 or result.shape[1] == 4096:  # UltraSharp latent
+            if vae is None:
+                raise ValueError(...)
+            # reshape to (B, 64, 64, 64)  (CHW = 64×64×64)
+            b, c, h, w = result.shape
+            result = result.view(b, 64, h, w)
+            result = core.decode_vae(vae, {'samples': result})[0]    
         elif result.shape[1] != 3:  # If it's not 3 channels (RGB) or 4 channels (latent)
             raise ValueError(f"Upscaler '{model_name}' produced an unexpected number of channels: {result.shape[1]}. Expected 3 (RGB) or 4 (latent).")
 
@@ -113,7 +120,8 @@ def perform_upscale(img, method, async_task=None, vae_model=None):
         if torch.cuda.is_available():
             model_to_use = model_to_use.cuda()
         
-        img = opImageUpscaleWithModel.upscale(model_to_use, img)[0]
+        img_tensor = img.permute(0, 3, 1, 2)  # NHWC → NCHW
+        result = opImageUpscaleWithModel.upscale(model_to_use, img_tensor)[0]
         
         # Move model back to CPU to free VRAM
         model_to_use.cpu()
