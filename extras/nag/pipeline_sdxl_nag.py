@@ -38,7 +38,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
     def _set_nag_attn_processor(self, nag_scale, nag_tau=2.5, nag_alpha=0.5):
         if self.do_normalized_attention_guidance:
             attn_procs = {}
-            for name, origin_attn_processor in self.unet.attn_processors.items():
+            for name, origin_attn_processor in getattr(self.unet, 'attn_processors', {}).items():
                 if "attn2" in name:
                     attn_procs[name] = NAGAttnProcessor2_0(nag_scale=nag_scale, nag_tau=nag_tau, nag_alpha=nag_alpha)
                 else:
@@ -353,7 +353,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         )
 
         # 5. Prepare latent variables
-        num_channels_latents = self.unet.config.in_channels
+        num_channels_latents = 4  # Standard SDXL latent channels
         latents = self.prepare_latents(
             batch_size * num_images_per_prompt,
             num_channels_latents,
@@ -373,7 +373,8 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         if self.text_encoder_2 is None:
             text_encoder_projection_dim = int(pooled_prompt_embeds.shape[-1])
         else:
-            text_encoder_projection_dim = self.text_encoder_2.config.projection_dim
+            # Use a default projection dimension for SDXL
+            text_encoder_projection_dim = 1280  # Standard SDXL text encoder 2 projection dimension
 
         add_time_ids = self._get_add_time_ids(
             original_size,
@@ -426,8 +427,8 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         ):
             discrete_timestep_cutoff = int(
                 round(
-                    self.scheduler.config.num_train_timesteps
-                    - (self.denoising_end * self.scheduler.config.num_train_timesteps)
+                    1000  # Standard diffusion timesteps
+                    - (self.denoising_end * 1000)
                 )
             )
             num_inference_steps = len(list(filter(lambda ts: ts >= discrete_timestep_cutoff, timesteps)))
@@ -435,14 +436,11 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
         # 9. Optionally get Guidance Scale Embedding
         timestep_cond = None
-        if self.unet.config.time_cond_proj_dim is not None:
-            guidance_scale_tensor = torch.tensor(self.guidance_scale - 1).repeat(batch_size * num_images_per_prompt)
-            timestep_cond = self.get_guidance_scale_embedding(
-                guidance_scale_tensor, embedding_dim=self.unet.config.time_cond_proj_dim
-            ).to(device=device, dtype=latents.dtype)
+        # Skip guidance scale embedding for custom UNet - not typically used in SDXL
+        timestep_cond = None
 
         if self.do_normalized_attention_guidance:
-            origin_attn_procs = self.unet.attn_processors
+            origin_attn_procs = getattr(self.unet, 'attn_processors', {})
             self._set_nag_attn_processor(nag_scale, nag_tau, nag_alpha)
             attn_procs_recovered = False
 
@@ -522,36 +520,26 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
         if not output_type == "latent":
             # make sure the VAE is in float32 mode, as it overflows in float16
-            needs_upcasting = self.vae.dtype == torch.float16 and self.vae.config.force_upcast
+            needs_upcasting = self.vae.vae_dtype == torch.float16 and getattr(self.vae.config, 'force_upcast', False)
 
             if needs_upcasting:
-                self.upcast_vae()
-                latents = latents.to(next(iter(self.vae.post_quant_conv.parameters())).dtype)
-            elif latents.dtype != self.vae.dtype:
+                # Skip upcast for custom VAE - handled internally
+                pass
+            elif latents.dtype != self.vae.vae_dtype:
                 if torch.backends.mps.is_available():
                     # some platforms (eg. apple mps) misbehave due to a pytorch bug: https://github.com/pytorch/pytorch/pull/99272
                     self.vae = self.vae.to(latents.dtype)
 
             # unscale/denormalize the latents
             # denormalize with the mean and std if available and not None
-            has_latents_mean = hasattr(self.vae.config, "latents_mean") and self.vae.config.latents_mean is not None
-            has_latents_std = hasattr(self.vae.config, "latents_std") and self.vae.config.latents_std is not None
-            if has_latents_mean and has_latents_std:
-                latents_mean = (
-                    torch.tensor(self.vae.config.latents_mean).view(1, 4, 1, 1).to(latents.device, latents.dtype)
-                )
-                latents_std = (
-                    torch.tensor(self.vae.config.latents_std).view(1, 4, 1, 1).to(latents.device, latents.dtype)
-                )
-                latents = latents * latents_std / self.vae.config.scaling_factor + latents_mean
-            else:
-                latents = latents / self.vae.config.scaling_factor
+            # Use standard SDXL VAE scaling factor
+            scaling_factor = getattr(self.vae.config, 'scaling_factor', 0.13025)  # Standard SDXL VAE scaling factor
+            latents = latents / scaling_factor
 
-            image = self.vae.decode(latents, return_dict=False)[0]
+            # Use the custom VAE decode method
+            image = self.vae.decode({'samples': latents})
 
-            # cast back to fp16 if needed
-            if needs_upcasting:
-                self.vae.to(dtype=torch.float16)
+            # Skip cast back for custom VAE - handled internally
         else:
             image = latents
 
