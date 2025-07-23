@@ -569,7 +569,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
                 # predict the noise residual
-                added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
+                added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids, "pooled_output": pooled_prompt_embeds}
                 if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
                     added_cond_kwargs["image_embeds"] = image_embeds
 
@@ -582,7 +582,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 # The NAG attention processors are now set up, so we can proceed with sampling
 
                 # predict the noise residual
-                added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
+                added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids, "pooled_output": pooled_prompt_embeds}
                 if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
                     added_cond_kwargs["image_embeds"] = image_embeds
 
