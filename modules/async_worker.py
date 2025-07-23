@@ -1234,7 +1234,14 @@ def worker():
         denoising_strength = 1.0
         tiled = False
 
-        width, height = async_task.aspect_ratios_selection.replace('×', ' ').split(' ')[:2]
+        # Defensive: handle aspect_ratios_selection as string or list
+        ars = async_task.aspect_ratios_selection
+        if isinstance(ars, list):
+            if len(ars) > 0:
+                ars = ars[0]
+            else:
+                ars = "1024×1024"  # fallback default
+        width, height = ars.replace('×', ' ').split(' ')[:2]
         width, height = int(width), int(height)
 
         skip_prompt_processing = False
