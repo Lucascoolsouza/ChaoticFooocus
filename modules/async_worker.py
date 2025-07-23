@@ -1020,6 +1020,11 @@ def worker():
                         prompt, negative_prompt, final_scheduler_name, goals, height, img, mask,
                         preparation_steps, steps, switch, tiled, total_count, use_expansion, use_style,
                         use_synthetic_refiner, width, show_intermediate_results=True, persist_image=True):
+
+        if 'remove_background' in goals and steps == 0:
+            # If background removal is the goal and steps is 0, return the processed image directly
+            return current_progress, img, prompt, negative_prompt
+
         base_model_additional_loras = []
         inpaint_head_model_path = None
         inpaint_parameterized = inpaint_engine != 'None'  # inpaint_engine = None, improve detail
