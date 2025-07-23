@@ -77,7 +77,7 @@ SCHEDULER_NAMES = ["normal", "karras", "exponential", "sgm_uniform", "simple",
                     "ddim_uniform", "lcm", "turbo", "align_your_steps", "tcd",
                     "edm_playground_v2.5","comic_panel","sinusoidal", "chaotic", "zigzag",
                     "jitter", "upscale", "mini_dalle", "grid","pixel_art",
-                    "!golden_ratio","dream","piecewise","trow_random_blsht",
+                    "golden_ratio","dream","piecewise","trow_random_blsht",
                     "smokeywindy","attention_context","claylike","extreme_closeup_detail",
                     "rhythmic_beats","chaotic_swirl","dropout_spikes","inception_ramp","double_cosine",
                     "color_rainbow","rgb_split","hsv_cycle","spiral","quantum","organic"]
