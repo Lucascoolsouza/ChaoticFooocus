@@ -730,10 +730,6 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         print(f"[NAG] NAG pipeline completed, output shape: {decoded_latent.shape}")
         
         # Skip the regular ksampler since we used NAG pipeline
-            refiner_switch=switch,
-            sigmas=minmax_sigmas,
-            callback_function=callback
-        )['samples']
     else:
         decoded_latent = core.ksampler(
             model=final_unet,
