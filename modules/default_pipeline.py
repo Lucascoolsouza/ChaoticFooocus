@@ -742,9 +742,8 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         # ---------- after NAG pipeline call ----------
         if isinstance(output, Image.Image):
             # already decoded → convert to numpy HWC uint8 for Fooocus
-            img_np = np.asarray(output.convert("RGB"), dtype=np.uint8)
-            imgs = [img_np]                      # skip decode & pytorch_to_numpy
-        elif isinstance(output, np.ndarray):
+            imgs = [np.asarray(output.convert("RGB"), dtype=np.uint8)] # skip decode & pytorch_to_numpy
+        elif isinstance(output, np.ndarray) and output.ndim == 3:
             # returned uint8 HWC numpy
             imgs = [output]
         else:
@@ -752,8 +751,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             latent_dict = {'samples': output}
             imgs = core.pytorch_to_numpy(core.decode_vae(target_vae, latent_dict))
         
-        print("Worker received", type(imgs[0]), getattr(imgs[0], 'size', '-'))
-        print(f"[NAG] NAG pipeline completed, output shape: {imgs[0].shape}")
+        print("Final deliverable:", type(imgs[0]), getattr(imgs[0], 'size', '-'))
         
         # Skip the regular ksampler since we used NAG pipeline
     else:
