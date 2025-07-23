@@ -40,7 +40,7 @@ class ImageUpscaleWithModel:
     def upscale(self, upscale_model, image):
         device = model_management.get_torch_device()
         upscale_model.to(device)
-        in_img = image.movedim(-1,-3).to(device)
+        in_img = image.to(device)
         free_memory = model_management.get_free_memory(device)
 
         tile = 512
