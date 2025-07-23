@@ -346,7 +346,8 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         width = width or self.default_sample_size * self.vae_scale_factor
 
         # Enable VAE tiling and attention slicing for memory optimization
-        self.vae.enable_tiling()
+        if hasattr(self.vae, "enable_tiling"):
+            self.vae.enable_tiling()
         self.unet.enable_attention_slicing()
 
         original_size = original_size or (height, width)
