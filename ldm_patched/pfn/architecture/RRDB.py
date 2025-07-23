@@ -92,7 +92,11 @@ class RRDBNet(nn.Module):
                 break
 
         self.scale: int = self.get_scale()
-        self.num_filters: int = self.state[self.key_arr[0]].shape[0]
+        self.num_filters: int = 64  # Default value
+        for k in self.key_arr:
+            if isinstance(self.state[k], torch.Tensor) and self.state[k].ndim == 4:
+                self.num_filters = self.state[k].shape[0]
+                break
 
         c2x2 = False
         if self.state["model.0.weight"].shape[-2] == 2:
