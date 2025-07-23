@@ -695,7 +695,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             if self.watermark is not None:
                 image = self.watermark.apply_watermark(image)
 
-            image = self.image_processor.postprocess(image, output_type=output_type).cpu().numpy()
+            image = self.image_processor.postprocess(image.contiguous(), output_type=output_type)
 
         if self.do_normalized_attention_guidance and not attn_procs_recovered:
             self.unet.set_attn_processor(origin_attn_procs)
