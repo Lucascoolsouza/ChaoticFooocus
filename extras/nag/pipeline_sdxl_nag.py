@@ -26,6 +26,39 @@ from diffusers.pipelines.stable_diffusion_xl.pipeline_stable_diffusion_xl import
 
 from .attention_nag import NAGAttnProcessor2_0
 
+from PIL import Image, ImageDraw
+import numpy as np
+
+def safe_decode_to_image(latents, vae, width=512, height=512):
+    try:
+        with torch.no_grad():
+            latents = latents.to(vae.device)
+            decoded = vae.decode(latents)
+
+            if hasattr(vae, "post_quant_conv"):
+                vae.post_quant_conv = vae.post_quant_conv.to(decoded.device, decoded.dtype)
+                decoded = vae.post_quant_conv(decoded)
+            else:
+                decoded = decoded[:, :3] if decoded.size(1) >= 3 else decoded.mean(dim=1, keepdim=True).repeat(1, 3, 1, 1)
+
+            decoded = torch.clamp((decoded + 1) * 0.5, 0, 1)
+
+            decoded_np = (decoded[0].permute(1, 2, 0) * 255).cpu().numpy().astype(np.uint8)
+
+            img = Image.fromarray(decoded_np, mode='RGB')
+            if not isinstance(img, Image.Image):
+                raise ValueError("Decoded result is not a valid PIL image.")
+
+            return img
+
+    except Exception as e:
+        print(f"[Safe Decode] ❌ Failed to decode: {e}")
+        img = Image.new("RGB", (width, height), color="red")
+        draw = ImageDraw.Draw(img)
+        draw.text((10, 10), "Decode error", fill="white")
+        return img
+
+
 
 class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
     @property
@@ -644,19 +677,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 # --- add these three lines ---
                 if callback is not None:
                     try:
-                        with torch.no_grad():
-                            lat_preview = latents[:1].to(self.vae.device)
-                            decoded = self.vae.decode(lat_preview)
-
-                            if not isinstance(decoded, torch.Tensor) or decoded.ndim != 4:
-                                raise ValueError(f"[Preview] Invalid VAE decode output: {type(decoded)} shape={getattr(decoded, 'shape', None)}")
-
-                            decoded = torch.clamp((decoded + 1) * 0.5, 0, 1)
-                            decoded = decoded.permute(0, 2, 3, 1)
-                            decoded_np = (decoded[0] * 255).cpu().numpy().astype(np.uint8)
-
-                        from PIL import Image
-                        preview_img = Image.fromarray(decoded_np, mode='RGB')
+                        preview_img = safe_decode_to_image(latents[:1], self.vae, width=width, height=height)
                         callback(i, t, preview_img)
 
                     except Exception as e:
@@ -695,30 +716,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 if XLA_AVAILABLE:
                     xm.mark_step()
 
-        final_image = None
-        try:
-            with torch.no_grad():
-                latents = latents.to(self.vae.device)
-                decoded = self.vae.decode(latents)
-
-                if hasattr(self.vae, "post_quant_conv"):
-                    self.vae.post_quant_conv = self.vae.post_quant_conv.to(decoded.device, decoded.dtype)
-                    decoded = self.vae.post_quant_conv(decoded)
-                else:
-                    decoded = decoded[:, :3] if decoded.size(1) >= 3 else decoded.mean(dim=1, keepdim=True).repeat(1, 3, 1, 1)
-
-                decoded = torch.clamp((decoded + 1) * 0.5, 0, 1)
-                decoded_np = (decoded[0].permute(1, 2, 0) * 255).cpu().numpy().astype(np.uint8)
-
-                from PIL import Image
-                final_image = Image.fromarray(decoded_np, mode='RGB')
-
-        except Exception as e:
-            print(f"[VAE Decode] ❌ Failed to convert tensor to image: {e}")
-            from PIL import Image, ImageDraw
-            final_image = Image.new('RGB', (width or 512, height or 512), color='red')
-            draw = ImageDraw.Draw(final_image)
-            draw.text((10, 10), f"Decode Error", fill=(255, 255, 255))
+        final_image = safe_decode_to_image(latents, self.vae, width=width, height=height)
 
         if self.do_normalized_attention_guidance and not attn_procs_recovered:
             self.unet.set_attn_processor(origin_attn_procs)
