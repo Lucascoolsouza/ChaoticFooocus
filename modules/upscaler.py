@@ -1,6 +1,7 @@
 from collections import OrderedDict
 import numpy as np
 
+import math
 import modules.core as core
 import torch
 from ldm_patched.contrib.external_upscale_model import ImageUpscaleWithModel
@@ -56,27 +57,24 @@ def perform_upscale_without_tiling(img, model_name, model_var, download_func, as
 
         result = opImageUpscaleWithModel.upscale(model_var[0], img_tensor.permute(0, 3, 1, 2))[0]
 
-        if result.shape[1] == 4:  # If the output is a latent (4 channels)
-            if vae is None:
-                raise ValueError(f"Upscaler '{model_name}' produced a latent (4 channels) but no VAE was provided for decoding.")
+        if result.shape[1] == 3:               # RGB
+            pass
+        elif result.shape[1] == 4:             # SD latent
             result = core.decode_vae(vae, {'samples': result})[0]
-        elif result.shape[1] == 64:                 # ESRGAN latent
-            if vae is None:
-                raise ValueError(f"Upscaler '{model_name}' produced 64-channel latent but no VAE provided.")
+        elif result.shape[1] == 64:            # ESRGAN latent (4×4 unshuffle)
+            b, c, h, w = result.shape
+            result = result.view(b, 64, h//4, w//4)
             result = core.decode_vae(vae, {'samples': result})[0]
-        elif result.shape[1] == 4096:
-            if vae is None:
-                raise ValueError("Need VAE to decode 4096-channel pixel-unshuffle output.")
-            b, c, h, w = result.shape                       # [1, 4096, 1024, 12]
-            # 4096 = 64 × 4²  →  each group of 64 channels is one latent plane
-            result = result.view(b, 64, 4, 4, h, w)       # [B, 64, 4, 4, H, W]
-            result = result.permute(0, 1, 4, 2, 5, 3)     # [B, 64, H, 4, W, 4]
-            result = result.reshape(b, 64, h*4, w*4)      # [B, 64, H*4, W*4]
+        elif result.shape[1] in (1024, 4096):  # 8×8 or 4×4 pixel-unshuffle
+            factor = int(math.sqrt(result.shape[1] // 64))
+            b, c, h, w = result.shape
+            result = result.view(b, 64, factor, factor, h, w)
+            result = result.permute(0, 1, 4, 2, 5, 3).reshape(b, 64, h*factor, w*factor)
             result = core.decode_vae(vae, {'samples': result})[0]
-        elif result.shape[1] not in (3, 4, 64, 4096):
+        else:
             raise ValueError(
                 f"Upscaler '{model_name}' produced {result.shape[1]} channels; "
-                f"expected 3 (RGB), 4 (SD-latent) or 64 (ESRGAN-latent)."
+                f"expected 3 (RGB), 4 (SD-latent), 64 (ESRGAN-latent), 1024 (8x8 pixel-unshuffle) or 4096 (4x4 pixel-unshuffle)."
             )
 
         model_var[0].cpu()
