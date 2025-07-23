@@ -579,6 +579,16 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 # expand the latents if we are doing classifier free guidance
                 latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
 
+                if self.do_normalized_attention_guidance and nag_negative_prompt_embeds is not None:
+                    # Ensure latent_model_input matches the batch size of prompt_embeds
+                    target_batch_size = prompt_embeds.shape[0]
+                    current_latent_batch_size = latent_model_input.shape[0]
+
+                    if target_batch_size > current_latent_batch_size:
+                        num_latents_to_add = target_batch_size - current_latent_batch_size
+                        # Repeat the first latent to match the required number of additional latents
+                        latent_model_input = torch.cat([latent_model_input, latents[0:1].repeat(num_latents_to_add, 1, 1, 1)], dim=0)
+
                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
                 # predict the noise residual
