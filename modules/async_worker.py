@@ -231,7 +231,8 @@ def worker():
     import modules.default_pipeline as pipeline
     import modules.core as core
     import modules.flags as flags
-    import modules.patch
+import modules.patch
+from modules.patch import PatchSettings
     import ldm_patched.modules.model_management
     import extras.preprocessors as preprocessors
     import modules.inpaint_worker as inpaint_worker
