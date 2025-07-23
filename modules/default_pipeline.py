@@ -755,10 +755,9 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         
         # Skip the regular ksampler since we used NAG pipeline
     else:
-        else:
-    # no refiner – use base only
-    ldm_patched.modules.model_management.load_models_gpu([final_unet])
-    minmax_sigmas = calculate_sigmas(sampler=sampler_name, scheduler=scheduler_name, model=final_unet.model, steps=steps, denoise=denoise)
+        # no refiner – use base only
+        ldm_patched.modules.model_management.load_models_gpu([final_unet])
+        minmax_sigmas = calculate_sigmas(sampler=sampler_name, scheduler=scheduler_name, model=final_unet.model, steps=steps, denoise=denoise)
         
         # Convert latents to images
         if imgs is not None:
