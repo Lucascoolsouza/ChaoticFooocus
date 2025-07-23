@@ -387,35 +387,19 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             final_nag_negative_prompt = nag_negative_prompt
         elif original_negative_prompt is not None:
             final_nag_negative_prompt = original_negative_prompt
-        # Create a wrapper for the VAE to provide a mock config attribute
-        class MockVAEConfig:
-            def __init__(self):
-                self.block_out_channels = [128, 256, 512, 512] # Common for SDXL VAEs
+        # Dynamically add a 'config' attribute to model_base.vae if it doesn't exist
+        if not hasattr(model_base.vae, 'config'):
+            class VAEConfig:
+                def __init__(self):
+                    self.block_out_channels = [128, 256, 512, 512]
+            model_base.vae.config = VAEConfig()
 
-        class MockVAE:
-            def __init__(self, original_vae):
-                self.original_vae = original_vae
-                self.config = MockVAEConfig()
-
-            def __getattr__(self, name):
-                return getattr(self.original_vae, name)
-
-        mock_vae = MockVAE(model_base.vae)
-
-        # Create a wrapper for the UNet to provide a mock config attribute
-        class MockUNetConfig:
-            def __init__(self):
-                self.sample_size = 128 # Common for SDXL UNets
-
-        class MockUNet:
-            def __init__(self, original_unet):
-                self.original_unet = original_unet
-                self.config = MockUNetConfig()
-
-            def __getattr__(self, name):
-                return getattr(self.original_unet, name)
-
-        mock_unet = MockUNet(model_base.unet)
+        # Dynamically add a 'config' attribute to model_base.unet if it doesn't exist
+        if not hasattr(model_base.unet, 'config'):
+            class UNetConfig:
+                def __init__(self):
+                    self.sample_size = 128
+            model_base.unet.config = UNetConfig()
 
         # Extract embeddings from positive_cond and negative_cond
         prompt_embeds_unpadded = positive_cond[0][0]
@@ -430,16 +414,45 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         prompt_embeds = torch.nn.functional.pad(prompt_embeds_unpadded, (0, 0, 0, max_length - prompt_embeds_unpadded.shape[1]))
         negative_prompt_embeds = torch.nn.functional.pad(negative_prompt_embeds_unpadded, (0, 0, 0, max_length - negative_prompt_embeds_unpadded.shape[1]))
 
-        # Instantiate NAGStableDiffusionXLPipeline
+        # Ensure all necessary components are on the correct device before passing to NAGStableDiffusionXLPipeline
+        device = ldm_patched.modules.model_management.get_torch_device()
+
+        # Dynamically add a 'config' attribute to model_base.vae if it doesn't exist
+        if not hasattr(model_base.vae, 'config'):
+            class VAEConfig:
+                def __init__(self):
+                    self.block_out_channels = [128, 256, 512, 512]
+            model_base.vae.config = VAEConfig()
+
+        # Dynamically add a 'config' attribute to model_base.unet if it doesn't exist
+        if not hasattr(model_base.unet, 'config'):
+            class UNetConfig:
+                def __init__(self):
+                    self.sample_size = 128
+            model_base.unet.config = UNetConfig()
+
+        # Move components to the correct device
+        vae_on_device = model_base.vae.to(device)
+        text_encoder_l_on_device = model_base.clip.cond_stage_model.clip_l.to(device)
+        text_encoder_g_on_device = model_base.clip.cond_stage_model.clip_g.to(device)
+        tokenizer_l_on_device = model_base.clip.tokenizer.clip_l
+        tokenizer_g_on_device = model_base.clip.tokenizer.clip_g
+        unet_on_device = model_base.unet.to(device)
+        scheduler_on_device = model_base.unet.model.model_sampling # This is not a torch.nn.Module, so no .to() needed
+
+        # Instantiate NAGStableDiffusionXLPipeline with the components on the correct device
         nag_pipe = NAGStableDiffusionXLPipeline(
-            vae=mock_vae,
-            text_encoder=model_base.clip.cond_stage_model.clip_l.transformer,
-            text_encoder_2=model_base.clip.cond_stage_model.clip_g.transformer,
-            tokenizer=model_base.clip.tokenizer.clip_l.tokenizer,
-            tokenizer_2=model_base.clip.tokenizer.clip_g.tokenizer,
-            unet=mock_unet,
-            scheduler=model_base.unet.model.model_sampling
+            vae=vae_on_device,
+            text_encoder=text_encoder_l_on_device,
+            text_encoder_2=text_encoder_g_on_device,
+            tokenizer=tokenizer_l_on_device,
+            tokenizer_2=tokenizer_g_on_device,
+            unet=unet_on_device,
+            scheduler=scheduler_on_device
         )
+        print(f"NAG pipeline instantiated. Its internal device should now be correctly set.")
+        
+        
 
         # Call the NAG pipeline
         output = nag_pipe(
