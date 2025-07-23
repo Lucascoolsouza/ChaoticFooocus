@@ -396,6 +396,21 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
 
         mock_vae = MockVAE(model_base.vae)
 
+        # Create a wrapper for the UNet to provide a mock config attribute
+        class MockUNetConfig:
+            def __init__(self):
+                self.sample_size = 128 # Common for SDXL UNets
+
+        class MockUNet:
+            def __init__(self, original_unet):
+                self.original_unet = original_unet
+                self.config = MockUNetConfig()
+
+            def __getattr__(self, name):
+                return getattr(self.original_unet, name)
+
+        mock_unet = MockUNet(model_base.unet)
+
         # Instantiate NAGStableDiffusionXLPipeline
         nag_pipe = NAGStableDiffusionXLPipeline(
             vae=mock_vae,
@@ -403,7 +418,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             text_encoder_2=model_base.clip.cond_stage_model.clip_g.transformer,
             tokenizer=model_base.clip.tokenizer.clip_l.tokenizer,
             tokenizer_2=model_base.clip.tokenizer.clip_g.tokenizer,
-            unet=model_base.unet,
+            unet=mock_unet,
             scheduler=model_base.unet.model.model_sampling
         )
 
