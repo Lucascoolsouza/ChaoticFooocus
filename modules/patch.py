@@ -383,6 +383,13 @@ def patched_unet_forward(self, x, timesteps=None, context=None, y=None, control=
 
     y = timed_adm(y, timesteps)
 
+    # --- START OF MODIFICATION ---
+    # Ensure y has the same batch size as x.
+    # If y's batch size is 1 and x's is greater than 1, repeat y.
+    if y is not None and y.shape[0] == 1 and x.shape[0] > 1:
+        y = y.repeat(x.shape[0], 1)
+    # --- END OF MODIFICATION ---
+
     transformer_options["original_shape"] = list(x.shape)
     transformer_options["transformer_index"] = 0
     transformer_patches = transformer_options.get("patches", {})
