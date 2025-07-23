@@ -381,9 +381,24 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
 
     if nag_scale > 1.0:
         print(f"[NAG] NAG is active with nag_scale={nag_scale}, nag_tau={nag_tau}, nag_alpha={nag_alpha}, nag_negative_prompt='{nag_negative_prompt}', nag_end={nag_end}")
+        # Create a wrapper for the VAE to provide a mock config attribute
+        class MockVAEConfig:
+            def __init__(self):
+                self.block_out_channels = [128, 256, 512, 512] # Common for SDXL VAEs
+
+        class MockVAE:
+            def __init__(self, original_vae):
+                self.original_vae = original_vae
+                self.config = MockVAEConfig()
+
+            def __getattr__(self, name):
+                return getattr(self.original_vae, name)
+
+        mock_vae = MockVAE(model_base.vae)
+
         # Instantiate NAGStableDiffusionXLPipeline
         nag_pipe = NAGStableDiffusionXLPipeline(
-            vae=model_base.vae,
+            vae=mock_vae,
             text_encoder=model_base.clip.cond_stage_model.clip_l.transformer,
             text_encoder_2=model_base.clip.cond_stage_model.clip_g.transformer,
             tokenizer=model_base.clip.tokenizer.clip_l.tokenizer,
