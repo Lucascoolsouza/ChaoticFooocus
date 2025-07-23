@@ -411,6 +411,13 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
 
         mock_unet = MockUNet(model_base.unet)
 
+        # Extract embeddings from positive_cond and negative_cond
+        prompt_embeds = positive_cond[0][0]
+        pooled_prompt_embeds = positive_cond[0][1]["pooled_output"]
+
+        negative_prompt_embeds = negative_cond[0][0]
+        negative_pooled_prompt_embeds = negative_cond[0][1]["pooled_output"]
+
         # Instantiate NAGStableDiffusionXLPipeline
         nag_pipe = NAGStableDiffusionXLPipeline(
             vae=mock_vae,
@@ -422,17 +429,12 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             scheduler=model_base.unet.model.model_sampling
         )
 
-        # Prepare inputs for NAG pipeline
-        prompt = original_prompt
-        negative_prompt = original_negative_prompt
-
-        # Use nag_negative_prompt if provided, otherwise use the extracted negative_prompt_str
-        final_nag_negative_prompt = nag_negative_prompt if nag_negative_prompt is not None else negative_prompt
-
         # Call the NAG pipeline
         output = nag_pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
+            prompt_embeds=prompt_embeds,
+            pooled_prompt_embeds=pooled_prompt_embeds,
+            negative_prompt_embeds=negative_prompt_embeds,
+            negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
             height=height,
             width=width,
             num_inference_steps=steps,
