@@ -470,28 +470,7 @@ def worker():
             denoising_strength = 0.5
         if 'strong' in uov_method:
             denoising_strength = 0.85
-        if 'ultrasharp' in uov_method:
-            denoising_strength = 0.35  # Lower denoising for sharpening effect
-            # Enhance prompt for sharpening
-            sharpening_keywords = "sharp, detailed, crisp, high quality, ultra detailed"
-            if async_task.prompt and sharpening_keywords not in async_task.prompt:
-                async_task.prompt = f"{async_task.prompt}, {sharpening_keywords}"
-            # Add negative prompt to avoid blur
-            blur_negative = "blurry, soft, out of focus, low quality"
-            if async_task.negative_prompt and blur_negative not in async_task.negative_prompt:
-                async_task.negative_prompt = f"{async_task.negative_prompt}, {blur_negative}"
-            elif not async_task.negative_prompt:
-                async_task.negative_prompt = blur_negative
-            
-            # Apply UltraSharp model processing with tiling
-            print("[UltraSharp] Applying UltraSharp model with tiling...")
-            try:
-                from modules.upscaler import apply_ultrasharp_vary
-                uov_input_image = apply_ultrasharp_vary(uov_input_image, tile_size=512, overlap=64)
-                print("[UltraSharp] UltraSharp processing completed successfully")
-            except Exception as e:
-                print(f"[UltraSharp] UltraSharp processing failed: {e}")
-                print("[UltraSharp] Continuing with prompt-based sharpening only")
+        
         if async_task.overwrite_vary_strength > 0:
             denoising_strength = async_task.overwrite_vary_strength
         shape_ceil = get_image_shape_ceil(uov_input_image)
@@ -618,7 +597,7 @@ def worker():
         if advance_progress:
             current_progress += 1
         progressbar(async_task, current_progress, f'Upscaling image from {str((W, H))} ...')
-        uov_input_image = perform_upscale(uov_input_image, uov_method)
+        uov_input_image = perform_upscale(uov_input_image, uov_method, async_task=async_task)
         print(f'Image upscaled.')
         if '1.5x' in uov_method:
             f = 1.5
@@ -978,9 +957,9 @@ def worker():
     def prepare_upscale(async_task, goals, uov_input_image, uov_method, performance, steps, current_progress,
                         advance_progress=False, skip_prompt_processing=False):
         uov_input_image = HWC3(uov_input_image)
-        if 'vary' in uov_method or 'ultrasharp' in uov_method:
+        if 'vary' in uov_method:
             goals.append('vary')
-        elif 'upscale' in uov_method:
+        elif 'upscale' in uov_method or 'ultrasharp' in uov_method or 'web photo' in uov_method or 'realistic rescaler' in uov_method or 'skin contrast' in uov_method or '4xnomos' in uov_method or 'faces' in uov_method:
             goals.append('upscale')
             if 'fast' in uov_method:
                 skip_prompt_processing = True

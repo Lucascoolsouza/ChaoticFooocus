@@ -163,10 +163,22 @@ def apply_ultrasharp_vary(img, tile_size=512, overlap=64):
         return img
 
 
-def perform_tiled_upscale(img, model_name, model_var, download_func, tile_size=512, overlap=64):
+def perform_tiled_upscale(img, model_name, model_var, download_func, tile_size=512, overlap=64, async_task=None):
     global model_web_photo, model_realistic_rescaler, model_skin_contrast, model_four_x_nomos, model_faces, model_ultrasharp
 
     print(f'Processing {model_name} with tiling (tile_size={tile_size}, overlap={overlap}) on image shape {img.shape}...')
+
+    if model_name == "UltraSharp" and async_task is not None:
+        # Enhance prompt for sharpening
+        sharpening_keywords = "sharp, detailed, crisp, high quality, ultra detailed"
+        if async_task.prompt and sharpening_keywords not in async_task.prompt:
+            async_task.prompt = f"{async_task.prompt}, {sharpening_keywords}"
+        # Add negative prompt to avoid blur
+        blur_negative = "blurry, soft, out of focus, low quality"
+        if async_task.negative_prompt and blur_negative not in async_task.negative_prompt:
+            async_task.negative_prompt = f"{async_task.negative_prompt}, {blur_negative}"
+        elif not async_task.negative_prompt:
+            async_task.negative_prompt = blur_negative
 
     # Load model if not already loaded
     if model_var[0] is None:
@@ -298,7 +310,7 @@ def perform_upscale(img, method):
     print(f'Upscaling image with shape {str(img.shape)} using method {method} ...')
 
     if method == modules.flags.ultrasharp:
-        return perform_tiled_upscale(img, "UltraSharp", [model_ultrasharp], downloading_ultrasharp_model)
+        return perform_tiled_upscale(img, "UltraSharp", [model_ultrasharp], downloading_ultrasharp_model, async_task=async_task)
     elif method == modules.flags.web_photo:
         return perform_tiled_upscale(img, "Web Photo", [model_web_photo], downloading_web_photo_model)
     elif method == modules.flags.realistic_rescaler:
