@@ -163,7 +163,7 @@ def apply_ultrasharp_vary(img, tile_size=512, overlap=64):
         return img
 
 
-def perform_tiled_upscale(img, model_name, model_var, download_func, tile_size=512, overlap=64, async_task=None):
+def perform_tiled_upscale(img, model_name, model_var, download_func, tile_size=512, overlap=64, async_task=None, vae=None):
     global model_web_photo, model_realistic_rescaler, model_skin_contrast, model_four_x_nomos, model_faces, model_ultrasharp
 
     print(f'Processing {model_name} with tiling (tile_size={tile_size}, overlap={overlap}) on image shape {img.shape}...')
@@ -208,6 +208,13 @@ def perform_tiled_upscale(img, model_name, model_var, download_func, tile_size=5
 
             result = opImageUpscaleWithModel.upscale(model_var[0], img_tensor)[0]
 
+            if result.shape[1] == 4:  # If the output is a latent (4 channels)
+                if vae is None:
+                    raise ValueError(f"Upscaler '{model_name}' produced a latent (4 channels) but no VAE was provided for decoding.")
+                result = core.decode_vae(vae, {'samples': result})[0]
+            elif result.shape[1] != 3:  # If it's not 3 channels (RGB) or 4 channels (latent)
+                raise ValueError(f"Upscaler '{model_name}' produced an unexpected number of channels: {result.shape[1]}. Expected 3 (RGB) or 4 (latent).")
+
             model_var[0].cpu()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -247,6 +254,13 @@ def perform_tiled_upscale(img, model_name, model_var, download_func, tile_size=5
 
                 # Process tile
                 tile_result = opImageUpscaleWithModel.upscale(model_var[0], tile)[0]
+
+                if tile_result.shape[1] == 4:  # If the output is a latent (4 channels)
+                    if vae is None:
+                        raise ValueError(f"Upscaler '{model_name}' produced a latent (4 channels) but no VAE was provided for decoding.")
+                    tile_result = core.decode_vae(vae, {'samples': tile_result})[0]
+                elif tile_result.shape[1] != 3:  # If it's not 3 channels (RGB) or 4 channels (latent)
+                    raise ValueError(f"Upscaler '{model_name}' produced an unexpected number of channels: {tile_result.shape[1]}. Expected 3 (RGB) or 4 (latent).")
 
                 # Calculate output position
                 out_y = y * scale_factor
@@ -305,24 +319,24 @@ def perform_tiled_upscale(img, model_name, model_var, download_func, tile_size=5
 
 
 def perform_upscale(img, method, async_task=None):
-    global model_default, model_ultrasharp, model_web_photo, model_realistic_rescaler, model_skin_contrast, model_four_x_nomos, model_faces
+    global model_default, model_ultrasharp, model_web_photo, model_realistic_rescaler, model_skin_contrast, model_four_x_nomos, model_faces, final_vae
 
     print(f'Upscaling image with shape {str(img.shape)} using method {method} ...')
 
     method = method.casefold()
 
     if method == modules.flags.ultrasharp.casefold():
-        return perform_tiled_upscale(img, "UltraSharp", [model_ultrasharp], downloading_ultrasharp_model, async_task=async_task)
+        return perform_tiled_upscale(img, "UltraSharp", [model_ultrasharp], downloading_ultrasharp_model, async_task=async_task, vae=final_vae)
     elif method == modules.flags.web_photo.casefold():
-        return perform_tiled_upscale(img, "Web Photo", [model_web_photo], downloading_web_photo_model)
+        return perform_tiled_upscale(img, "Web Photo", [model_web_photo], downloading_web_photo_model, vae=final_vae)
     elif method == modules.flags.realistic_rescaler.casefold():
-        return perform_tiled_upscale(img, "Realistic Rescaler", [model_realistic_rescaler], downloading_realistic_rescaler_model)
+        return perform_tiled_upscale(img, "Realistic Rescaler", [model_realistic_rescaler], downloading_realistic_rescaler_model, vae=final_vae)
     elif method == modules.flags.skin_contrast.casefold():
-        return perform_tiled_upscale(img, "Skin Contrast", [model_skin_contrast], downloading_skin_contrast_model)
+        return perform_tiled_upscale(img, "Skin Contrast", [model_skin_contrast], downloading_skin_contrast_model, vae=final_vae)
     elif method == modules.flags.four_x_nomos.casefold():
-        return perform_tiled_upscale(img, "4xNomos", [model_four_x_nomos], downloading_four_x_nomos_model)
+        return perform_tiled_upscale(img, "4xNomos", [model_four_x_nomos], downloading_four_x_nomos_model, vae=final_vae)
     elif method == modules.flags.faces.casefold():
-        return perform_tiled_upscale(img, "Faces", [model_faces], downloading_faces_model)
+        return perform_tiled_upscale(img, "Faces", [model_faces], downloading_faces_model, vae=final_vae)
     else: # Default upscaling
         if model_default is None:
             model_filename = downloading_upscale_model()

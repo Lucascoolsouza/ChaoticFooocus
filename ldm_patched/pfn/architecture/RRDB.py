@@ -278,7 +278,7 @@ class RRDBNet(nn.Module):
                     nbs.append(int(m.group(1)))
             if nbs:
                 break
-        return max(*nbs) + 1
+        return max(*nbs) + 1 if nbs else 0
 
     def forward(self, x):
         if self.shuffle_factor:
