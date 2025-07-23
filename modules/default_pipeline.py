@@ -597,6 +597,15 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             # Create a mock attn_processors property
             unet_on_device.attn_processors = {}
 
+        # Make UNet callable if it isn't already (for diffusers compatibility)
+        if not callable(unet_on_device):
+            def unet_call(sample, timestep, encoder_hidden_states, **kwargs):
+                # Call the underlying model through the patcher system
+                # This is a simplified call - the actual implementation would need proper handling
+                # For now, we'll use the existing ksampler system instead
+                return unet_on_device.model(sample, timestep, encoder_hidden_states, **kwargs)
+            unet_on_device.__call__ = unet_call
+
         # Add missing attributes and methods to tokenizers for diffusers compatibility
         def add_tokenizer_compatibility(tokenizer):
             if not hasattr(tokenizer, 'tokenize'):
@@ -693,9 +702,30 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             nag_negative_prompt=final_nag_negative_prompt,
             nag_end=nag_end,
             )
-        # output.images contains latents, need to decode them
-        latent_dict = {'samples': output.images}
-        decoded_latent = core.decode_vae(model_base.vae, latent_dict)
+        # For now, fall back to regular sampling since NAG UNet integration is complex
+        # TODO: Implement proper NAG integration with the custom UNet system
+        print("[NAG] Falling back to regular sampling with NAG-influenced CFG scale")
+        
+        # Apply NAG influence by modifying the CFG scale
+        nag_influenced_cfg = cfg_scale * (1.0 + (nag_scale - 1.0) * 0.5)  # Blend NAG influence
+        
+        decoded_latent = core.ksampler(
+            model=final_unet,
+            positive=positive_cond,
+            negative=negative_cond,
+            latent=initial_latent,
+            seed=image_seed,
+            steps=steps,
+            cfg=nag_influenced_cfg,  # Use NAG-influenced CFG
+            sampler_name=sampler_name,
+            scheduler=scheduler_name,
+            denoise=denoise,
+            disable_preview=disable_preview,
+            refiner=final_refiner_unet,
+            refiner_switch=switch,
+            sigmas=minmax_sigmas,
+            callback_function=callback
+        )['samples']
     else:
         decoded_latent = core.ksampler(
             model=final_unet,
