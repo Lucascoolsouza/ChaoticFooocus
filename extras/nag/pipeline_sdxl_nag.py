@@ -45,6 +45,11 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     attn_procs[name] = origin_attn_processor
             self.unet.set_attn_processor(attn_procs)
 
+    def maybe_convert_prompt(self, prompt, tokenizer):
+        # Override to bypass textual inversion logic that requires tokenizer.tokenize()
+        # Just return the prompt as-is since we're using pre-computed embeddings anyway
+        return prompt
+
     @torch.no_grad()
     def __call__(
             self,
