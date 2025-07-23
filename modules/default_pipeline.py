@@ -585,6 +585,18 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                     self.linear_1 = type('Linear1', (), {'in_features': 2816})()  # Standard SDXL add embedding dimension
             unet_on_device.add_embedding = AddEmbedding()
 
+        # Add attention processor methods to UNet if they don't exist (for NAG compatibility)
+        if not hasattr(unet_on_device, 'set_attn_processor'):
+            def set_attn_processor(attn_processors):
+                # Mock method - in this codebase, attention processors are handled differently
+                # Just store them for potential future use
+                unet_on_device._attn_processors = attn_processors
+            unet_on_device.set_attn_processor = set_attn_processor
+        
+        if not hasattr(unet_on_device, 'attn_processors'):
+            # Create a mock attn_processors property
+            unet_on_device.attn_processors = {}
+
         # Add missing attributes and methods to tokenizers for diffusers compatibility
         def add_tokenizer_compatibility(tokenizer):
             if not hasattr(tokenizer, 'tokenize'):

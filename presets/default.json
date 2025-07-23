@@ -34,7 +34,7 @@
     "default_sampler": "dpmpp_3m_sde_gpu",
     "default_scheduler": "exponential",
     "default_performance": "Speed",
-    "default_prompt": "",
+    "default_prompt": "This is a digital drawing of an anthropomorphic female mouse warrior in medieval-style armor. She has large, pink, rounded ears and long, wavy blonde hair tied in two braids adorned with blue ribbons. Her green eyes are focused and slightly narrowed, with a slight blush on her cheeks. She wears a blue and gray armored helmet with a mouse ear design, matching her chest plate, shoulder guards, and gauntlets. Her armor is detailed with blue accents and small, decorative buttons. She holds a sword with a blue hilt and red grip in both hands. Her long, light brown tail curves upward behind her. The background is plain white, emphasizing the character. The style is colorful and semi-realistic with a soft, painterly texture.",
     "default_prompt_negative": "lowres, bad anatomy, bad hands, bar censor, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, out of focus, censorship, censored, ugly, old, deformed, amateur drawing, odd, fat, morphing, black and white, anime, ((simple background)), (((depth of field)))",
     "default_styles": [
     ],

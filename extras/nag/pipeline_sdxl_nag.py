@@ -57,6 +57,9 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             # Use the pre-computed embeddings directly
             batch_size = prompt_embeds.shape[0]
             
+            # Store the shape for later use with NAG embeddings
+            self._current_prompt_embeds_shape = prompt_embeds.shape
+            
             # Ensure embeddings are on the correct device
             prompt_embeds = prompt_embeds.to(device)
             if pooled_prompt_embeds is not None:
@@ -76,7 +79,15 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             # Create dummy embeddings for simple text prompts
             # Use standard SDXL embedding dimensions
             batch_size = num_images_per_prompt
-            seq_len = 77  # Standard CLIP sequence length
+            
+            # Try to get sequence length from stored shape
+            seq_len = 77  # Default CLIP sequence length
+            embed_dim = 2048  # Default SDXL embedding dimension
+            
+            if hasattr(self, '_current_prompt_embeds_shape') and self._current_prompt_embeds_shape is not None:
+                seq_len = self._current_prompt_embeds_shape[1]
+                embed_dim = self._current_prompt_embeds_shape[2]
+            
             embed_dim = 2048  # Standard SDXL embedding dimension
             pooled_dim = 1280  # Standard SDXL pooled dimension
             
