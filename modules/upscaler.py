@@ -6,7 +6,7 @@ import modules.core as core
 import torch
 from ldm_patched.contrib.external_upscale_model import ImageUpscaleWithModel
 from ldm_patched.pfn.architecture.RRDB import RRDBNet as ESRGAN
-from modules.config import downloading_upscale_model, downloading_ultrasharp_model, downloading_web_photo_model, downloading_realistic_rescaler_model, downloading_skin_contrast_model, downloading_four_x_nomos_model, downloading_faces_model
+from modules.config import downloading_upscale_model, downloading_ultrasharp_model, downloading_realistic_rescaler_model
 import modules.flags
 
 opImageUpscaleWithModel = ImageUpscaleWithModel()
