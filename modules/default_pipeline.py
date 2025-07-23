@@ -431,6 +431,8 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
 
         # Call the NAG pipeline
         output = nag_pipe(
+            prompt=original_prompt,
+            negative_prompt=original_negative_prompt,
             prompt_embeds=prompt_embeds,
             pooled_prompt_embeds=pooled_prompt_embeds,
             negative_prompt_embeds=negative_prompt_embeds,
