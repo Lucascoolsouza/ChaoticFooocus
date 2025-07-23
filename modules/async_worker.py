@@ -231,7 +231,8 @@ def worker():
     import modules.default_pipeline as pipeline
     import modules.core as core
     import modules.flags as flags
-    import modules.patch
+import modules.patch
+from modules.patch import PatchSettings
     import ldm_patched.modules.model_management
     import extras.preprocessors as preprocessors
     import modules.inpaint_worker as inpaint_worker
@@ -390,7 +391,6 @@ def worker():
         return imgs, img_paths, current_progress
 
     def apply_patch_settings(async_task):
-        from modules.patch import PatchSettings
         patch_settings[pid] = PatchSettings(
             async_task.sharpness,
             async_task.adm_scaler_end,
