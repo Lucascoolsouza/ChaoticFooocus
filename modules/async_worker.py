@@ -597,7 +597,7 @@ def worker():
         if advance_progress:
             current_progress += 1
         progressbar(async_task, current_progress, f'Upscaling image from {str((W, H))} ...')
-        uov_input_image = perform_upscale(uov_input_image, uov_method, async_task=async_task)
+        uov_input_image = perform_upscale(uov_input_image, uov_method, async_task=async_task, vae_model=pipeline.final_vae)
         print(f'Image upscaled.')
         if '1.5x' in uov_method:
             f = 1.5
