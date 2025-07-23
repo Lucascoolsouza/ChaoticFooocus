@@ -899,6 +899,14 @@ def sample_dreamy(model, x, sigmas, extra_args=None, callback=None, disable=None
                 noise = noise * (1 + wave)
             
             x = x + noise * sigmas[i + 1] * noise_scale
+
+        # Debug prints
+        print(f"Dreamy Sampler - Iteration {i}:")
+        print(f"  History length: {len(history)}")
+        if history:
+            print(f"  First history item stats: mean={history[0].mean()}, std={history[0].std()}, min={history[0].min()}, max={history[0].max()}")
+        print(f"  Denoised stats: mean={denoised.mean()}, std={denoised.std()}, min={denoised.min()}, max={denoised.max()}")
+        print(f"  X stats: mean={x.mean()}, std={x.std()}, min={x.min()}, max={x.max()}")
     
     return x
 
