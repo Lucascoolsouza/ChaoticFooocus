@@ -99,7 +99,7 @@ class RRDBNet(nn.Module):
                 break
 
         c2x2 = False
-        if self.state["model.0.weight"].shape[-2] == 2:
+        if "model.0.weight" in self.state and self.state["model.0.weight"].shape[-2] == 2:
             c2x2 = True
             self.scale = round(math.sqrt(self.scale / 4))
             self.model_arch = "ESRGAN-2c2"
