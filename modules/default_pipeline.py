@@ -690,6 +690,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
 
         # Define a wrapper for the callback to decode latents for preview
         def nag_pipe_callback(pipe, step, timestep, callback_kwargs):
+            import numpy as np # Added import for numpy
             if callback is not None and not disable_preview:
                 latents_for_preview = callback_kwargs["latents"]
                 
