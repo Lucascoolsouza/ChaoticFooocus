@@ -64,7 +64,14 @@ def perform_upscale_without_tiling(img, model_name, model_var, download_func, as
             if vae is None:
                 raise ValueError(f"Upscaler '{model_name}' produced 64-channel latent but no VAE provided.")
             result = core.decode_vae(vae, {'samples': result})[0]
-        elif result.shape[1] not in (3, 4, 64):
+        elif result.shape[1] == 4096:          # UltraSharp “pixel-unshuffle” variant
+            if vae is None:
+                raise ValueError("Need VAE to decode 4096-channel output.")
+            # reshape (B,4096,H,W) → (B,64,H×4,W×4)
+            b, c, h, w = result.shape
+            result = result.view(b, 64, h*4, w*4)   # or h//4, w//4 depending on the fork
+            result = core.decode_vae(vae, {'samples': result})[0]
+        elif result.shape[1] not in (3, 4, 64, 4096):
             raise ValueError(
                 f"Upscaler '{model_name}' produced {result.shape[1]} channels; "
                 f"expected 3 (RGB), 4 (SD-latent) or 64 (ESRGAN-latent)."
