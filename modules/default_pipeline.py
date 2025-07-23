@@ -733,7 +733,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         print("[NAG] Using NAG pipeline for generation")
         
         # Use the NAG pipeline result
-        decoded_latent = nag_result.images[0]
+        decoded_latent = output
         
         # Convert PIL image back to numpy array format expected by the rest of the pipeline
         import numpy as np
@@ -748,6 +748,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         if decoded_latent.max() <= 1.0:
             decoded_latent = (decoded_latent * 255).astype(np.uint8)
         
+        print("Worker received", type(decoded_latent), getattr(decoded_latent, 'size', '-'))
         print(f"[NAG] NAG pipeline completed, output shape: {decoded_latent.shape}")
         
         # Skip the regular ksampler since we used NAG pipeline
