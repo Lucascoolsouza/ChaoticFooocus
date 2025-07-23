@@ -124,8 +124,6 @@ class AsyncTask:
         self.enhance_bg_removal_model = args.pop()
         self.enhance_uov_processing_order = args.pop()
         self.enhance_uov_prompt_type = args.pop()
-        self.latent_upscale_method = args.pop()
-        self.latent_upscale_scheduler = args.pop()
         self.enhance_ctrls = []
         for _ in range(modules.config.default_enhance_tabs):
             enhance_enabled = args.pop()
@@ -197,8 +195,6 @@ def worker():
     import extras.ip_adapter as ip_adapter
     import extras.face_crop
     import fooocus_version
-    from latent_upscale_overrides.schedulers import sampler_noise_scheduler_override
-    from latent_upscale_overrides.init import init
 
     from extras.censor import default_censor
     from modules.sdxl_styles import apply_style, get_random_style, fooocus_expansion, apply_arrays, random_style_name
@@ -1030,8 +1026,7 @@ def worker():
                         inpaint_engine, inpaint_respective_field, inpaint_strength,
                         prompt, negative_prompt, final_scheduler_name, goals, height, img, mask,
                         preparation_steps, steps, switch, tiled, total_count, use_expansion, use_style,
-                        use_synthetic_refiner, width, show_intermediate_results=True, persist_image=True,
-                        latent_upscale_method=None, latent_upscale_scheduler=None):
+                        use_synthetic_refiner, width, show_intermediate_results=True, persist_image=True):
 
         if 'remove_background' in goals and steps == 0:
             # If background removal is the goal and steps is 0, return the processed image directly
@@ -1086,20 +1081,6 @@ def worker():
                 inpaint_parameterized, inpaint_strength,
                 inpaint_respective_field, switch, inpaint_disable_initial_latent,
                 current_progress, True)
-
-        # Apply latent upscale overrides if selected
-        if latent_upscale_method != "None":
-            print(f"Applying Latent Upscale: Method={latent_upscale_method}, Scheduler={latent_upscale_scheduler}")
-            # Override the sampler_noise_scheduler_override method
-            if latent_upscale_scheduler in ["simple", "normal", "karras", "exponential", "polyexponential"]:
-                pipeline.sampler_noise_scheduler_override = lambda steps: sampler_noise_scheduler_override(pipeline, latent_upscale_scheduler, steps)
-            else:
-                pipeline.sampler_noise_scheduler_override = None # Reset to default if "automatic" or invalid
-
-            # Override the init method
-            pipeline.init = lambda all_prompts, all_seeds, all_subseeds, **kwargs: init(
-                pipeline, latent_upscale_method, all_prompts, all_seeds, all_subseeds, **kwargs)
-
         imgs, img_paths, current_progress = process_task(all_steps, async_task, callback, controlnet_canny_path,
                                                          controlnet_cpds_path, current_task_id, denoising_strength,
                                                          final_scheduler_name, goals, initial_latent, steps, switch,
@@ -1107,10 +1088,6 @@ def worker():
                                                          tiled, use_expansion, width, height, current_progress,
                                                          preparation_steps, total_count, show_intermediate_results,
                                                          persist_image)
-
-        # Reset overrides after processing to avoid affecting other tasks
-        pipeline.sampler_noise_scheduler_override = None
-        pipeline.init = None
 
         del task_enhance['c'], task_enhance['uc']  # Save memory
         return current_progress, imgs[0], prompt, negative_prompt
@@ -1138,8 +1115,7 @@ def worker():
                     controlnet_cpds_path, current_progress, current_task_id, denoising_strength, False,
                     'None', 0.0, 0.0, prompt, negative_prompt, final_scheduler_name,
                     goals_enhance, height, img, None, preparation_steps, steps, switch, tiled, total_count,
-                    use_expansion, use_style, use_synthetic_refiner, width, persist_image=persist_image,
-                    latent_upscale_method=async_task.latent_upscale_method, latent_upscale_scheduler=async_task.latent_upscale_scheduler)
+                    use_expansion, use_style, use_synthetic_refiner, width, persist_image=persist_image)
 
             except ldm_patched.modules.model_management.InterruptProcessingException:
                 if async_task.last_stop == 'skip':
@@ -1437,8 +1413,7 @@ def worker():
                     all_steps, async_task, base_progress, callback, controlnet_canny_path, controlnet_cpds_path,
                     current_task_id, denoising_strength, done_steps_inpainting, done_steps_upscaling, enhance_steps,
                     async_task.prompt, async_task.negative_prompt, final_scheduler_name, height, img, preparation_steps,
-                    switch, tiled, total_count, use_expansion, use_style, use_synthetic_refiner, width, persist_image,
-                    async_task.latent_upscale_method, async_task.latent_upscale_scheduler)
+                    switch, tiled, total_count, use_expansion, use_style, use_synthetic_refiner, width, persist_image)
                 if async_task.enhance_uov_method == flags.remove_background:
                     # After enhance_upscale, the image 'img' should have the background removed.
                     # Now, log and yield this processed image.
@@ -1518,8 +1493,7 @@ def worker():
                         enhance_inpaint_engine, enhance_inpaint_respective_field, enhance_inpaint_strength,
                         enhance_prompt, enhance_negative_prompt, final_scheduler_name, goals_enhance, height, img, mask,
                         preparation_steps, enhance_steps, switch, tiled, total_count, use_expansion, use_style,
-                        use_synthetic_refiner, width, persist_image=persist_image,
-                        latent_upscale_method=async_task.latent_upscale_method, latent_upscale_scheduler=async_task.latent_upscale_scheduler)
+                        use_synthetic_refiner, width, persist_image=persist_image)
                     async_task.enhance_stats[index] += 1
 
                     if (should_process_enhance_uov and async_task.enhance_uov_processing_order == flags.enhancement_uov_after
@@ -1556,7 +1530,7 @@ def worker():
                     current_task_id, denoising_strength, done_steps_inpainting, done_steps_upscaling, enhance_steps,
                     last_enhance_prompt, last_enhance_negative_prompt, final_scheduler_name, height, img,
                     preparation_steps, switch, tiled, total_count, use_expansion, use_style, use_synthetic_refiner,
-                    width, persist_image, latent_upscale_method=async_task.latent_upscale_method, latent_upscale_scheduler=async_task.latent_upscale_scheduler)
+                    width, persist_image)
                 async_task.enhance_stats[index] += 1
                 
                 if exception_result == 'continue':
