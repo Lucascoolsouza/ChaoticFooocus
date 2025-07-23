@@ -401,6 +401,15 @@ with shared.gradio_root:
                                                                    value=modules.config.default_enhance_uov_prompt_type,
                                                                    visible=modules.config.default_enhance_uov_processing_order == flags.enhancement_uov_after)
 
+                                with gr.Accordion("Post-processing Effects", open=False):
+                                    apply_ambient_occlusion_checkbox = gr.Checkbox(label='Apply Ambient Occlusion', value=modules.config.default_apply_ambient_occlusion_checkbox)
+                                    ambient_occlusion_strength = gr.Slider(label='Ambient Occlusion Strength', minimum=0.0, maximum=1.0, step=0.01, value=modules.config.default_ambient_occlusion_strength, visible=modules.config.default_apply_ambient_occlusion_checkbox)
+                                    apply_fresnel_checkbox = gr.Checkbox(label='Apply Fresnel', value=modules.config.default_apply_fresnel_checkbox)
+                                    fresnel_strength = gr.Slider(label='Fresnel Strength', minimum=0.0, maximum=1.0, step=0.01, value=modules.config.default_fresnel_strength, visible=modules.config.default_apply_fresnel_checkbox)
+
+                                    apply_ambient_occlusion_checkbox.change(lambda x: gr.update(visible=x), inputs=apply_ambient_occlusion_checkbox, outputs=ambient_occlusion_strength, queue=False, show_progress=False)
+                                    apply_fresnel_checkbox.change(lambda x: gr.update(visible=x), inputs=apply_fresnel_checkbox, outputs=fresnel_strength, queue=False, show_progress=False)
+
                                 enhance_uov_method.change(lambda x: gr.update(visible=x == flags.remove_background),
                                                           inputs=enhance_uov_method,
                                                           outputs=enhance_bg_removal_model,
@@ -1035,6 +1044,7 @@ with shared.gradio_root:
                   enhance_input_image, enhance_checkbox, enhance_uov_method, enhance_bg_removal_model, 
                   enhance_uov_processing_order, enhance_uov_prompt_type]
         ctrls += enhance_ctrls
+        ctrls += [apply_ambient_occlusion_checkbox, ambient_occlusion_strength, apply_fresnel_checkbox, fresnel_strength]
 
         def parse_meta(raw_prompt_txt, is_generating):
             loaded_json = None
