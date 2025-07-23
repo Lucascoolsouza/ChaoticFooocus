@@ -688,6 +688,24 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         
         
 
+        # Define a wrapper for the callback to decode latents for preview
+        def nag_pipe_callback(pipe, step, timestep, callback_kwargs):
+            if callback is not None and not disable_preview:
+                latents_for_preview = callback_kwargs["latents"]
+                
+                # Ensure VAE is on the correct device for decoding
+                vae_device = pipe.vae.device
+                latents_on_vae_device = latents_for_preview.to(vae_device)
+
+                # Unscale and decode for preview
+                scaling_factor = getattr(pipe.vae.config, 'scaling_factor', 0.13025)
+                decoded_latents_tensor = pipe.vae.decode(latents_on_vae_device / scaling_factor)
+                
+                # Call the original callback with the decoded latent
+                # The original callback expects (step, x0, x, total_steps, y)
+                # Here, x0 is the decoded image tensor, x is the latent, total_steps is steps, y is not used
+                callback(step, decoded_latents_tensor, latents_for_preview, steps, None)
+
         # Call the NAG pipeline
         output = nag_pipe(
             prompt=original_prompt,
@@ -707,6 +725,8 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             nag_alpha=nag_alpha,
             nag_negative_prompt=final_nag_negative_prompt,
             nag_end=nag_end,
+            callback_on_step_end=nag_pipe_callback,
+            callback_on_step_end_tensor_inputs=["latents"],
             )
         
         print("[NAG] Using NAG pipeline for generation")

@@ -46,7 +46,18 @@ args_parser.parser.set_defaults(
     port=None
 )
 
-args_parser.args = args_parser.parser.parse_args()
+import sys
+
+# Only parse arguments if not running under pytest
+if "pytest" not in sys.modules:
+    args_parser.args = args_parser.parser.parse_args()
+else:
+    # Create a mock args object for pytest
+    class MockArgs:
+        def __getattr__(self, name):
+            # Return a default value or None for any accessed attribute
+            return None
+    args_parser.args = MockArgs()
 
 # (Disable by default because of issues like https://github.com/lllyasviel/Fooocus/issues/724)
 args_parser.args.always_offload_from_vram = not args_parser.args.disable_offload_from_vram
