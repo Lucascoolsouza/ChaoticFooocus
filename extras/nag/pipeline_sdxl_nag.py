@@ -511,6 +511,9 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
         if self.do_normalized_attention_guidance and nag_negative_prompt_embeds is not None:
             prompt_embeds = torch.cat([prompt_embeds, nag_negative_prompt_embeds], dim=0)
+            # Concatenate add_text_embeds and add_time_ids for NAG negative prompt as well
+            add_text_embeds = torch.cat([add_text_embeds, add_text_embeds[:nag_negative_prompt_embeds.shape[0]]], dim=0)
+            add_time_ids = torch.cat([add_time_ids, add_time_ids[:nag_negative_prompt_embeds.shape[0]]], dim=0)
         elif self.do_normalized_attention_guidance and nag_negative_prompt_embeds is None:
             print("[NAG] Warning: NAG is enabled but no negative embeddings available, disabling NAG")
             self._nag_scale = 1.0  # Disable NAG if no negative embeddings
