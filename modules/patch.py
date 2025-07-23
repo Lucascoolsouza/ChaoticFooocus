@@ -328,6 +328,7 @@ def patched_KSamplerX0Inpaint_forward(self, x, sigma, uncond, cond, cond_scale, 
 
 
 def timed_adm(y, timesteps):
+    timesteps = torch.as_tensor(timesteps) # Ensure timesteps is a tensor
     if isinstance(y, torch.Tensor) and int(y.dim()) == 2 and int(y.shape[1]) == 5632:
         y_mask = (timesteps > 999.0 * (1.0 - float(patch_settings[os.getpid()].adm_scaler_end))).to(y)[..., None]
         y_with_adm = y[..., :2816].clone()
