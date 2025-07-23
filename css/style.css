@@ -17,7 +17,8 @@
 }
 
 /* General Body and Container Styles */
-body, .gradio-container {
+body,
+.gradio-container {
     background-color: var(--black-hole-black);
     color: var(--starlight-white);
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -46,7 +47,9 @@ body, .gradio-container {
 }
 
 /* --- Text Inputs & Prompts --- */
-textarea, input[type="text"], input[type="number"] {
+textarea,
+input[type="text"],
+input[type="number"] {
     background-color: var(--transparent-white);
     border: 1px solid var(--dark-matter-grey);
     color: var(--starlight-white);
@@ -55,7 +58,9 @@ textarea, input[type="text"], input[type="number"] {
     transition: border-color 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
 }
 
-textarea:focus, input[type="text"]:focus, input[type="number"]:focus {
+textarea:focus,
+input[type="text"]:focus,
+input[type="number"]:focus {
     border-color: var(--supernova-orange);
     box-shadow: 0 0 8px var(--supernova-orange);
     outline: none;
@@ -94,7 +99,8 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* --- Checkboxes and Radio Buttons --- */
-input[type='checkbox'], input[type='radio'] {
+input[type='checkbox'],
+input[type='radio'] {
     accent-color: var(--supernova-orange);
 }
 
@@ -113,7 +119,8 @@ input[type='checkbox'], input[type='radio'] {
 }
 
 /* --- Gallery and Images --- */
-.image_gallery, .final_gallery {
+.image_gallery,
+.final_gallery {
     background-color: var(--transparent-white);
     border-radius: 10px;
     padding: 10px;
@@ -126,7 +133,8 @@ input[type='checkbox'], input[type='radio'] {
 
 /* --- Progress Bar --- */
 #progress-bar {
-    height: 20px; /* Increased height */
+    height: 2px;
+    /* Increased height */
     background-color: transparent;
     border-radius: 7px;
     overflow: hidden;
@@ -135,7 +143,8 @@ input[type='checkbox'], input[type='radio'] {
 }
 
 #progress-bar .progress {
-    height: 100%; /* Fill parent height */
+    height: 10%;
+    /* Fill parent height */
     background: linear-gradient(90deg, var(--nebula-pink) 0%, var(--supernova-orange) 100%);
     border-radius: 7px;
     transition: width 0.4s ease-in-out;
@@ -147,8 +156,10 @@ input[type='checkbox'], input[type='radio'] {
     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
     position: relative;
     overflow: hidden;
-    font-size: 1em; /* Adjusted font size */
-    white-space: nowrap; /* Prevent text from wrapping */
+    font-size: 1em;
+    /* Adjusted font size */
+    white-space: nowrap;
+    /* Prevent text from wrapping */
 }
 
 #progress-bar .progress::after {
@@ -157,16 +168,17 @@ input[type='checkbox'], input[type='radio'] {
     top: 0;
     left: 0;
     width: 100%;
-    height: 100%;
+    height: 10%;
     background: linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.5) 50%, rgba(255, 255, 255, 0.1) 100%);
     animation: progress-shine 2s infinite;
-    background-size: 200% 100%;
+    background-size: 20% 10%;
 }
 
 @keyframes progress-shine {
     0% {
         background-position: -200% 0;
     }
+
     100% {
         background-position: 200% 0;
     }
@@ -181,7 +193,7 @@ input[type='checkbox'], input[type='radio'] {
     transition: all 0.3s ease-in-out;
 }
 
-.performance_selection input:checked + span {
+.performance_selection input:checked+span {
     color: var(--supernova-orange);
 }
 
@@ -192,7 +204,9 @@ input[type='checkbox'], input[type='radio'] {
 }
 
 /* Adding some animations to other elements */
-.gradio-container, .gr-panel, .gr-box {
+.gradio-container,
+.gr-panel,
+.gr-box {
     transition: all 0.3s ease-in-out;
 }
 
@@ -211,10 +225,12 @@ input[type='checkbox'], input[type='radio'] {
     .gradio-container {
         padding: 10px;
     }
+
     .type_row {
         flex-direction: column;
         height: auto !important;
     }
+
     .generate_button {
         width: 100%;
     }
