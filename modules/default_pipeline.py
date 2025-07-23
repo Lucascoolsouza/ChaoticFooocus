@@ -701,10 +701,14 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 scaling_factor = getattr(pipe.vae.config, 'scaling_factor', 0.13025)
                 decoded_latents_tensor = pipe.vae.decode(latents_on_vae_device / scaling_factor)
                 
+                # Convert to PIL Image, then to uint8 HWC numpy array
+                preview_img = safe_decode(latents_for_preview[:1], pipe.vae, width=width, height=height)
+                preview_np = np.asarray(preview_img.convert("RGB"), dtype=np.uint8)
+
                 # Call the original callback with the decoded latent
                 # The original callback expects (step, x0, x, total_steps, y)
                 # Here, x0 is the decoded image tensor, x is the latent, total_steps is steps, y is not used
-                callback(step, decoded_latents_tensor, latents_for_preview, steps, decoded_latents_tensor)
+                callback(step, preview_np, latents_for_preview, steps, decoded_latents_tensor)
                 return {"latents": latents_for_preview}
 
         # Call the NAG pipeline
