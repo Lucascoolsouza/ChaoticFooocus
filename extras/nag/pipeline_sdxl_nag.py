@@ -31,6 +31,10 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
     def do_normalized_attention_guidance(self):
         return self._nag_scale > 1
 
+    @property
+    def do_classifier_free_guidance(self):
+        return self._guidance_scale > 1
+
     def _set_nag_attn_processor(self, nag_scale, nag_tau=2.5, nag_alpha=0.5):
         if self.do_normalized_attention_guidance:
             attn_procs = {}
