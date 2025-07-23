@@ -263,7 +263,15 @@ def round_to_64(x):
 
 
 def sdxl_encode_adm_patched(self, **kwargs):
-    clip_pooled = ldm_patched.modules.model_base.sdxl_pooled(kwargs, self.noise_augmentor)
+    # Get pooled_output from kwargs, or provide a default zero tensor if not present
+    # The dimension 1280 is based on CLIPEmbeddingNoiseAugmentation's timestep_dim
+    pooled_output = kwargs.get("pooled_output", torch.zeros((1, 1280), device=kwargs.get("device", "cpu")))
+
+    # Create a new kwargs dictionary to pass to sdxl_pooled, ensuring 'pooled_output' is present
+    new_kwargs = kwargs.copy()
+    new_kwargs["pooled_output"] = pooled_output
+
+    clip_pooled = ldm_patched.modules.model_base.sdxl_pooled(new_kwargs, self.noise_augmentor)
     width = kwargs.get("width", 1024)
     height = kwargs.get("height", 1024)
     target_width = width
