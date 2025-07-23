@@ -636,30 +636,6 @@ default_enhance_bg_removal_model = get_config_item_or_set_default(
     validator=lambda x: x in modules.flags.bg_removal_models,
     expected_type=str
 )
-default_apply_ambient_occlusion_checkbox = get_config_item_or_set_default(
-    key='default_apply_ambient_occlusion_checkbox',
-    default_value=False,
-    validator=lambda x: isinstance(x, bool),
-    expected_type=bool
-)
-default_ambient_occlusion_strength = get_config_item_or_set_default(
-    key='default_ambient_occlusion_strength',
-    default_value=0.5,
-    validator=lambda x: isinstance(x, numbers.Number) and 0.0 <= x <= 1.0,
-    expected_type=numbers.Number
-)
-default_apply_fresnel_checkbox = get_config_item_or_set_default(
-    key='default_apply_fresnel_checkbox',
-    default_value=False,
-    validator=lambda x: isinstance(x, bool),
-    expected_type=bool
-)
-default_fresnel_strength = get_config_item_or_set_default(
-    key='default_fresnel_strength',
-    default_value=0.5,
-    validator=lambda x: isinstance(x, numbers.Number) and 0.0 <= x <= 1.0,
-    expected_type=numbers.Number
-)
 default_sam_max_detections = get_config_item_or_set_default(
     key='default_sam_max_detections',
     default_value=0,

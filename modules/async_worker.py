@@ -122,14 +122,8 @@ class AsyncTask:
         self.enhance_checkbox = args.pop()
         self.enhance_uov_method = args.pop()
         self.enhance_bg_removal_model = args.pop()
-        import modules.image_effects
-
         self.enhance_uov_processing_order = args.pop()
         self.enhance_uov_prompt_type = args.pop()
-        self.apply_ambient_occlusion_checkbox = args.pop()
-        self.ambient_occlusion_strength = args.pop()
-        self.apply_fresnel_checkbox = args.pop()
-        self.fresnel_strength = args.pop()
         self.enhance_ctrls = []
         for _ in range(modules.config.default_enhance_tabs):
             enhance_enabled = args.pop()
@@ -1546,14 +1540,6 @@ def worker():
                     continue
                 elif exception_result == 'break':
                     break
-
-            # Apply Ambient Occlusion and Fresnel effects if enabled
-            if async_task.apply_ambient_occlusion_checkbox:
-                print(f'[Enhance] Applying Ambient Occlusion with strength {async_task.ambient_occlusion_strength}...')
-                img = modules.image_effects.apply_ambient_occlusion(img, async_task.ambient_occlusion_strength)
-            if async_task.apply_fresnel_checkbox:
-                print(f'[Enhance] Applying Fresnel with strength {async_task.fresnel_strength}...')
-                img = modules.image_effects.apply_fresnel(img, async_task.fresnel_strength)
 
             enhancement_image_time = time.perf_counter() - enhancement_image_start_time
             print(f'Enhancement image time: {enhancement_image_time:.2f} seconds')
