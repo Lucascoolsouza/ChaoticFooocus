@@ -643,20 +643,24 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
                 # --- add these three lines ---
                 if callback is not None:
-                    # 1. decode only the first latent
-                    with torch.no_grad():
-                        lat_preview = latents[:1].to(self.vae.device)
-                        decoded = self.vae.decode(lat_preview)          # (1,3,H,W), float32
-                        decoded = torch.clamp((decoded + 1) * 0.5, 0, 1)
-                        decoded = decoded.permute(0, 2, 3, 1)           # (1,H,W,3)
-                        decoded_np = (decoded[0] * 255).cpu().numpy().astype(np.uint8)
+                    try:
+                        with torch.no_grad():
+                            lat_preview = latents[:1].to(self.vae.device)
+                            decoded = self.vae.decode(lat_preview)
 
-                    # 2. create PIL Image and let the preview callback forward it
-                    from PIL import Image
-                    preview_img = Image.fromarray(decoded_np, mode='RGB')
+                            if not isinstance(decoded, torch.Tensor) or decoded.ndim != 4:
+                                raise ValueError(f"[Preview] Invalid VAE decode output: {type(decoded)} shape={getattr(decoded, 'shape', None)}")
 
-                    # 3. Gradio expects the *return* tuple to contain the Image, not a tensor
-                    callback(i, t, preview_img)
+                            decoded = torch.clamp((decoded + 1) * 0.5, 0, 1)
+                            decoded = decoded.permute(0, 2, 3, 1)
+                            decoded_np = (decoded[0] * 255).cpu().numpy().astype(np.uint8)
+
+                        from PIL import Image
+                        preview_img = Image.fromarray(decoded_np, mode='RGB')
+                        callback(i, t, preview_img)
+
+                    except Exception as e:
+                        print(f"[Preview] ❌ Failed to generate preview at step {i}: {e}")
                 if latents.dtype != latents_dtype:
                     if torch.backends.mps.is_available():
                         # some platforms (eg. apple mps) misbehave due to a pytorch bug: https://github.com/pytorch/pytorch/pull/99272
