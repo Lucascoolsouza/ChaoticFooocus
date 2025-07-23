@@ -75,9 +75,33 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         
         # Handle simple prompts (like NAG negative prompts) by properly encoding them
         if isinstance(prompt, str) and prompt.strip() != "":
-            # For NAG negative prompts, we need to properly encode them using the text encoders
-            # Fall back to parent method for proper text encoding
-            return super().encode_prompt(prompt, prompt_2, device, num_images_per_prompt, do_classifier_free_guidance, negative_prompt, negative_prompt_2, prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds, lora_scale, clip_skip)
+            # For NAG negative prompts, we need to encode them safely
+            try:
+                # Try to use parent method for proper text encoding
+                return super().encode_prompt(prompt, prompt_2, device, num_images_per_prompt, do_classifier_free_guidance, negative_prompt, negative_prompt_2, prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds, lora_scale, clip_skip)
+            except Exception as e:
+                print(f"[NAG] Error encoding NAG negative prompt '{prompt}': {e}")
+                print("[NAG] Falling back to zero embeddings for NAG negative prompt")
+                # Fall back to zero embeddings if encoding fails
+                import torch
+                batch_size = num_images_per_prompt
+                
+                # Try to get sequence length from stored shape
+                seq_len = 77  # Default CLIP sequence length
+                embed_dim = 2048  # Default SDXL embedding dimension
+                
+                if hasattr(self, '_current_prompt_embeds_shape') and self._current_prompt_embeds_shape is not None:
+                    seq_len = self._current_prompt_embeds_shape[1]
+                    embed_dim = self._current_prompt_embeds_shape[2]
+                
+                embed_dim = 2048  # Standard SDXL embedding dimension
+                pooled_dim = 1280  # Standard SDXL pooled dimension
+                
+                # Create zero embeddings (neutral)
+                dummy_embeds = torch.zeros((batch_size, seq_len, embed_dim), device=device, dtype=torch.float16 if device.type == 'cuda' else torch.float32)
+                dummy_pooled = torch.zeros((batch_size, pooled_dim), device=device, dtype=torch.float16 if device.type == 'cuda' else torch.float32)
+                
+                return dummy_embeds, None, dummy_pooled, None
         elif isinstance(prompt, str) and prompt.strip() == "":
             import torch
             # Create zero embeddings only for empty strings
@@ -386,28 +410,52 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         )
         if self.do_normalized_attention_guidance:
             if nag_negative_prompt_embeds is None:
-                if nag_negative_prompt is None or nag_negative_prompt.strip() == "":
-                    if negative_prompt is not None and negative_prompt.strip() != "":
-                        if self.do_classifier_free_guidance:
-                            nag_negative_prompt_embeds = negative_prompt_embeds
-                            print("[NAG] Using CFG negative prompt embeddings for NAG")
-                        else:
-                            nag_negative_prompt = negative_prompt
-                            print(f"[NAG] Using CFG negative prompt text for NAG: '{nag_negative_prompt}'")
-                    else:
-                        nag_negative_prompt = "blurry, low quality, distorted, deformed, ugly, bad anatomy, worst quality"
-                        print(f"[NAG] Using default negative prompt for NAG: '{nag_negative_prompt}'")
-
-                if nag_negative_prompt is not None and nag_negative_prompt.strip() != "":
+                # First priority: use existing negative prompt embeddings if available
+                if self.do_classifier_free_guidance and negative_prompt_embeds is not None:
+                    nag_negative_prompt_embeds = negative_prompt_embeds
+                    print("[NAG] Using existing CFG negative prompt embeddings for NAG")
+                # Second priority: try to encode the NAG negative prompt if provided
+                elif nag_negative_prompt is not None and nag_negative_prompt.strip() != "":
                     print(f"[NAG] Encoding NAG negative prompt: '{nag_negative_prompt}'")
-                    nag_negative_prompt_embeds = self.encode_prompt(
-                        prompt=nag_negative_prompt,
-                        device=device,
-                        num_images_per_prompt=num_images_per_prompt,
-                        do_classifier_free_guidance=False,
-                        lora_scale=lora_scale,
-                        clip_skip=self.clip_skip,
-                    )[0]
+                    try:
+                        nag_negative_prompt_embeds = self.encode_prompt(
+                            prompt=nag_negative_prompt,
+                            device=device,
+                            num_images_per_prompt=num_images_per_prompt,
+                            do_classifier_free_guidance=False,
+                            lora_scale=lora_scale,
+                            clip_skip=self.clip_skip,
+                        )[0]
+                    except Exception as e:
+                        print(f"[NAG] Failed to encode NAG negative prompt: {e}")
+                        print("[NAG] Using existing negative prompt embeddings as fallback")
+                        if negative_prompt_embeds is not None:
+                            nag_negative_prompt_embeds = negative_prompt_embeds
+                        else:
+                            print("[NAG] No negative embeddings available, NAG will be less effective")
+                            nag_negative_prompt_embeds = None
+                # Third priority: try to encode the regular negative prompt
+                elif negative_prompt is not None and negative_prompt.strip() != "":
+                    print(f"[NAG] Using regular negative prompt for NAG: '{negative_prompt}'")
+                    if negative_prompt_embeds is not None:
+                        nag_negative_prompt_embeds = negative_prompt_embeds
+                    else:
+                        nag_negative_prompt = negative_prompt
+                        try:
+                            nag_negative_prompt_embeds = self.encode_prompt(
+                                prompt=nag_negative_prompt,
+                                device=device,
+                                num_images_per_prompt=num_images_per_prompt,
+                                do_classifier_free_guidance=False,
+                                lora_scale=lora_scale,
+                                clip_skip=self.clip_skip,
+                            )[0]
+                        except Exception as e:
+                            print(f"[NAG] Failed to encode regular negative prompt: {e}")
+                            nag_negative_prompt_embeds = None
+                else:
+                    print("[NAG] No negative prompt available, NAG will be less effective")
+                    nag_negative_prompt_embeds = None
 
         # 4. Prepare timesteps
         timesteps, num_inference_steps = retrieve_timesteps(
@@ -461,8 +509,11 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             add_text_embeds = torch.cat([negative_pooled_prompt_embeds, add_text_embeds], dim=0)
             add_time_ids = torch.cat([negative_add_time_ids, add_time_ids], dim=0)
 
-        if self.do_normalized_attention_guidance:
+        if self.do_normalized_attention_guidance and nag_negative_prompt_embeds is not None:
             prompt_embeds = torch.cat([prompt_embeds, nag_negative_prompt_embeds], dim=0)
+        elif self.do_normalized_attention_guidance and nag_negative_prompt_embeds is None:
+            print("[NAG] Warning: NAG is enabled but no negative embeddings available, disabling NAG")
+            self._nag_scale = 1.0  # Disable NAG if no negative embeddings
 
         prompt_embeds = prompt_embeds.to(device)
         add_text_embeds = add_text_embeds.to(device)

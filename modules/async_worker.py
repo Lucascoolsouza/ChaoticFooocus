@@ -482,6 +482,16 @@ def worker():
                 async_task.negative_prompt = f"{async_task.negative_prompt}, {blur_negative}"
             elif not async_task.negative_prompt:
                 async_task.negative_prompt = blur_negative
+            
+            # Apply UltraSharp model processing with tiling
+            print("[UltraSharp] Applying UltraSharp model with tiling...")
+            try:
+                from modules.upscaler import apply_ultrasharp_vary
+                uov_input_image = apply_ultrasharp_vary(uov_input_image, tile_size=512, overlap=64)
+                print("[UltraSharp] UltraSharp processing completed successfully")
+            except Exception as e:
+                print(f"[UltraSharp] UltraSharp processing failed: {e}")
+                print("[UltraSharp] Continuing with prompt-based sharpening only")
         if async_task.overwrite_vary_strength > 0:
             denoising_strength = async_task.overwrite_vary_strength
         shape_ceil = get_image_shape_ceil(uov_input_image)

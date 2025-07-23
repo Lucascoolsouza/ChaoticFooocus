@@ -127,12 +127,16 @@ class SDClipModel(torch.nn.Module, ClipTokenWeightEncoder):
                         y = -1
                     tokens_temp += [y]
                 else:
-                    if y.shape[0] == current_embeds.weight.shape[1]:
+                    # Safety check for shape attribute
+                    if hasattr(y, 'shape') and len(y.shape) > 0 and y.shape[0] == current_embeds.weight.shape[1]:
                         embedding_weights += [y]
                         tokens_temp += [next_new_token]
                         next_new_token += 1
                     else:
-                        print("WARNING: shape mismatch when trying to apply embedding, embedding will be ignored", y.shape[0], current_embeds.weight.shape[1])
+                        if hasattr(y, 'shape') and len(y.shape) > 0:
+                            print("WARNING: shape mismatch when trying to apply embedding, embedding will be ignored", y.shape[0], current_embeds.weight.shape[1])
+                        else:
+                            print("WARNING: invalid embedding tensor, embedding will be ignored", type(y))
             while len(tokens_temp) < len(x):
                 tokens_temp += [self.special_tokens["pad"]]
             out_tokens += [tokens_temp]

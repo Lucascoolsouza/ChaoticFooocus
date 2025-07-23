@@ -1,4 +1,5 @@
 from collections import OrderedDict
+import numpy as np
 
 import modules.core as core
 import torch
@@ -12,16 +13,159 @@ model_default = None
 model_ultrasharp = None
 
 
+def perform_ultrasharp_tiled(img, tile_size=512, overlap=64):
+    """
+    Perform UltraSharp processing with tiling for memory efficiency
+    """
+    global model_ultrasharp
+    
+    print(f'Processing UltraSharp with tiling (tile_size={tile_size}, overlap={overlap}) on image shape {img.shape}...')
+    
+    # Load UltraSharp model if not already loaded
+    if model_ultrasharp is None:
+        model_filename = downloading_ultrasharp_model()
+        print(f"Loading UltraSharp model from {model_filename}")
+        sd = torch.load(model_filename, weights_only=True)
+        sdo = OrderedDict()
+        for k, v in sd.items():
+            sdo[k.replace('residual_block_', 'RDB')] = v
+        del sd
+        model_ultrasharp = ESRGAN(sdo)
+        model_ultrasharp.cpu()
+        model_ultrasharp.eval()
+    
+    # Convert to PyTorch tensor
+    img_tensor = core.numpy_to_pytorch(img)
+    
+    # Get image dimensions
+    _, _, h, w = img_tensor.shape
+    
+    # If image is small enough, process without tiling
+    if h <= tile_size and w <= tile_size:
+        print("Image small enough, processing without tiling")
+        try:
+            if torch.cuda.is_available():
+                model_ultrasharp = model_ultrasharp.cuda()
+            
+            result = opImageUpscaleWithModel.upscale(model_ultrasharp, img_tensor)[0]
+            
+            model_ultrasharp.cpu()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
+            return core.pytorch_to_numpy(result)[0]
+        except Exception as e:
+            model_ultrasharp.cpu()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            raise e
+    
+    # Process with tiling
+    print(f"Processing with tiling: {h}x{w} -> tiles of {tile_size}x{tile_size}")
+    
+    # Calculate output dimensions (4x upscale)
+    scale_factor = 4
+    out_h, out_w = h * scale_factor, w * scale_factor
+    
+    # Initialize output tensor
+    output = torch.zeros((1, 3, out_h, out_w), dtype=img_tensor.dtype)
+    
+    try:
+        if torch.cuda.is_available():
+            model_ultrasharp = model_ultrasharp.cuda()
+        
+        # Process tiles
+        for y in range(0, h, tile_size - overlap):
+            for x in range(0, w, tile_size - overlap):
+                # Calculate tile boundaries
+                y_end = min(y + tile_size, h)
+                x_end = min(x + tile_size, w)
+                
+                # Extract tile
+                tile = img_tensor[:, :, y:y_end, x:x_end]
+                
+                print(f"Processing tile [{y}:{y_end}, {x}:{x_end}] -> shape {tile.shape}")
+                
+                # Process tile
+                tile_result = opImageUpscaleWithModel.upscale(model_ultrasharp, tile)[0]
+                
+                # Calculate output position
+                out_y = y * scale_factor
+                out_x = x * scale_factor
+                out_y_end = min(out_y + tile_result.shape[2], out_h)
+                out_x_end = min(out_x + tile_result.shape[3], out_w)
+                
+                # Handle overlap blending
+                if overlap > 0 and (y > 0 or x > 0):
+                    # Simple averaging for overlapping regions
+                    overlap_scaled = overlap * scale_factor
+                    
+                    # Blend with existing content
+                    existing = output[:, :, out_y:out_y_end, out_x:out_x_end]
+                    new_content = tile_result[:, :, :out_y_end-out_y, :out_x_end-out_x]
+                    
+                    # Create blend mask for smooth transitions
+                    blend_mask = torch.ones_like(new_content)
+                    
+                    if y > 0:  # Top overlap
+                        for i in range(min(overlap_scaled, new_content.shape[2])):
+                            alpha = i / overlap_scaled
+                            blend_mask[:, :, i, :] = alpha
+                    
+                    if x > 0:  # Left overlap
+                        for i in range(min(overlap_scaled, new_content.shape[3])):
+                            alpha = i / overlap_scaled
+                            blend_mask[:, :, :, i] = alpha
+                    
+                    # Apply blending
+                    output[:, :, out_y:out_y_end, out_x:out_x_end] = (
+                        existing * (1 - blend_mask) + new_content * blend_mask
+                    )
+                else:
+                    # No overlap, direct copy
+                    output[:, :, out_y:out_y_end, out_x:out_x_end] = tile_result[:, :, :out_y_end-out_y, :out_x_end-out_x]
+                
+                # Clear tile from memory
+                del tile, tile_result
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+        
+        # Move model back to CPU
+        model_ultrasharp.cpu()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        return core.pytorch_to_numpy(output)[0]
+        
+    except Exception as e:
+        print(f"Tiled UltraSharp processing failed: {str(e)}")
+        model_ultrasharp.cpu()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        raise e
+
+
+def apply_ultrasharp_vary(img, tile_size=512, overlap=64):
+    """
+    Apply UltraSharp as a vary filter with tiling support
+    This function can be called from the pipeline for UltraSharp vary processing
+    """
+    try:
+        return perform_ultrasharp_tiled(img, tile_size=tile_size, overlap=overlap)
+    except Exception as e:
+        print(f"UltraSharp vary processing failed: {e}")
+        print("Falling back to original image")
+        return img
+
+
 def perform_upscale(img, method):
     global model_default, model_ultrasharp
 
     print(f'Upscaling image with shape {str(img.shape)} using method {method} ...')
 
     if method == modules.flags.ultrasharp:
-        # Ultrasharp now works as a vary filter, not an upscaler
-        # This should not be called for ultrasharp anymore
-        print("Warning: Ultrasharp is now a vary filter, not an upscaler!")
-        return img  # Return original image unchanged
+        # Use tiled UltraSharp processing for memory efficiency
+        return perform_ultrasharp_tiled(img, tile_size=512, overlap=64)
         
     # Handle other upscale methods (default upscaling)
     else: # Default upscaling
