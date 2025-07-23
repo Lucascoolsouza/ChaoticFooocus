@@ -727,4 +727,5 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         if not return_dict:
             return (final_image,)
 
-        return StableDiffusionXLPipelineOutput(images=final_image)
+        return StableDiffusionXLPipelineOutput(images=[final_image])
+
