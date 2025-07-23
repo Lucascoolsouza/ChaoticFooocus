@@ -418,11 +418,17 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         mock_unet = MockUNet(model_base.unet)
 
         # Extract embeddings from positive_cond and negative_cond
-        prompt_embeds = positive_cond[0][0]
+        prompt_embeds_unpadded = positive_cond[0][0]
         pooled_prompt_embeds = positive_cond[0][1]["pooled_output"]
 
-        negative_prompt_embeds = negative_cond[0][0]
+        negative_prompt_embeds_unpadded = negative_cond[0][0]
         negative_pooled_prompt_embeds = negative_cond[0][1]["pooled_output"]
+
+        # Determine max sequence length and pad
+        max_length = max(prompt_embeds_unpadded.shape[1], negative_prompt_embeds_unpadded.shape[1])
+
+        prompt_embeds = torch.nn.functional.pad(prompt_embeds_unpadded, (0, 0, 0, max_length - prompt_embeds_unpadded.shape[1]))
+        negative_prompt_embeds = torch.nn.functional.pad(negative_prompt_embeds_unpadded, (0, 0, 0, max_length - negative_prompt_embeds_unpadded.shape[1]))
 
         # Instantiate NAGStableDiffusionXLPipeline
         nag_pipe = NAGStableDiffusionXLPipeline(
