@@ -57,25 +57,16 @@ def perform_upscale_without_tiling(img, model_name, model_var, download_func, as
 
         result = opImageUpscaleWithModel.upscale(model_var[0], img_tensor.permute(0, 3, 1, 2))[0]
 
-        if result.shape[1] == 3:               # RGB
+        if result.shape[1] == 3:
             pass
-        elif result.shape[1] == 4:             # SD latent
+        elif result.shape[1] == 4:          # SD latent – decode only this
             result = core.decode_vae(vae, {'samples': result})[0]
-        elif result.shape[1] == 64:            # ESRGAN latent (4×4 unshuffle)
-            b, c, h, w = result.shape
-            result = result.view(b, 64, h//4, w//4)
-            result = core.decode_vae(vae, {'samples': result})[0]
-        elif result.shape[1] in (1024, 4096):  # 8×8 or 4×4 pixel-unshuffle
-            factor = int(math.sqrt(result.shape[1] // 64))
-            b, c, h, w = result.shape
-            result = result.view(b, 64, factor, factor, h, w)
-            result = result.permute(0, 1, 4, 2, 5, 3).reshape(b, 64, h*factor, w*factor)
-            result = core.decode_vae(vae, {'samples': result})[0]
-        else:
-            raise ValueError(
-                f"Upscaler '{model_name}' produced {result.shape[1]} channels; "
-                f"expected 3 (RGB), 4 (SD-latent), 64 (ESRGAN-latent), 1024 (8x8 pixel-unshuffle) or 4096 (4x4 pixel-unshuffle)."
-            )
+        else:                               # 4096 or 64 → already pixel-space
+            # squeeze/fold the last 1×1 conv layer if needed, then clamp
+            if result.shape[1] != 3:
+                # UltraSharp ends with Conv2d(64,3,1) – run it once more
+                result = model_var[0].model[-1](result)  # last conv layer
+            result = torch.clamp(result, 0, 1)
 
         model_var[0].cpu()
         if torch.cuda.is_available():
