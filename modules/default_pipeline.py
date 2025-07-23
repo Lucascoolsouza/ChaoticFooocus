@@ -1,6 +1,8 @@
 import modules.core as core
 import os
 import torch
+import numpy as np # Added import for numpy
+from PIL import Image # Added import for PIL Image
 import modules.patch
 import modules.config
 import modules.flags
@@ -780,9 +782,16 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
 
     # Convert latents to images
     if decoded_latent is not None:
-        # The decoded_latent from ksampler is already a tensor, wrap it properly for VAE
-        latent_dict = {'samples': decoded_latent}
-        images = core.decode_vae(target_vae, latent_dict)
+        if isinstance(decoded_latent, Image.Image):
+            # If it's already a PIL Image, no need to decode again
+            images = [decoded_latent]
+        elif isinstance(decoded_latent, np.ndarray) and decoded_latent.ndim == 3:
+            # If it's a 3-D numpy array (HWC), convert to PIL Image
+            images = [Image.fromarray(decoded_latent.astype(np.uint8))]
+        else:
+            # Otherwise, assume it's a latent tensor and decode
+            latent_dict = {'samples': decoded_latent}
+            images = core.decode_vae(target_vae, latent_dict)
         
         # Convert to numpy arrays for saving
         return core.pytorch_to_numpy(images)
