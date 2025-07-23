@@ -706,6 +706,14 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     kernel_size=1,
                     bias=False
                 ).to(latents.device, latents.dtype)
+            
+            # right before the decode
+            latents = latents.to(self.vae.device)   # ensure latents are on the VAE device
+
+            # make sure the conv is on the same device
+            if hasattr(self.vae, "post_quant_conv"):
+                self.vae.post_quant_conv = self.vae.post_quant_conv.to(latents.device, latents.dtype)
+
             image = self.vae.post_quant_conv(image)
             image = (image / 2 + 0.5).clamp(0, 1)
 
