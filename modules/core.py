@@ -328,7 +328,7 @@ def ksampler(model, positive, negative, latent, seed=None, steps=30, cfg=7.0, sa
 @torch.no_grad()
 @torch.inference_mode()
 def pytorch_to_numpy(x):
-    return [np.clip(255. * y.cpu().permute(0, 2, 3, 1).numpy(), 0, 255).astype(np.uint8) for y in x]
+    return [np.clip(255. * y.cpu().permute(1, 2, 0).numpy(), 0, 255).astype(np.uint8) for y in x]
 
 
 @torch.no_grad()
