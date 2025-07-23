@@ -712,15 +712,12 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     xm.mark_step()
 
         final_image = safe_decode(latents, self.vae, width=width, height=height)
+self.maybe_free_model_hooks()
 
-        if self.do_normalized_attention_guidance and not attn_procs_recovered:
-            self.unet.set_attn_processor(origin_attn_procs)
+# Gradio UI path
+if kwargs.get("for_gradio", False):
+    return final_image
 
-        # Offload all models
-        self.maybe_free_model_hooks()
-
-        if not return_dict:
-            return (final_image,)
-
-        return StableDiffusionXLPipelineOutput(images=[final_image])
+# Normal pipeline path
+return StableDiffusionXLPipelineOutput(images=[final_image])
 
