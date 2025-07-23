@@ -48,13 +48,13 @@ def perform_upscale_without_tiling(img, model_name, model_var, download_func, as
         model_var[0].eval()
 
     # Convert to PyTorch tensor
-    img_tensor = core.numpy_to_pytorch(img).permute(0, 3, 1, 2)
+    img_tensor = core.numpy_to_pytorch(img)
 
     try:
         if torch.cuda.is_available():
             model_var[0] = model_var[0].cuda()
 
-        result = opImageUpscaleWithModel.upscale(model_var[0], img_tensor)[0]
+        result = opImageUpscaleWithModel.upscale(model_var[0], img_tensor.permute(0, 3, 1, 2))[0]
 
         if result.shape[1] == 4:  # If the output is a latent (4 channels)
             if vae is None:
