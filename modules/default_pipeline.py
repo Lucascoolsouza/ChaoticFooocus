@@ -704,7 +704,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 # Call the original callback with the decoded latent
                 # The original callback expects (step, x0, x, total_steps, y)
                 # Here, x0 is the decoded image tensor, x is the latent, total_steps is steps, y is not used
-                callback(step, decoded_latents_tensor, latents_for_preview, steps, None)
+                callback(step, decoded_latents_tensor, latents_for_preview, steps, decoded_latents_tensor)
                 return {"latents": latents_for_preview}
 
         # Call the NAG pipeline
