@@ -1,6 +1,10 @@
 import threading
 
+from extras.inpaint_mask import generate_mask_from_image, SAMOptions
+from modules.patch import PatchSettings, patch_settings, patch_all
+import modules.config
 
+patch_all()
 
 
 class AsyncTask:
@@ -9,7 +13,6 @@ class AsyncTask:
         from modules.util import get_enabled_loras
         from modules.config import default_max_lora_number
         import args_manager
-        import modules.config
 
         self.args = args.copy()
         self.yields = []
@@ -127,10 +130,6 @@ class AsyncTask:
         self.ambient_occlusion_strength = args.pop()
         self.apply_fresnel_checkbox = args.pop()
         self.fresnel_strength = args.pop()
-        self.apply_pixelization_checkbox = args.pop()
-        self.pixelization_size = args.pop()
-        self.apply_pixelization_checkbox = args.pop()
-        self.pixelization_size = args.pop()
         self.enhance_ctrls = []
         for _ in range(modules.config.default_enhance_tabs):
             enhance_enabled = args.pop()
