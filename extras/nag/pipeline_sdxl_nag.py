@@ -510,10 +510,20 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             add_time_ids = torch.cat([negative_add_time_ids, add_time_ids], dim=0)
 
         if self.do_normalized_attention_guidance and nag_negative_prompt_embeds is not None:
+            # Concatenate prompt_embeds, add_text_embeds, and add_time_ids for NAG
             prompt_embeds = torch.cat([prompt_embeds, nag_negative_prompt_embeds], dim=0)
-            # Concatenate add_text_embeds and add_time_ids for NAG negative prompt as well
-            add_text_embeds = torch.cat([add_text_embeds, add_text_embeds[:nag_negative_prompt_embeds.shape[0]]], dim=0)
-            add_time_ids = torch.cat([add_time_ids, add_time_ids[:nag_negative_prompt_embeds.shape[0]]], dim=0)
+            # For add_text_embeds and add_time_ids, we need to replicate the existing ones
+            # to match the batch size of the concatenated prompt_embeds
+            num_existing_batches = add_text_embeds.shape[0]
+            num_nag_batches = nag_negative_prompt_embeds.shape[0]
+            
+            # Replicate existing add_text_embeds and add_time_ids for NAG
+            replicated_add_text_embeds = add_text_embeds[:num_nag_batches] if num_existing_batches >= num_nag_batches else add_text_embeds.repeat(math.ceil(num_nag_batches / num_existing_batches), 1, 1)[:num_nag_batches]
+            replicated_add_time_ids = add_time_ids[:num_nag_batches] if num_existing_batches >= num_nag_batches else add_time_ids.repeat(math.ceil(num_nag_batches / num_existing_batches), 1)[:num_nag_batches]
+
+            add_text_embeds = torch.cat([add_text_embeds, replicated_add_text_embeds], dim=0)
+            add_time_ids = torch.cat([add_time_ids, replicated_add_time_ids], dim=0)
+
         elif self.do_normalized_attention_guidance and nag_negative_prompt_embeds is None:
             print("[NAG] Warning: NAG is enabled but no negative embeddings available, disabling NAG")
             self._nag_scale = 1.0  # Disable NAG if no negative embeddings
