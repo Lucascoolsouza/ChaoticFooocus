@@ -454,6 +454,9 @@ class UNetModel(nn.Module):
         self.model_channels = model_channels
         self.out_channels = out_channels
 
+        if adm_in_channels is not None and num_classes is None:
+            num_classes = "sequential"
+
         if isinstance(num_res_blocks, int):
             self.num_res_blocks = len(channel_mult) * [num_res_blocks]
         else:
