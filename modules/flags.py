@@ -8,15 +8,11 @@ upscale_15 = 'Upscale (1.5x)'
 upscale_2 = 'Upscale (2x)'
 upscale_fast = 'Upscale (Fast 2x)'
 ultrasharp = 'Ultrasharp'
-web_photo = 'Web Photo'
 realistic_rescaler = 'Realistic Rescaler'
-skin_contrast = 'Skin Contrast'
-four_x_nomos = '4xNomos'
-faces = 'Faces'
 
 remove_background = 'Remove Background'
 
-uov_list = [disabled, subtle_variation, strong_variation, upscale_15, upscale_2, upscale_fast, ultrasharp, web_photo, realistic_rescaler, skin_contrast, four_x_nomos, faces, remove_background]
+uov_list = [disabled, subtle_variation, strong_variation, upscale_15, upscale_2, upscale_fast, ultrasharp, realistic_rescaler, remove_background]
 
 enhancement_uov_before = "Before First Enhancement"
 enhancement_uov_after = "After Last Enhancement"
