@@ -64,6 +64,8 @@ class RRDBNet(nn.Module):
         if "params_ema" in self.state:
             self.state = self.state["params_ema"]
             # self.model_arch = "RealESRGAN"
+        elif "state_dict" in self.state:
+            self.state = self.state["state_dict"]
         self.num_blocks = self.get_num_blocks()
         self.plus = any("conv1x1" in k for k in self.state.keys())
         if self.plus:
@@ -73,8 +75,21 @@ class RRDBNet(nn.Module):
 
         self.key_arr = list(self.state.keys())
 
-        self.in_nc: int = self.state[self.key_arr[0]].shape[1]
-        self.out_nc: int = self.state[self.key_arr[-1]].shape[0]
+        # Robustly infer in_nc and out_nc
+        self.in_nc = 3  # Default to 3 channels
+        self.out_nc = 3  # Default to 3 channels
+
+        # Try to find the first convolutional layer's input channels
+        for k in self.key_arr:
+            if isinstance(self.state[k], torch.Tensor) and self.state[k].ndim == 4:  # Conv2d weight tensor
+                self.in_nc = self.state[k].shape[1]
+                break
+
+        # Try to find the last convolutional layer's output channels
+        for k in reversed(self.key_arr):
+            if isinstance(self.state[k], torch.Tensor) and self.state[k].ndim == 4:  # Conv2d weight tensor
+                self.out_nc = self.state[k].shape[0]
+                break
 
         self.scale: int = self.get_scale()
         self.num_filters: int = self.state[self.key_arr[0]].shape[0]
