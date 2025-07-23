@@ -644,7 +644,19 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 # --- add these three lines ---
                 if callback is not None:
                     step_index = i  # current loop index
-                    callback(step_index, t, latents)
+                    # 1) decode the latent to pixel space
+                    with torch.no_grad():
+                        latents_for_preview = latents[:1]  # first image in batch
+                        # make sure the VAE is on the same device
+                        latents_for_preview = latents_for_preview.to(self.vae.device)
+                        # decode
+                        decoded = self.vae.decode(latents_for_preview)  # (1,3,H,W) float32, range ≈ [-1,1]
+                        decoded = torch.clamp((decoded + 1) * 0.5, 0, 1)  # rescale to [0,1]
+                        decoded = decoded.permute(0, 2, 3, 1)            # (1,H,W,3)
+                        decoded_np = (decoded[0] * 255).cpu().numpy().astype(np.uint8)
+
+                    # 2) hand a PIL image to the callback
+                    callback(step_index, t, decoded_np)
                 if latents.dtype != latents_dtype:
                     if torch.backends.mps.is_available():
                         # some platforms (eg. apple mps) misbehave due to a pytorch bug: https://github.com/pytorch/pytorch/pull/99272
