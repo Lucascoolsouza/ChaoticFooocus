@@ -455,24 +455,45 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                     self.time_cond_proj_dim = None  # Not used in SDXL
             unet_on_device.config = UNetConfig()
 
-        # Add missing attributes to tokenizers for diffusers compatibility
-        if not hasattr(tokenizer_l_on_device, 'tokenize'):
-            def tokenize_method(prompt):
-                # Simple tokenization - just split by spaces for compatibility
-                return prompt.split() if isinstance(prompt, str) else []
-            tokenizer_l_on_device.tokenize = tokenize_method
-        
-        if not hasattr(tokenizer_l_on_device, 'model_max_length'):
-            tokenizer_l_on_device.model_max_length = 77  # Standard CLIP tokenizer max length
-        
-        if not hasattr(tokenizer_g_on_device, 'tokenize'):
-            def tokenize_method(prompt):
-                # Simple tokenization - just split by spaces for compatibility
-                return prompt.split() if isinstance(prompt, str) else []
-            tokenizer_g_on_device.tokenize = tokenize_method
+        # Add missing attributes and methods to tokenizers for diffusers compatibility
+        def add_tokenizer_compatibility(tokenizer):
+            if not hasattr(tokenizer, 'tokenize'):
+                def tokenize_method(prompt):
+                    # Simple tokenization - just split by spaces for compatibility
+                    return prompt.split() if isinstance(prompt, str) else []
+                tokenizer.tokenize = tokenize_method
             
-        if not hasattr(tokenizer_g_on_device, 'model_max_length'):
-            tokenizer_g_on_device.model_max_length = 77  # Standard CLIP tokenizer max length
+            if not hasattr(tokenizer, 'model_max_length'):
+                tokenizer.model_max_length = 77  # Standard CLIP tokenizer max length
+            
+            if not hasattr(tokenizer, '__call__'):
+                def call_method(prompt, padding=True, truncation=True, max_length=None, return_tensors=None):
+                    # Mock tokenizer call that returns the expected structure
+                    max_len = max_length or tokenizer.model_max_length
+                    # Create mock token IDs (just use the existing tokenize method from the tokenizer)
+                    if hasattr(tokenizer, 'tokenize') and hasattr(tokenizer.tokenize, '__self__'):
+                        # Use the actual tokenizer's tokenize method
+                        tokens = tokenizer.tokenize(prompt)
+                    else:
+                        # Fallback to simple tokenization
+                        tokens = prompt.split() if isinstance(prompt, str) else []
+                    
+                    # Create a mock result that looks like what diffusers expects
+                    class MockTokenizerOutput:
+                        def __init__(self, input_ids):
+                            self.input_ids = input_ids
+                    
+                    # Create mock input_ids (just use indices)
+                    input_ids = list(range(min(len(tokens), max_len)))
+                    if len(input_ids) < max_len:
+                        input_ids.extend([0] * (max_len - len(input_ids)))  # Pad with zeros
+                    
+                    return MockTokenizerOutput([input_ids])
+                
+                tokenizer.__call__ = call_method
+        
+        add_tokenizer_compatibility(tokenizer_l_on_device)
+        add_tokenizer_compatibility(tokenizer_g_on_device)
 
 
         # Instantiate NAGStableDiffusionXLPipeline with the components on the correct device
