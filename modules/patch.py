@@ -407,7 +407,7 @@ def patched_unet_forward(self, x, timesteps=None, context=None, y=None, control=
 
     if self.num_classes is not None:
         assert y.shape[0] == x.shape[0]
-        emb = emb + self.label_emb(y.to(emb.device))
+        emb = emb + self.label_emb(y.to(emb.device).to(emb.dtype))
         transformer_options["block"] = ("input", id)
         h = forward_timestep_embed(module, h, emb, context, transformer_options, time_context=time_context, num_video_frames=num_video_frames, image_only_indicator=image_only_indicator)
         h = apply_control(h, control, 'input')
