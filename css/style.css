@@ -143,7 +143,7 @@ input[type='radio'] {
 }
 
 #progress-bar .progress {
-    height: 5%;
+    height: 15%;
     /* Fill parent height */
     background: linear-gradient(90deg, var(--nebula-pink) 0%, var(--supernova-orange) 100%);
     border-radius: 7px;

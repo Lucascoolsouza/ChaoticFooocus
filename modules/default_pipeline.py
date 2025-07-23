@@ -446,6 +446,29 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         if not hasattr(text_encoder_g_on_device, 'dtype'):
             text_encoder_g_on_device.dtype = torch.float16 if ldm_patched.modules.model_management.should_use_fp16() else torch.float32
 
+        # Wrap text encoders to handle diffusers-specific parameters
+        def wrap_text_encoder(encoder):
+            class TextEncoderWrapper:
+                def __init__(self, original_encoder):
+                    self.original_encoder = original_encoder
+                    # Copy all attributes from the original encoder
+                    for attr_name in dir(original_encoder):
+                        if not attr_name.startswith('_'):
+                            setattr(self, attr_name, getattr(original_encoder, attr_name))
+                
+                def __call__(self, input_ids, output_hidden_states=False, **kwargs):
+                    # Call the original encoder, ignoring unsupported parameters
+                    return self.original_encoder(input_ids)
+                
+                def forward(self, input_ids, output_hidden_states=False, **kwargs):
+                    # Call the original encoder, ignoring unsupported parameters
+                    return self.original_encoder(input_ids)
+            
+            return TextEncoderWrapper(encoder)
+        
+        text_encoder_l_on_device = wrap_text_encoder(text_encoder_l_on_device)
+        text_encoder_g_on_device = wrap_text_encoder(text_encoder_g_on_device)
+
         # Add config attribute to UNet if it doesn't have it (for diffusers compatibility)
         if not hasattr(unet_on_device, 'config'):
             class UNetConfig:
