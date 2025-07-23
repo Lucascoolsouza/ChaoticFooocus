@@ -328,14 +328,15 @@ def ksampler(model, positive, negative, latent, seed=None, steps=30, cfg=7.0, sa
 @torch.no_grad()
 @torch.inference_mode()
 def pytorch_to_numpy(x):
-    return [np.clip(255. * y.cpu().numpy(), 0, 255).astype(np.uint8) for y in x]
+    return [np.clip(255. * y.cpu().permute(0, 2, 3, 1).numpy(), 0, 255).astype(np.uint8) for y in x]
 
 
 @torch.no_grad()
 @torch.inference_mode()
 def numpy_to_pytorch(x):
     y = x.astype(np.float32) / 255.0
-    y = y[None]
+    y = y[None]  # Add batch dimension: [1, H, W, C]
     y = np.ascontiguousarray(y.copy())
     y = torch.from_numpy(y).float()
+    y = y.permute(0, 3, 1, 2) # Permute to [1, C, H, W]
     return y
