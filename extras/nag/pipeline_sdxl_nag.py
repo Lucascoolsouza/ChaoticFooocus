@@ -70,6 +70,22 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             
             return prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds
         
+        # Handle simple prompts (like NAG negative prompts) by creating dummy embeddings
+        if isinstance(prompt, str):
+            import torch
+            # Create dummy embeddings for simple text prompts
+            # Use standard SDXL embedding dimensions
+            batch_size = num_images_per_prompt
+            seq_len = 77  # Standard CLIP sequence length
+            embed_dim = 2048  # Standard SDXL embedding dimension
+            pooled_dim = 1280  # Standard SDXL pooled dimension
+            
+            # Create zero embeddings (neutral)
+            dummy_embeds = torch.zeros((batch_size, seq_len, embed_dim), device=device, dtype=torch.float16 if device.type == 'cuda' else torch.float32)
+            dummy_pooled = torch.zeros((batch_size, pooled_dim), device=device, dtype=torch.float16 if device.type == 'cuda' else torch.float32)
+            
+            return dummy_embeds, None, dummy_pooled, None
+        
         # Fallback to parent method if no pre-computed embeddings
         return super().encode_prompt(prompt, prompt_2, device, num_images_per_prompt, do_classifier_free_guidance, negative_prompt, negative_prompt_2, prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds, lora_scale, clip_skip)
 
