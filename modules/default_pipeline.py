@@ -747,13 +747,9 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
 
     # Convert latents to images
     if decoded_latent is not None:
-        if isinstance(decoded_latent, dict) and 'samples' in decoded_latent:
-            # If it's still in latent format, decode it
-            images = core.decode_vae(target_vae, decoded_latent)
-        else:
-            # If it's already decoded latents, decode them
-            latent_dict = {'samples': decoded_latent}
-            images = core.decode_vae(target_vae, latent_dict)
+        # The decoded_latent from ksampler is already a tensor, wrap it properly for VAE
+        latent_dict = {'samples': decoded_latent}
+        images = core.decode_vae(target_vae, latent_dict)
         
         # Convert to numpy arrays for saving
         return core.pytorch_to_numpy(images)
