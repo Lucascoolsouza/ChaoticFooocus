@@ -446,6 +446,15 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         if not hasattr(text_encoder_g_on_device, 'dtype'):
             text_encoder_g_on_device.dtype = torch.float16 if ldm_patched.modules.model_management.should_use_fp16() else torch.float32
 
+        # Add config attribute to UNet if it doesn't have it (for diffusers compatibility)
+        if not hasattr(unet_on_device, 'config'):
+            class UNetConfig:
+                def __init__(self):
+                    self.sample_size = 128  # Standard SDXL sample size
+                    self.in_channels = 4    # Standard SDXL latent channels
+                    self.time_cond_proj_dim = None  # Not used in SDXL
+            unet_on_device.config = UNetConfig()
+
         # Instantiate NAGStableDiffusionXLPipeline with the components on the correct device
         nag_pipe = NAGStableDiffusionXLPipeline(
             vae=vae_on_device,
