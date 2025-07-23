@@ -446,13 +446,21 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                     'num_train_timesteps': 1000,
                     'beta_start': 0.00085,
                     'beta_end': 0.012,
-                    'beta_schedule': 'scaled_linear'
+                    'beta_schedule': 'scaled_linear',
+                    'prediction_type': 'epsilon',
+                    'sample_max_value': 1.0,
+                    'timestep_spacing': 'leading',
+                    'steps_offset': 1
                 })()
                 self.timesteps = None
-            
+                self.init_noise_sigma = 1.0  # Standard initial noise sigma
+                self.order = 1  # Scheduler order
+                self.num_inference_steps = None
+                
             def set_timesteps(self, num_inference_steps, device=None):
                 # Create a simple timestep schedule
                 import torch
+                self.num_inference_steps = num_inference_steps
                 self.timesteps = torch.linspace(999, 0, num_inference_steps, dtype=torch.long)
                 if device is not None:
                     self.timesteps = self.timesteps.to(device)
@@ -461,6 +469,26 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 # Simple step function - just return the sample for now
                 # The actual sampling will be handled by the custom ksampler
                 return type('SchedulerOutput', (), {'prev_sample': sample})()
+            
+            def scale_model_input(self, sample, timestep):
+                # Standard scaling - just return the sample as-is
+                return sample
+            
+            def add_noise(self, original_samples, noise, timesteps):
+                # Standard noise addition
+                import torch
+                return original_samples + noise
+            
+            @property
+            def sigmas(self):
+                # Return a simple sigma schedule
+                import torch
+                if self.timesteps is not None:
+                    return torch.ones_like(self.timesteps, dtype=torch.float32)
+                return torch.tensor([1.0])
+            
+            def __len__(self):
+                return self.num_inference_steps or 50
         
         scheduler_on_device = SchedulerWrapper(model_base.unet_with_lora.model.model_sampling)
 
