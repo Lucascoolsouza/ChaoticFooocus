@@ -337,8 +337,16 @@ def get_candidate_vae(steps, switch, denoise=1.0, refiner_swap_method='joint'):
 @torch.no_grad()
 @torch.inference_mode()
 def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, nag_scale=1.0, nag_tau=2.5, nag_alpha=0.5, nag_negative_prompt=None, nag_end=1.0, original_prompt=None, original_negative_prompt=None):
-    target_unet, target_vae, target_refiner_unet, target_refiner_vae, target_clip \
-        = final_unet, final_vae, final_refiner_unet, final_refiner_vae, final_clip
+    if steps == 0:
+        # If steps is 0, no diffusion is performed. Return the initial latent or an empty list.
+        if latent is not None:
+            # Decode the latent if it's provided and return the image
+            return core.pytorch_to_numpy(core.decode_vae(final_vae, latent))
+        else:
+            # If no latent, return an empty list of images
+            return []
+    target_unet, target_vae, target_refiner_unet, target_refiner_vae, target_clip         = final_unet, final_vae, final_refiner_unet, final_refiner_vae, final_clip
+
 
     assert refiner_swap_method in ['joint', 'separate', 'vae']
 
