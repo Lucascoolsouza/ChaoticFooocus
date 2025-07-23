@@ -440,6 +440,12 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         unet_on_device = model_base.unet_with_lora  # UNet with LoRAs applied - uses its own device management via patcher
         scheduler_on_device = model_base.unet_with_lora.model.model_sampling # This is not a torch.nn.Module, so no .to() needed
 
+        # Add dtype property to text encoders if they don't have it
+        if not hasattr(text_encoder_l_on_device, 'dtype'):
+            text_encoder_l_on_device.dtype = torch.float16 if ldm_patched.modules.model_management.should_use_fp16() else torch.float32
+        if not hasattr(text_encoder_g_on_device, 'dtype'):
+            text_encoder_g_on_device.dtype = torch.float16 if ldm_patched.modules.model_management.should_use_fp16() else torch.float32
+
         # Instantiate NAGStableDiffusionXLPipeline with the components on the correct device
         nag_pipe = NAGStableDiffusionXLPipeline(
             vae=vae_on_device,
