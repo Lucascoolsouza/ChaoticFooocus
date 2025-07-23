@@ -695,43 +695,30 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 if XLA_AVAILABLE:
                     xm.mark_step()
 
-        # -----------------------------
-        # FINAL DECODE AND PREVIEW
-        # -----------------------------
-        with torch.no_grad():
-            # 1. ensure everything is on the VAE device
-            latents = latents.to(self.vae.device)
+        final_image = None
+        try:
+            with torch.no_grad():
+                latents = latents.to(self.vae.device)
+                decoded = self.vae.decode(latents)
 
-            # 2. decode -> (B, 1152, H, W)   (or whatever your VAE returns)
-            decoded = self.vae.decode(latents)
+                if hasattr(self.vae, "post_quant_conv"):
+                    self.vae.post_quant_conv = self.vae.post_quant_conv.to(decoded.device, decoded.dtype)
+                    decoded = self.vae.post_quant_conv(decoded)
+                else:
+                    decoded = decoded[:, :3] if decoded.size(1) >= 3 else decoded.mean(dim=1, keepdim=True).repeat(1, 3, 1, 1)
 
-            # 3. map 1152 channels → 3 channels
-            if hasattr(self.vae, "post_quant_conv"):
-                # move the conv weights to GPU once
-                self.vae.post_quant_conv = self.vae.post_quant_conv.to(decoded.device, decoded.dtype)
-                decoded = self.vae.post_quant_conv(decoded)
-            else:
-                # fallback: mean-pool or slice
-                decoded = decoded[:, :3] if decoded.size(1) >= 3 else decoded.mean(dim=1, keepdim=True).repeat(1, 3, 1, 1)
-
-            # 4. rescale to [0,1]
-            decoded = torch.clamp((decoded + 1) * 0.5, 0, 1)
-
-            # 5. build PIL image for preview (first in batch)
-            from PIL import Image
-
-            if decoded is None or not isinstance(decoded, torch.Tensor):
-                raise ValueError("[VAE Decode] Decoding failed: output is not a valid tensor.")
-
-            if decoded.ndim != 4 or decoded.shape[1] < 3:
-                raise ValueError(f"[VAE Decode] Invalid decoded tensor shape: {decoded.shape}")
-
-            try:
+                decoded = torch.clamp((decoded + 1) * 0.5, 0, 1)
                 decoded_np = (decoded[0].permute(1, 2, 0) * 255).cpu().numpy().astype(np.uint8)
+
+                from PIL import Image
                 final_image = Image.fromarray(decoded_np, mode='RGB')
-            except Exception as e:
-                print(f"[VAE Decode] ❌ Failed to convert tensor to image: {e}")
-                final_image = Image.new('RGB', (width or 512, height or 512), color='red')
+
+        except Exception as e:
+            print(f"[VAE Decode] ❌ Failed to convert tensor to image: {e}")
+            from PIL import Image, ImageDraw
+            final_image = Image.new('RGB', (width or 512, height or 512), color='red')
+            draw = ImageDraw.Draw(final_image)
+            draw.text((10, 10), f"Decode Error", fill=(255, 255, 255))
 
         if self.do_normalized_attention_guidance and not attn_procs_recovered:
             self.unet.set_attn_processor(origin_attn_procs)
