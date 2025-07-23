@@ -998,7 +998,14 @@ def worker():
             
             # Convert back to numpy array
             uov_input_image = np.array(result_image)
+            print(f"[Rembg] Output image shape after removal: {uov_input_image.shape}")
             
+            # Ensure the image has an alpha channel if background was removed
+            if uov_input_image.shape[2] == 3: # If it's RGB, add an alpha channel
+                alpha_channel = np.full((uov_input_image.shape[0], uov_input_image.shape[1], 1), 255, dtype=np.uint8)
+                uov_input_image = np.concatenate((uov_input_image, alpha_channel), axis=2)
+                print(f"[Rembg] Converted to RGBA. New shape: {uov_input_image.shape}")
+
             print(f'Background removed using {bg_removal_model} model')
             
         return uov_input_image, skip_prompt_processing, steps
@@ -1414,7 +1421,11 @@ def worker():
                         progressbar(async_task, current_progress, 'Checking for NSFW content ...')
                         img = default_censor(img)
                     progressbar(async_task, current_progress, f'Saving image {current_task_id + 1}/{total_count} to system ...')
+                    # Force output format to PNG for background removal to preserve transparency
+                    original_output_format = async_task.output_format
+                    async_task.output_format = 'png'
                     uov_image_path = log(img, [('Background Removed', 'background_removed', 'True')], output_format=async_task.output_format, persist_image=persist_image)
+                    async_task.output_format = original_output_format # Restore original output format
                     yield_result(async_task, uov_image_path, current_progress, async_task.black_out_nsfw, False,
                                  do_not_show_finished_images=not show_intermediate_results or async_task.disable_intermediate_results)
                     exception_result = 'continue' # Skip further processing for this image
