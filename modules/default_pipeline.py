@@ -477,6 +477,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                                 setattr(self, attr_name, getattr(original_tokenizer, attr_name))
                     
                     def __call__(self, prompt, padding=True, truncation=True, max_length=None, return_tensors=None):
+                        import torch
                         # Mock tokenizer call that returns the expected structure
                         max_len = max_length or getattr(self, 'model_max_length', 77)
                         
@@ -485,7 +486,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                             def __init__(self, input_ids):
                                 self.input_ids = input_ids
                         
-                        # Create mock input_ids (simple sequence)
+                        # Create mock input_ids as tensors
                         if isinstance(prompt, str):
                             # Simple mock: create a sequence of token IDs
                             input_ids = list(range(min(len(prompt.split()), max_len)))
@@ -494,7 +495,10 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                         else:
                             input_ids = [0] * max_len  # Default padding
                         
-                        return MockTokenizerOutput([input_ids])
+                        # Convert to tensor and add batch dimension
+                        input_ids_tensor = torch.tensor([input_ids], dtype=torch.long)
+                        
+                        return MockTokenizerOutput(input_ids_tensor)
                 
                 # Replace the tokenizer with the wrapper
                 return CallableTokenizerWrapper(tokenizer)
