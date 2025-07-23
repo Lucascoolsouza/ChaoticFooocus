@@ -253,6 +253,9 @@ def perform_tiled_upscale(img, model_name, model_var, download_func, tile_size=5
                 print(f"Processing tile [{y}:{y_end}, {x}:{x_end}] -> shape {tile.shape}")
 
                 # Process tile
+                # Ensure the tile is in [B, C, H, W] format before passing to the upscaler
+                if tile.shape[1] != 3:
+                    tile = tile.permute(0, 2, 1, 3) # Attempt to correct permutation from [B, H, C, W] to [B, C, H, W]
                 tile_result = opImageUpscaleWithModel.upscale(model_var[0], tile)[0]
 
                 if tile_result.shape[1] == 4:  # If the output is a latent (4 channels)
