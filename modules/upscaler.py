@@ -48,7 +48,7 @@ def perform_upscale_without_tiling(img, model_name, model_var, download_func, as
         model_var[0].eval()
 
     # Convert to PyTorch tensor
-    img_tensor = core.numpy_to_pytorch(img)
+    img_tensor = core.numpy_to_pytorch(img).permute(0, 3, 1, 2)
 
     try:
         if torch.cuda.is_available():
@@ -107,7 +107,7 @@ def perform_upscale(img, method, async_task=None, vae_model=None):
         model_to_use = model_default
 
     try:
-        img = core.numpy_to_pytorch(img).permute(0, 3, 1, 2)
+        img = core.numpy_to_pytorch(img)
         
         # Move model to GPU temporarily for processing
         if torch.cuda.is_available():
