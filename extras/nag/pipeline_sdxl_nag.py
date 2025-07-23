@@ -685,7 +685,6 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             # Use the custom VAE decode method
             image = self.vae.decode(latents)
             image = (image / 2 + 0.5).clamp(0, 1)
-            image = image.cpu().permute(0, 2, 3, 1).float().numpy()
 
             # Skip cast back for custom VAE - handled internally
         else:
