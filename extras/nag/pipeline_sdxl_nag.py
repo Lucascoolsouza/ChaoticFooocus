@@ -26,10 +26,10 @@ from diffusers.pipelines.stable_diffusion_xl.pipeline_stable_diffusion_xl import
 
 from .attention_nag import NAGAttnProcessor2_0
 
-from PIL import Image, ImageDraw
 import numpy as np
+from PIL import Image, ImageDraw
 
-def safe_decode_to_image(latents, vae, width=512, height=512):
+def safe_decode(latents, vae, width=512, height=512):
     try:
         with torch.no_grad():
             latents = latents.to(vae.device)
@@ -42,20 +42,15 @@ def safe_decode_to_image(latents, vae, width=512, height=512):
                 decoded = decoded[:, :3] if decoded.size(1) >= 3 else decoded.mean(dim=1, keepdim=True).repeat(1, 3, 1, 1)
 
             decoded = torch.clamp((decoded + 1) * 0.5, 0, 1)
-
             decoded_np = (decoded[0].permute(1, 2, 0) * 255).cpu().numpy().astype(np.uint8)
-
-            img = Image.fromarray(decoded_np, mode='RGB')
-            if not isinstance(img, Image.Image):
-                raise ValueError("Decoded result is not a valid PIL image.")
-
-            return img
+            return Image.fromarray(decoded_np, mode='RGB')
 
     except Exception as e:
-        print(f"[Safe Decode] ❌ Failed to decode: {e}")
+        print(f"[safe_decode] ❌ Decode failed: {e}")
+        # Return error image
         img = Image.new("RGB", (width, height), color="red")
         draw = ImageDraw.Draw(img)
-        draw.text((10, 10), "Decode error", fill="white")
+        draw.text((10, 10), f"Decode Error", fill="white")
         return img
 
 
@@ -677,11 +672,10 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 # --- add these three lines ---
                 if callback is not None:
                     try:
-                        preview_img = safe_decode_to_image(latents[:1], self.vae, width=width, height=height)
+                        preview_img = safe_decode(latents[:1], self.vae, width=width, height=height)
                         callback(i, t, preview_img)
-
                     except Exception as e:
-                        print(f"[Preview] ❌ Failed to generate preview at step {i}: {e}")
+                        print(f"[Preview Callback] Failed at step {i}: {e}")
                 if latents.dtype != latents_dtype:
                     if torch.backends.mps.is_available():
                         # some platforms (eg. apple mps) misbehave due to a pytorch bug: https://github.com/pytorch/pytorch/pull/99272
@@ -716,7 +710,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 if XLA_AVAILABLE:
                     xm.mark_step()
 
-        final_image = safe_decode_to_image(latents, self.vae, width=width, height=height)
+        final_image = safe_decode(latents, self.vae, width=width, height=height)
 
         if self.do_normalized_attention_guidance and not attn_procs_recovered:
             self.unet.set_attn_processor(origin_attn_procs)
