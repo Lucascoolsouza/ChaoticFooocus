@@ -596,6 +596,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     t,
                     c_crossattn=prompt_embeds,
                     transformer_options=added_cond_kwargs,
+                    y=None, # Explicitly pass y=None for non-class-conditional models
                 )
 
                 # perform guidance
