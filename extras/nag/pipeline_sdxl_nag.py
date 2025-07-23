@@ -591,7 +591,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     prompt_embeds = prompt_embeds[:len(latent_model_input)]
                     attn_procs_recovered = True
 
-                noise_pred = self.unet.apply_model(
+                noise_pred = self.unet.model.apply_model(
                     latent_model_input,
                     t,
                     c_crossattn=prompt_embeds,
