@@ -581,6 +581,26 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 # Continue with the actual diffusion process instead of returning early
                 # The NAG attention processors are now set up, so we can proceed with sampling
 
+                # predict the noise residual
+                added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
+                if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
+                    added_cond_kwargs["image_embeds"] = image_embeds
+
+                if t < math.floor((1 - nag_end) * 999) and self.do_normalized_attention_guidance and not attn_procs_recovered:
+                    self.unet.set_attn_processor(origin_attn_procs)
+                    prompt_embeds = prompt_embeds[:len(latent_model_input)]
+                    attn_procs_recovered = True
+
+                noise_pred = self.unet(
+                    latent_model_input,
+                    t,
+                    encoder_hidden_states=prompt_embeds,
+                    timestep_cond=timestep_cond,
+                    cross_attention_kwargs=self.cross_attention_kwargs,
+                    added_cond_kwargs=added_cond_kwargs,
+                    return_dict=False,
+                )[0]
+
                 # perform guidance
                 if self.do_classifier_free_guidance:
                     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
