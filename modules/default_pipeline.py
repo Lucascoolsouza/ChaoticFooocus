@@ -458,10 +458,18 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 
                 def __call__(self, input_ids, output_hidden_states=False, **kwargs):
                     # Call the original encoder, ignoring unsupported parameters
+                    # Make sure input_ids is properly formatted
+                    if hasattr(input_ids, 'to'):
+                        # If it's a tensor, ensure it's on CPU for the custom encoder
+                        input_ids = input_ids.cpu()
                     return self.original_encoder(input_ids)
                 
                 def forward(self, input_ids, output_hidden_states=False, **kwargs):
                     # Call the original encoder, ignoring unsupported parameters
+                    # Make sure input_ids is properly formatted
+                    if hasattr(input_ids, 'to'):
+                        # If it's a tensor, ensure it's on CPU for the custom encoder
+                        input_ids = input_ids.cpu()
                     return self.original_encoder(input_ids)
             
             return TextEncoderWrapper(encoder)
@@ -509,16 +517,24 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                             def __init__(self, input_ids):
                                 self.input_ids = input_ids
                         
-                        # Create mock input_ids as tensors
+                        # Create mock input_ids as tensors with proper shape
                         if isinstance(prompt, str):
-                            # Simple mock: create a sequence of token IDs
-                            input_ids = list(range(min(len(prompt.split()), max_len)))
-                            if len(input_ids) < max_len:
-                                input_ids.extend([0] * (max_len - len(input_ids)))  # Pad with zeros
+                            # Use a more realistic token sequence
+                            words = prompt.split()
+                            # Create token IDs: start token (49406), word tokens, end token (49407), padding (49407)
+                            input_ids = [49406]  # Start token
+                            for i, word in enumerate(words[:max_len-2]):  # Leave room for start/end tokens
+                                input_ids.append(1000 + (i % 1000))  # Mock word tokens
+                            input_ids.append(49407)  # End token
+                            
+                            # Pad to max_length
+                            while len(input_ids) < max_len:
+                                input_ids.append(49407)  # Padding token
                         else:
-                            input_ids = [0] * max_len  # Default padding
+                            # Default: start token + padding
+                            input_ids = [49406] + [49407] * (max_len - 1)
                         
-                        # Convert to tensor and add batch dimension
+                        # Convert to tensor with proper batch dimension
                         input_ids_tensor = torch.tensor([input_ids], dtype=torch.long)
                         
                         return MockTokenizerOutput(input_ids_tensor)
