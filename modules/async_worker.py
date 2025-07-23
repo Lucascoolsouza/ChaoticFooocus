@@ -38,12 +38,8 @@ class AsyncTask:
         self.negative_prompt = args.pop()
         self.style_selections = args.pop()
 
-        # Defensive: if args is empty or last value is empty, use default Performance
-        if len(args) == 0 or not args[-1]:
-            self.performance_selection = Performance.QUALITY
-        else:
-            self.performance_selection = Performance(args.pop())
-        self.steps = self.performance_selection.steps() if self.performance_selection else None
+        self.performance_selection = Performance(args.pop())
+        self.steps = self.performance_selection.steps()
         self.original_steps = self.steps
 
         self.aspect_ratios_selection = args.pop()
