@@ -391,6 +391,7 @@ def worker():
 
     def apply_patch_settings(async_task):
         from modules.patch import PatchSettings
+        patch_settings = {}
         patch_settings[pid] = PatchSettings(
             async_task.sharpness,
             async_task.adm_scaler_end,
