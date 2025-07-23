@@ -600,7 +600,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 noise_pred = unet_model(
                     latent_model_input,
                     t,
-                    encoder_hidden_states=prompt_embeds,
+                    c=prompt_embeds,
                     timestep_cond=timestep_cond,
                     cross_attention_kwargs=self.cross_attention_kwargs,
                     added_cond_kwargs=added_cond_kwargs,
