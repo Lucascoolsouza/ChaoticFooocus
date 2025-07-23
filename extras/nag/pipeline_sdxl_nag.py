@@ -591,7 +591,13 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     prompt_embeds = prompt_embeds[:len(latent_model_input)]
                     attn_procs_recovered = True
 
-                noise_pred = self.unet(
+                # Use the ModelPatcher's model attribute to call the UNet
+                if hasattr(self.unet, 'model'):
+                    unet_model = self.unet.model
+                else:
+                    unet_model = self.unet
+                
+                noise_pred = unet_model(
                     latent_model_input,
                     t,
                     encoder_hidden_states=prompt_embeds,
