@@ -691,54 +691,32 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 if XLA_AVAILABLE:
                     xm.mark_step()
 
-        if not output_type == "latent":
-            # make sure the VAE is in float32 mode, as it overflows in float16
-            needs_upcasting = self.vae.vae_dtype == torch.float16 and getattr(self.vae.config, 'force_upcast', False)
+        # -----------------------------
+        # FINAL DECODE AND PREVIEW
+        # -----------------------------
+        with torch.no_grad():
+            # 1. ensure everything is on the VAE device
+            latents = latents.to(self.vae.device)
 
-            if needs_upcasting:
-                # Skip upcast for custom VAE - handled internally
-                pass
-            elif latents.dtype != self.vae.vae_dtype:
-                if torch.backends.mps.is_available():
-                    # some platforms (eg. apple mps) misbehave due to a pytorch bug: https://github.com/pytorch/pytorch/pull/99272
-                    self.vae = self.vae.to(latents.dtype)
+            # 2. decode -> (B, 1152, H, W)   (or whatever your VAE returns)
+            decoded = self.vae.decode(latents)
 
-            # unscale/denormalize the latents
-            # denormalize with the mean and std if available and not None
-            # Use standard SDXL VAE scaling factor
-            scaling_factor = getattr(self.vae.config, 'scaling_factor', 0.13025)  # Standard SDXL VAE scaling factor
-            latents = latents / scaling_factor
-
-            # Use the custom VAE decode method
-            image = self.vae.decode(latents)
-            if not hasattr(self.vae, "post_quant_conv"):
-                self.vae.post_quant_conv = nn.Conv2d(
-                    in_channels=1152,
-                    out_channels=3,
-                    kernel_size=1,
-                    bias=False
-                ).to(latents.device, latents.dtype)
-            
-            # right before the decode
-            latents = latents.to(self.vae.device)   # ensure latents are on the VAE device
-
-            # make sure the conv is on the same device
+            # 3. map 1152 channels → 3 channels
             if hasattr(self.vae, "post_quant_conv"):
-                self.vae.post_quant_conv = self.vae.post_quant_conv.to(latents.device, latents.dtype)
+                # move the conv weights to GPU once
+                self.vae.post_quant_conv = self.vae.post_quant_conv.to(decoded.device, decoded.dtype)
+                decoded = self.vae.post_quant_conv(decoded)
+            else:
+                # fallback: mean-pool or slice
+                decoded = decoded[:, :3] if decoded.size(1) >= 3 else decoded.mean(dim=1, keepdim=True).repeat(1, 3, 1, 1)
 
-            image = self.vae.post_quant_conv(image)
-            image = (image / 2 + 0.5).clamp(0, 1)
+            # 4. rescale to [0,1]
+            decoded = torch.clamp((decoded + 1) * 0.5, 0, 1)
 
-            # Skip cast back for custom VAE - handled internally
-        else:
-            image = latents
-
-        if not output_type == "latent":
-            # apply watermark if available
-            if self.watermark is not None:
-                image = self.watermark.apply_watermark(image)
-
-            image = self.image_processor.postprocess(image.contiguous(), output_type=output_type)
+            # 5. build PIL image for preview (first in batch)
+            from PIL import Image
+            decoded_np = (decoded[0].permute(1, 2, 0) * 255).cpu().numpy().astype(np.uint8)
+            final_image = Image.fromarray(decoded_np, mode='RGB')
 
         if self.do_normalized_attention_guidance and not attn_procs_recovered:
             self.unet.set_attn_processor(origin_attn_procs)
@@ -747,6 +725,6 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         self.maybe_free_model_hooks()
 
         if not return_dict:
-            return (image,)
+            return (final_image,)
 
-        return StableDiffusionXLPipelineOutput(images=image)
+        return StableDiffusionXLPipelineOutput(images=final_image)
