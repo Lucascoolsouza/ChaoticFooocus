@@ -62,11 +62,17 @@ def perform_upscale_without_tiling(img, model_name, model_var, download_func, as
         elif result.shape[1] == 4:          # SD latent – decode only this
             result = core.decode_vae(vae, {'samples': result})[0]
         else:                               # 4096 or 64 → already pixel-space
-            # squeeze/fold the last 1×1 conv layer if needed, then clamp
-            if result.shape[1] != 3:
-                # UltraSharp ends with Conv2d(64,3,1) – run it once more
-                result = model_var[0].model[-1](result)  # last conv layer
-            result = torch.clamp(result, 0, 1)
+            try:
+                final_layer = model_var[0].model[-1]
+                expected_in_channels = final_layer.in_channels
+                if result.shape[1] == expected_in_channels:
+                    result = final_layer(result)
+                else:
+                    print(f"[Upscaler] ⚠️ Final layer expected {expected_in_channels} channels, got {result.shape[1]}. Skipping final conv layer.")
+                result = torch.clamp(result, 0, 1)
+            except Exception as conv_e:
+                print(f"[Upscaler] ⚠️ Failed applying final conv layer: {str(conv_e)}. Skipping...")
+                result = torch.clamp(result, 0, 1)
 
         model_var[0].cpu()
         if torch.cuda.is_available():
