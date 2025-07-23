@@ -437,7 +437,11 @@ def get_sigmas_karras_quantum(n, sigma_min, sigma_max, rho=7., device='cpu',
     # Add wave-particle duality oscillation
     wave_component = 1.0 + 0.1 * torch.sin(2 * math.pi * 7 * ramp)
     sigmas = quantum_base * wave_component
-    
+
+    print(f"Quantum Scheduler - n: {n}, sigma_min: {sigma_min}, sigma_max: {sigma_max}, rho: {rho}, tunnel_probability: {tunnel_probability}, quantum_levels: {quantum_levels}")
+    print(f"Quantum Scheduler - Generated sigmas (first 10): {sigmas[:10]}")
+    print(f"Quantum Scheduler - Generated sigmas (last 10): {sigmas[-10:]}")
+    print(f"Quantum Scheduler - Min sigma: {sigmas.min()}, Max sigma: {sigmas.max()}")
     return append_zero(torch.clamp(sigmas, sigma_min, sigma_max)).to(device)
 
 
@@ -457,13 +461,10 @@ def get_sigmas_karras_organic(n, sigma_min, sigma_max, rho=7., device='cpu',
     phi = growth_rate  # Golden ratio
     
     # Create organic growth pattern
-    growth_pattern = torch.zeros_like(ramp)
-    for i in range(n):
-        t = ramp[i].item()
-        # Fibonacci-inspired growth with branching
-        fib_component = (phi ** t - (-1/phi) ** t) / math.sqrt(5)
-        branch_component = torch.sin(2 * torch.pi * branching_factor * t * 5)
-        growth_pattern[i] = 1.0 + 0.2 * (fib_component % 1.0) + 0.1 * branch_component + (torch.rand(1).item() - 0.5) * 0.01 # Add small random variation
+    # Vectorized Fibonacci-inspired growth with branching
+    fib_component = (phi ** ramp - (-1/phi) ** ramp) / math.sqrt(5)
+    branch_component = torch.sin(2 * torch.pi * branching_factor * ramp * 5)
+    growth_pattern = 1.0 + 0.2 * (fib_component % 1.0) + 0.1 * branch_component + (torch.rand_like(ramp) - 0.5) * 0.01 # Add small random variation
     
     # Add natural variation (like leaf patterns)
     leaf_pattern = 1.0 + 0.08 * torch.sin(2 * torch.pi * 8 * ramp) * torch.cos(2 * torch.pi * 3 * ramp) + (torch.rand(n, device=device) - 0.5) * 0.02 # Add small random variation
