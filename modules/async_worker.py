@@ -127,7 +127,11 @@ class AsyncTask:
             cn_weight = args.pop()
             cn_type = args.pop()
             if cn_img is not None:
-                self.cn_tasks[cn_type].append([cn_img, cn_stop, cn_weight])
+                if cn_type in self.cn_tasks:
+                    self.cn_tasks[cn_type].append([cn_img, cn_stop, cn_weight])
+                else:
+                    # Optionally log or handle unexpected cn_type
+                    print(f"Warning: Unexpected cn_type '{cn_type}' encountered. Skipping.")
 
         self.debugging_dino = args.pop()
         self.dino_erode_or_dilate = args.pop()
