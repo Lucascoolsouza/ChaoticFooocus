@@ -578,24 +578,8 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     prompt_embeds = prompt_embeds[:len(latent_model_input)]
                     attn_procs_recovered = True
 
-                # Use the custom ksampler system instead of calling UNet directly
-                # Return the initial latents and let the fallback system handle sampling
-                # This bypasses the incompatible UNet call while preserving the NAG setup
-                
-                # Return early with the initial latents - the actual sampling will be done by fallback
-                if not output_type == "latent":
-                    # Return the latents as-is, they will be decoded by the fallback system
-                    image = latents
-                else:
-                    image = latents
-
-                if hasattr(self, "final_offload_hook") and self.final_offload_hook is not None:
-                    self.final_offload_hook.offload()
-
-                if not return_dict:
-                    return (image,)
-
-                return StableDiffusionXLPipelineOutput(images=image)
+                # Continue with the actual diffusion process instead of returning early
+                # The NAG attention processors are now set up, so we can proceed with sampling
 
                 # perform guidance
                 if self.do_classifier_free_guidance:

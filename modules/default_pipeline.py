@@ -708,26 +708,28 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             nag_negative_prompt=final_nag_negative_prompt,
             nag_end=nag_end,
             )
-        # For now, fall back to regular sampling since NAG UNet integration is complex
-        # TODO: Implement proper NAG integration with the custom UNet system
-        print("[NAG] Falling back to regular sampling with NAG-influenced CFG scale")
         
-        # Apply NAG influence by modifying the CFG scale
-        nag_influenced_cfg = cfg_scale * (1.0 + (nag_scale - 1.0) * 0.5)  # Blend NAG influence
+        print("[NAG] Using NAG pipeline for generation")
         
-        decoded_latent = core.ksampler(
-            model=final_unet,
-            positive=positive_cond,
-            negative=negative_cond,
-            latent=initial_latent,
-            seed=image_seed,
-            steps=steps,
-            cfg=nag_influenced_cfg,  # Use NAG-influenced CFG
-            sampler_name=sampler_name,
-            scheduler=scheduler_name,
-            denoise=denoise,
-            disable_preview=disable_preview,
-            refiner=final_refiner_unet,
+        # Use the NAG pipeline result
+        decoded_latent = nag_result.images[0]
+        
+        # Convert PIL image back to numpy array format expected by the rest of the pipeline
+        import numpy as np
+        if hasattr(decoded_latent, 'cpu'):
+            # If it's a tensor, convert to numpy
+            decoded_latent = decoded_latent.cpu().numpy()
+        elif hasattr(decoded_latent, '__array__'):
+            # If it's a PIL image, convert to numpy
+            decoded_latent = np.array(decoded_latent)
+        
+        # Ensure it's in the right format (HWC, 0-255)
+        if decoded_latent.max() <= 1.0:
+            decoded_latent = (decoded_latent * 255).astype(np.uint8)
+        
+        print(f"[NAG] NAG pipeline completed, output shape: {decoded_latent.shape}")
+        
+        # Skip the regular ksampler since we used NAG pipeline
             refiner_switch=switch,
             sigmas=minmax_sigmas,
             callback_function=callback
