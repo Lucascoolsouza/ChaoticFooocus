@@ -50,7 +50,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         # Just return the prompt as-is since we're using pre-computed embeddings anyway
         return prompt
 
-    def encode_prompt(self, prompt, device, num_images_per_prompt, do_classifier_free_guidance, negative_prompt=None, prompt_embeds=None, negative_prompt_embeds=None, pooled_prompt_embeds=None, negative_pooled_prompt_embeds=None, lora_scale=None, clip_skip=None):
+    def encode_prompt(self, prompt, prompt_2=None, device=None, num_images_per_prompt=1, do_classifier_free_guidance=True, negative_prompt=None, negative_prompt_2=None, prompt_embeds=None, negative_prompt_embeds=None, pooled_prompt_embeds=None, negative_pooled_prompt_embeds=None, lora_scale=None, clip_skip=None):
         # Override encode_prompt to bypass tokenization issues
         # Since we're passing pre-computed embeddings, just return them
         if prompt_embeds is not None:
@@ -71,7 +71,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             return prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds
         
         # Fallback to parent method if no pre-computed embeddings
-        return super().encode_prompt(prompt, device, num_images_per_prompt, do_classifier_free_guidance, negative_prompt, prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds, lora_scale, clip_skip)
+        return super().encode_prompt(prompt, prompt_2, device, num_images_per_prompt, do_classifier_free_guidance, negative_prompt, negative_prompt_2, prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds, lora_scale, clip_skip)
 
     @torch.no_grad()
     def __call__(
