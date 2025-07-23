@@ -673,7 +673,8 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 if callback is not None:
                     try:
                         preview_img = safe_decode(latents[:1], self.vae, width=width, height=height)
-                        callback(i, t, preview_img)
+                        preview_np = np.array(preview_img)
+                        callback(i, t, preview_np)
                     except Exception as e:
                         print(f"[Preview Callback] Failed at step {i}: {e}")
                 if latents.dtype != latents_dtype:
