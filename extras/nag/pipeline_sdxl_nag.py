@@ -2,6 +2,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import math
 
 import torch
+import torch.nn as nn
 
 from diffusers.callbacks import MultiPipelineCallbacks, PipelineCallback
 from diffusers.image_processor import PipelineImageInput
@@ -343,6 +344,10 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         # 0. Default height and width to unet
         height = height or self.default_sample_size * self.vae_scale_factor
         width = width or self.default_sample_size * self.vae_scale_factor
+
+        # Enable VAE tiling and attention slicing for memory optimization
+        self.vae.enable_tiling()
+        self.unet.enable_attention_slicing()
 
         original_size = original_size or (height, width)
         target_size = target_size or (height, width)
@@ -687,6 +692,13 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
             # Use the custom VAE decode method
             image = self.vae.decode(latents)
+            if not hasattr(self.vae, "post_quant_conv"):
+                self.vae.post_quant_conv = nn.Conv2d(
+                    in_channels=1152,
+                    out_channels=3,
+                    kernel_size=1,
+                    bias=False
+                ).to(latents.device, latents.dtype)
             image = self.vae.post_quant_conv(image)
             image = (image / 2 + 0.5).clamp(0, 1)
 
