@@ -40,7 +40,7 @@ def perform_ultrasharp_tiled(img, tile_size=512, overlap=64):
         model_ultrasharp.eval()
     
     # Convert to PyTorch tensor
-    img_tensor = core.numpy_to_pytorch(img)
+    img_tensor = core.numpy_to_pytorch(img).permute(0, 3, 1, 2)
     
     # Get image dimensions
     _, _, h, w = img_tensor.shape
@@ -194,7 +194,7 @@ def perform_tiled_upscale(img, model_name, model_var, download_func, tile_size=5
         model_var[0].eval()
 
     # Convert to PyTorch tensor
-    img_tensor = core.numpy_to_pytorch(img)
+    img_tensor = core.numpy_to_pytorch(img).permute(0, 3, 1, 2)
 
     # Get image dimensions
     _, _, h, w = img_tensor.shape
