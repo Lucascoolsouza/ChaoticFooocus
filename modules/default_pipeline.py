@@ -432,12 +432,12 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             model_base.unet.config = UNetConfig()
 
         # Move components to the correct device
-        vae_on_device = model_base.vae.to(device)
+        vae_on_device = model_base.vae  # VAE uses its own device management via patcher
         text_encoder_l_on_device = model_base.clip.cond_stage_model.clip_l.to(device)
         text_encoder_g_on_device = model_base.clip.cond_stage_model.clip_g.to(device)
         tokenizer_l_on_device = model_base.clip.tokenizer.clip_l
         tokenizer_g_on_device = model_base.clip.tokenizer.clip_g
-        unet_on_device = model_base.unet.to(device)
+        unet_on_device = model_base.unet  # UNet uses its own device management via patcher
         scheduler_on_device = model_base.unet.model.model_sampling # This is not a torch.nn.Module, so no .to() needed
 
         # Instantiate NAGStableDiffusionXLPipeline with the components on the correct device
