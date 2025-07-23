@@ -712,12 +712,12 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     xm.mark_step()
 
         final_image = safe_decode(latents, self.vae, width=width, height=height)
-        self.maybe_free_model_hooks()
+self.maybe_free_model_hooks()
 
-        # Gradio UI path
-        if kwargs.get("for_gradio", False):
-            return final_image
+# Gradio UI path
+if kwargs.get("for_gradio", False):
+    return final_image
 
-        # Normal pipeline path
-        return StableDiffusionXLPipelineOutput(images=[final_image])
+# Normal pipeline path
+return StableDiffusionXLPipelineOutput(images=[final_image])
 
