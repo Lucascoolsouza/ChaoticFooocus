@@ -638,6 +638,9 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                         # some platforms (eg. apple mps) misbehave due to a pytorch bug: https://github.com/pytorch/pytorch/pull/99272
                         latents = latents.to(latents_dtype)
 
+                if callback is not None:
+                    callback(i, t, latents)
+
                 if callback_on_step_end is not None:
                     callback_kwargs = {}
                     for k in callback_on_step_end_tensor_inputs:
@@ -684,6 +687,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
             # Use the custom VAE decode method
             image = self.vae.decode(latents)
+            image = self.vae.post_quant_conv(image)
             image = (image / 2 + 0.5).clamp(0, 1)
 
             # Skip cast back for custom VAE - handled internally
