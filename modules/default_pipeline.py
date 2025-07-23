@@ -533,9 +533,49 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         if not hasattr(unet_on_device, 'config'):
             class UNetConfig:
                 def __init__(self):
+                    # Basic UNet parameters
                     self.sample_size = 128  # Standard SDXL sample size
                     self.in_channels = 4    # Standard SDXL latent channels
+                    self.out_channels = 4   # Standard SDXL output channels
+                    
+                    # Time embedding parameters
                     self.time_cond_proj_dim = None  # Not used in SDXL
+                    self.time_embedding_type = "positional"
+                    self.time_embedding_dim = None
+                    self.time_embedding_act_fn = None
+                    
+                    # SDXL-specific parameters
+                    self.addition_time_embed_dim = 256  # SDXL addition time embedding dimension
+                    self.addition_embed_type = "text_time"  # SDXL addition embedding type
+                    self.addition_embed_type_num_heads = 64  # SDXL addition embedding heads
+                    
+                    # Cross attention parameters
+                    self.cross_attention_dim = 2048  # SDXL cross attention dimension
+                    self.encoder_hid_dim = None
+                    self.encoder_hid_dim_type = None
+                    
+                    # Architecture parameters
+                    self.down_block_types = ["DownBlock2D", "CrossAttnDownBlock2D", "CrossAttnDownBlock2D"]
+                    self.up_block_types = ["CrossAttnUpBlock2D", "CrossAttnUpBlock2D", "UpBlock2D"]
+                    self.block_out_channels = [320, 640, 1280]
+                    self.layers_per_block = 2
+                    self.attention_head_dim = [5, 10, 20]
+                    self.num_attention_heads = None
+                    self.use_linear_projection = True
+                    
+                    # Conditioning parameters
+                    self.class_embed_type = None
+                    self.num_class_embeds = None
+                    self.projection_class_embeddings_input_dim = 2816  # SDXL projection dimension
+                    
+                    # Other parameters
+                    self.flip_sin_to_cos = True
+                    self.freq_shift = 0
+                    self.norm_num_groups = 32
+                    self.norm_eps = 1e-5
+                    self.resnet_time_scale_shift = "default"
+                    self.transformer_layers_per_block = 1
+                    
             unet_on_device.config = UNetConfig()
 
         # Add missing attributes and methods to tokenizers for diffusers compatibility
