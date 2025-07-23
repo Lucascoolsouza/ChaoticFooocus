@@ -20,16 +20,6 @@ class AsyncTask:
         self.performance_loras = []
 
         if len(args) == 0:
-            # Prevent further processing if args is empty
-            self.performance_selection = None
-            self.steps = None
-            self.original_steps = None
-            self.aspect_ratios_selection = None
-            self.image_number = None
-            self.output_format = None
-            self.seed = None
-            self.read_wildcards_in_order = None
-            self.sharpness = None
             return
 
         args.reverse()
