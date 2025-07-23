@@ -474,7 +474,9 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             nag_negative_prompt=final_nag_negative_prompt,
             nag_end=nag_end,
             )
-        decoded_latent = core.decode_vae(model_base.vae, output.images)
+        # output.images contains latents, need to decode them
+        latent_dict = {'samples': output.images}
+        decoded_latent = core.decode_vae(model_base.vae, latent_dict)
     else:
         decoded_latent = core.ksampler(
             model=final_unet,
@@ -493,3 +495,18 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             sigmas=minmax_sigmas,
             callback_function=callback
         )['samples']
+
+    # Convert latents to images
+    if decoded_latent is not None:
+        if isinstance(decoded_latent, dict) and 'samples' in decoded_latent:
+            # If it's still in latent format, decode it
+            images = core.decode_vae(target_vae, decoded_latent)
+        else:
+            # If it's already decoded latents, decode them
+            latent_dict = {'samples': decoded_latent}
+            images = core.decode_vae(target_vae, latent_dict)
+        
+        # Convert to numpy arrays for saving
+        return core.pytorch_to_numpy(images)
+    
+    return []
