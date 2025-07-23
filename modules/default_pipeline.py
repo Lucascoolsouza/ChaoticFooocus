@@ -438,7 +438,31 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         tokenizer_l_on_device = model_base.clip_with_lora.tokenizer.clip_l
         tokenizer_g_on_device = model_base.clip_with_lora.tokenizer.clip_g
         unet_on_device = model_base.unet_with_lora  # UNet with LoRAs applied - uses its own device management via patcher
-        scheduler_on_device = model_base.unet_with_lora.model.model_sampling # This is not a torch.nn.Module, so no .to() needed
+        # Create a compatible scheduler wrapper for diffusers
+        class SchedulerWrapper:
+            def __init__(self, original_sampling):
+                self.original_sampling = original_sampling
+                self.config = type('Config', (), {
+                    'num_train_timesteps': 1000,
+                    'beta_start': 0.00085,
+                    'beta_end': 0.012,
+                    'beta_schedule': 'scaled_linear'
+                })()
+                self.timesteps = None
+            
+            def set_timesteps(self, num_inference_steps, device=None):
+                # Create a simple timestep schedule
+                import torch
+                self.timesteps = torch.linspace(999, 0, num_inference_steps, dtype=torch.long)
+                if device is not None:
+                    self.timesteps = self.timesteps.to(device)
+            
+            def step(self, model_output, timestep, sample, **kwargs):
+                # Simple step function - just return the sample for now
+                # The actual sampling will be handled by the custom ksampler
+                return type('SchedulerOutput', (), {'prev_sample': sample})()
+        
+        scheduler_on_device = SchedulerWrapper(model_base.unet_with_lora.model.model_sampling)
 
         # Add dtype property to text encoders if they don't have it
         if not hasattr(text_encoder_l_on_device, 'dtype'):
