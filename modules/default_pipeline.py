@@ -578,6 +578,13 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                     
             unet_on_device.config = UNetConfig()
 
+        # Add add_embedding attribute to UNet if it doesn't have it (for SDXL compatibility)
+        if not hasattr(unet_on_device, 'add_embedding'):
+            class AddEmbedding:
+                def __init__(self):
+                    self.linear_1 = type('Linear1', (), {'in_features': 2816})()  # Standard SDXL add embedding dimension
+            unet_on_device.add_embedding = AddEmbedding()
+
         # Add missing attributes and methods to tokenizers for diffusers compatibility
         def add_tokenizer_compatibility(tokenizer):
             if not hasattr(tokenizer, 'tokenize'):
