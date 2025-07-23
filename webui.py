@@ -415,6 +415,16 @@ with shared.gradio_root:
                     enhance_inpaint_mode_ctrls = []
                     enhance_inpaint_engine_ctrls = []
                     enhance_inpaint_update_ctrls = []
+                    with gr.Tab(label='Latent Upscale'):
+                        latent_upscale_method = gr.Dropdown(["bilinear", "bilinear-antialiased",
+                                                             "bicubic", "bicubic-antialiased",
+                                                             "linear", "trilinear",
+                                                             "area", "nearest", "nearest-exact"],
+                                                            label="Upscale method", value="bicubic")
+                        latent_upscale_scheduler = gr.Dropdown(["simple", "normal", "karras", "exponential",
+                                                                "polyexponential", "automatic"],
+                                                               label="Scheduler", value="automatic")
+                        enhance_ctrls += [latent_upscale_method, latent_upscale_scheduler]
                     for index in range(modules.config.default_enhance_tabs):
                         with gr.Tab(label=f'#{index + 1}') as enhance_tab_item:
                             enhance_enabled = gr.Checkbox(label='Enable', value=False, elem_classes='min_check',
@@ -1035,6 +1045,7 @@ with shared.gradio_root:
                   enhance_input_image, enhance_checkbox, enhance_uov_method, enhance_bg_removal_model, 
                   enhance_uov_processing_order, enhance_uov_prompt_type]
         ctrls += enhance_ctrls
+        ctrls += [latent_upscale_method, latent_upscale_scheduler]
 
         def parse_meta(raw_prompt_txt, is_generating):
             loaded_json = None
