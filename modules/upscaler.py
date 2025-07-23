@@ -304,7 +304,7 @@ def perform_tiled_upscale(img, model_name, model_var, download_func, tile_size=5
         raise e
 
 
-def perform_upscale(img, method):
+def perform_upscale(img, method, async_task=None):
     global model_default, model_ultrasharp, model_web_photo, model_realistic_rescaler, model_skin_contrast, model_four_x_nomos, model_faces
 
     print(f'Upscaling image with shape {str(img.shape)} using method {method} ...')
