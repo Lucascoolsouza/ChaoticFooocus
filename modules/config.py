@@ -966,7 +966,7 @@ def downloading_ultrasharp_model():
 
 def downloading_web_photo_model():
     load_file_from_url(
-        url='https://github.com/Phhofm/models/releases/download/4xNomosWebPhoto_atd/4xNomosWebPhoto_atd.pth',
+        url='https://huggingface.co/Pinguin/888-xl-diffusion-testmodel-v02-blue-star-sdxl-SAFETENSORS/resolve/main/4xNomosWebPhoto_atd.pth?download=true',
         model_dir=path_upscale_models,
         file_name='4xNomosWebPhoto_atd.pth'
     )
@@ -975,7 +975,7 @@ def downloading_web_photo_model():
 
 def downloading_realistic_rescaler_model():
     load_file_from_url(
-        url='https://drive.google.com/uc?export=download&confirm=1&id=1RcqRuygqR5AwMLCT0olLIqLobs4mBkIi',
+        url='https://huggingface.co/Pinguin/888-xl-diffusion-testmodel-v02-blue-star-sdxl-SAFETENSORS/resolve/main/4x_RealisticRescaler_100000_G.pth?download=true',
         model_dir=path_upscale_models,
         file_name='realistic_rescaler.pth'
     )
@@ -984,7 +984,7 @@ def downloading_realistic_rescaler_model():
 
 def downloading_skin_contrast_model():
     load_file_from_url(
-        url='https://www.mediafire.com/file/5qwtnosdfuq9bgl/1xSkinContrast-HighAlternative-SuperUltraCompact.pth/file',
+        url='https://huggingface.co/Pinguin/888-xl-diffusion-testmodel-v02-blue-star-sdxl-SAFETENSORS/resolve/main/1xSkinContrast-HighAlternative-SuperUltraCompact.pth?download=true',
         model_dir=path_upscale_models,
         file_name='1xSkinContrast-HighAlternative-SuperUltraCompact.pth'
     )
@@ -993,7 +993,7 @@ def downloading_skin_contrast_model():
 
 def downloading_four_x_nomos_model():
     load_file_from_url(
-        url='https://github.com/Phhofm/models/releases/download/4xNomos2_hq_drct-l/4xNomos2_hq_drct-l.pth',
+        url='https://huggingface.co/Pinguin/888-xl-diffusion-testmodel-v02-blue-star-sdxl-SAFETENSORS/resolve/main/4xNomos2_hq_drct-l.pth?download=true',
         model_dir=path_upscale_models,
         file_name='4xNomos2_hq_drct-l.pth'
     )
@@ -1002,7 +1002,7 @@ def downloading_four_x_nomos_model():
 
 def downloading_faces_model():
     load_file_from_url(
-        url='https://drive.google.com/uc?export=download&confirm=1&id=1aJLyM9xPSJErmpTAeXypXO7XisfSs2vQ',
+        url='https://huggingface.co/Pinguin/888-xl-diffusion-testmodel-v02-blue-star-sdxl-SAFETENSORS/resolve/main/4xFaceUpSharpDAT.pth',
         model_dir=path_upscale_models,
         file_name='faces.pth'
     )
