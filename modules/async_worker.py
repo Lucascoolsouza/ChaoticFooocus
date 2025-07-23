@@ -60,7 +60,14 @@ class AsyncTask:
                                         range(default_max_lora_number)])
         self.input_image_checkbox = args.pop()
         self.current_tab = args.pop()
-        self.uov_method = args.pop()
+        uov_method_value = args.pop() if args else None
+        # Defensive: ensure uov_method is always a string
+        if isinstance(uov_method_value, bool):
+            self.uov_method = str(uov_method_value)
+        elif uov_method_value is None:
+            self.uov_method = ""
+        else:
+            self.uov_method = uov_method_value
         self.uov_input_image = args.pop()
         self.outpaint_selections = args.pop()
         self.inpaint_input_image = args.pop()
@@ -139,7 +146,13 @@ class AsyncTask:
 
         self.enhance_input_image = args.pop()
         self.enhance_checkbox = args.pop()
-        self.enhance_uov_method = args.pop()
+        enhance_uov_method_value = args.pop() if args else None
+        if isinstance(enhance_uov_method_value, bool):
+            self.enhance_uov_method = str(enhance_uov_method_value)
+        elif enhance_uov_method_value is None:
+            self.enhance_uov_method = ""
+        else:
+            self.enhance_uov_method = enhance_uov_method_value
         self.enhance_bg_removal_model = args.pop()
         import modules.image_effects
 
