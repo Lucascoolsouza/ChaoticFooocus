@@ -628,7 +628,7 @@ def worker():
         tiled = True
         denoising_strength = 0.382
         if async_task.overwrite_upscale_strength > 0:
-            denoising_strength = async_task.overwrite_upscale_strength
+            denoising_strength = min(async_task.overwrite_upscale_strength, 1.0)
         initial_pixels = core.numpy_to_pytorch(uov_input_image)
         if advance_progress:
             current_progress += 1
