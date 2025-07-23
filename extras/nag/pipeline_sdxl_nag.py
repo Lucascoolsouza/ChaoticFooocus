@@ -683,7 +683,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             latents = latents / scaling_factor
 
             # Use the custom VAE decode method
-            image = self.vae.decode(latents).sample
+            image = self.vae.decode(latents)
             image = (image / 2 + 0.5).clamp(0, 1)
 
             # Skip cast back for custom VAE - handled internally
@@ -695,7 +695,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             if self.watermark is not None:
                 image = self.watermark.apply_watermark(image)
 
-            image = self.image_processor.postprocess(image, output_type=output_type)
+            image = self.image_processor.postprocess(image, output_type=output_type).cpu().numpy()
 
         if self.do_normalized_attention_guidance and not attn_procs_recovered:
             self.unet.set_attn_processor(origin_attn_procs)
