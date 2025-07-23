@@ -295,7 +295,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         else:
             batch_size = prompt_embeds.shape[0]
 
-        device = self._execution_device
+        device = next(iter(self.unet.parameters())).device
 
         # 3. Encode input prompt
         lora_scale = (
