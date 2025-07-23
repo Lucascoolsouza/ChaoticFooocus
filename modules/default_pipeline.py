@@ -379,8 +379,14 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
 
     decoded_latent = None
 
+    final_nag_negative_prompt = "" # Initialize to empty string
     if nag_scale > 1.0:
         print(f"[NAG] NAG is active with nag_scale={nag_scale}, nag_tau={nag_tau}, nag_alpha={nag_alpha}, nag_negative_prompt='{nag_negative_prompt}', nag_end={nag_end}")
+        # Use nag_negative_prompt if provided, otherwise use the extracted negative_prompt_str
+        if nag_negative_prompt is not None:
+            final_nag_negative_prompt = nag_negative_prompt
+        elif original_negative_prompt is not None:
+            final_nag_negative_prompt = original_negative_prompt
         # Create a wrapper for the VAE to provide a mock config attribute
         class MockVAEConfig:
             def __init__(self):
