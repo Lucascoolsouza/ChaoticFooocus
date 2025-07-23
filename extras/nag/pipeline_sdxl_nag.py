@@ -714,10 +714,9 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         final_image = safe_decode(latents, self.vae, width=width, height=height)
         self.maybe_free_model_hooks()
 
-        # Gradio UI path
-        if kwargs.get("for_gradio", False):
-            return final_image
-
-        # Normal pipeline path
+        # Always return the PIL image(s) when used as a Gradio callback
+        print("Returning:", type(final_image), final_image.size if hasattr(final_image, 'size') else "-")
+        if return_dict is False:               # Gradio uses return_dict=False
+            return (final_image,)              # Gradio expects a tuple
         return StableDiffusionXLPipelineOutput(images=[final_image])
 
