@@ -73,11 +73,14 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             
             return prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds
         
-        # Handle simple prompts (like NAG negative prompts) by creating dummy embeddings
-        if isinstance(prompt, str):
+        # Handle simple prompts (like NAG negative prompts) by properly encoding them
+        if isinstance(prompt, str) and prompt.strip() != "":
+            # For NAG negative prompts, we need to properly encode them using the text encoders
+            # Fall back to parent method for proper text encoding
+            return super().encode_prompt(prompt, prompt_2, device, num_images_per_prompt, do_classifier_free_guidance, negative_prompt, negative_prompt_2, prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds, lora_scale, clip_skip)
+        elif isinstance(prompt, str) and prompt.strip() == "":
             import torch
-            # Create dummy embeddings for simple text prompts
-            # Use standard SDXL embedding dimensions
+            # Create zero embeddings only for empty strings
             batch_size = num_images_per_prompt
             
             # Try to get sequence length from stored shape
@@ -383,16 +386,20 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         )
         if self.do_normalized_attention_guidance:
             if nag_negative_prompt_embeds is None:
-                if nag_negative_prompt is None:
-                    if negative_prompt is not None:
+                if nag_negative_prompt is None or nag_negative_prompt.strip() == "":
+                    if negative_prompt is not None and negative_prompt.strip() != "":
                         if self.do_classifier_free_guidance:
                             nag_negative_prompt_embeds = negative_prompt_embeds
+                            print("[NAG] Using CFG negative prompt embeddings for NAG")
                         else:
-                            negative_prompt = negative_prompt
+                            nag_negative_prompt = negative_prompt
+                            print(f"[NAG] Using CFG negative prompt text for NAG: '{nag_negative_prompt}'")
                     else:
-                        nag_negative_prompt = ""
+                        nag_negative_prompt = "blurry, low quality, distorted, deformed, ugly, bad anatomy, worst quality"
+                        print(f"[NAG] Using default negative prompt for NAG: '{nag_negative_prompt}'")
 
-                if nag_negative_prompt is not None:
+                if nag_negative_prompt is not None and nag_negative_prompt.strip() != "":
+                    print(f"[NAG] Encoding NAG negative prompt: '{nag_negative_prompt}'")
                     nag_negative_prompt_embeds = self.encode_prompt(
                         prompt=nag_negative_prompt,
                         device=device,

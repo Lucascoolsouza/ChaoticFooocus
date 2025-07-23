@@ -383,10 +383,16 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
     if nag_scale > 1.0:
         print(f"[NAG] NAG is active with nag_scale={nag_scale}, nag_tau={nag_tau}, nag_alpha={nag_alpha}, nag_negative_prompt='{nag_negative_prompt}', nag_end={nag_end}")
         # Use nag_negative_prompt if provided, otherwise use the extracted negative_prompt_str
-        if nag_negative_prompt is not None:
-            final_nag_negative_prompt = nag_negative_prompt
-        elif original_negative_prompt is not None:
-            final_nag_negative_prompt = original_negative_prompt
+        if nag_negative_prompt is not None and nag_negative_prompt.strip() != "":
+            final_nag_negative_prompt = nag_negative_prompt.strip()
+            print(f"[NAG] Using provided NAG negative prompt: '{final_nag_negative_prompt}'")
+        elif original_negative_prompt is not None and original_negative_prompt.strip() != "":
+            final_nag_negative_prompt = original_negative_prompt.strip()
+            print(f"[NAG] Using original negative prompt for NAG: '{final_nag_negative_prompt}'")
+        else:
+            # If no negative prompt is available, use a default strong negative prompt for NAG
+            final_nag_negative_prompt = "blurry, low quality, distorted, deformed, ugly, bad anatomy, worst quality"
+            print(f"[NAG] Using default NAG negative prompt: '{final_nag_negative_prompt}'")
         # Dynamically add a 'config' attribute to model_base.vae if it doesn't exist
         if not hasattr(model_base.vae, 'config'):
             class VAEConfig:
