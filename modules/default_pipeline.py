@@ -739,30 +739,25 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         
         print("[NAG] Using NAG pipeline for generation")
         
-        # 2) Normalise to a PIL image
-        import numpy as np
-        from PIL import Image # Ensure PIL is imported
-
+        # ---------- after NAG pipeline call ----------
         if isinstance(output, Image.Image):
-            decoded_latent = output
-        elif hasattr(output, "images"):
-            decoded_latent = output.images[0]
+            # already decoded → convert to numpy HWC uint8 for Fooocus
+            img_np = np.asarray(output.convert("RGB"), dtype=np.uint8)
+            imgs = [img_np]                      # skip decode & pytorch_to_numpy
+        elif isinstance(output, np.ndarray):
+            # returned uint8 HWC numpy
+            imgs = [output]
         else:
-            raise TypeError(f"Unexpected pipeline return type: {type(output)}")
-
-        # 3) Now you can safely convert to numpy if you need it
-        decoded_latent = np.array(decoded_latent)
+            # old path: still latents (B, C, H, W) tensor
+            latent_dict = {'samples': output}
+            imgs = core.pytorch_to_numpy(core.decode_vae(target_vae, latent_dict))
         
-        # Ensure it's in the right format (HWC, 0-255)
-        if decoded_latent.max() <= 1.0:
-            decoded_latent = (decoded_latent * 255).astype(np.uint8)
-        
-        print("Worker received", type(decoded_latent), getattr(decoded_latent, 'size', '-'))
-        print(f"[NAG] NAG pipeline completed, output shape: {decoded_latent.shape}")
+        print("Worker received", type(imgs[0]), getattr(imgs[0], 'size', '-'))
+        print(f"[NAG] NAG pipeline completed, output shape: {imgs[0].shape}")
         
         # Skip the regular ksampler since we used NAG pipeline
     else:
-        decoded_latent = core.ksampler(
+        imgs = core.ksampler(
             model=final_unet,
             positive=positive_cond,
             negative=negative_cond,
@@ -779,21 +774,15 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             sigmas=minmax_sigmas,
             callback_function=callback
         )['samples']
-
-    # Convert latents to images
-    if decoded_latent is not None:
-        if isinstance(decoded_latent, Image.Image):
-            # If it's already a PIL Image, no need to decode again
-            images = [decoded_latent]
-        elif isinstance(decoded_latent, np.ndarray) and decoded_latent.ndim == 3:
-            # If it's a 3-D numpy array (HWC), convert to PIL Image
-            images = [Image.fromarray(decoded_latent.astype(np.uint8))]
-        else:
-            # Otherwise, assume it's a latent tensor and decode
-            latent_dict = {'samples': decoded_latent}
-            images = core.decode_vae(target_vae, latent_dict)
         
-        # Convert to numpy arrays for saving
-        return core.pytorch_to_numpy(images)
+        # Convert latents to images
+        if imgs is not None:
+            latent_dict = {'samples': imgs}
+            imgs = core.decode_vae(target_vae, latent_dict)
+            
+            # Convert to numpy arrays for saving
+            return core.pytorch_to_numpy(imgs)
+        
+        return []
     
-    return []
+    return imgs
