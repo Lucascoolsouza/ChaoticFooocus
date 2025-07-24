@@ -54,6 +54,7 @@ class AsyncTask:
         self.latent_upscale_method = args.pop()
         self.latent_upscale_scheduler = args.pop()
         self.latent_upscale_size = args.pop()
+        self.latent_upscale_denoise = float(args.pop())
         self.outpaint_selections = args.pop()
         self.inpaint_input_image = args.pop()
         self.inpaint_additional_prompt = args.pop()
