@@ -88,7 +88,7 @@ def safe_decode(latents, vae, width=512, height=512):
                     # The tensor seems to have the right total elements but wrong shape
                     # Try to reshape it to the correct format
                     if decoded.numel() == batch_size * 3 * expected_h * expected_w:
-                        decoded = decoded.view(batch_size, 3, expected_h, expected_w)
+                        decoded = decoded.contiguous().reshape(batch_size, 3, expected_h, expected_w)
                         print(f"[safe_decode] Reshaped to correct format: {decoded.shape}")
                     else:
                         # Fallback: try to extract meaningful data
