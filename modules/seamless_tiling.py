@@ -180,16 +180,29 @@ def make_seamless_tiling_advanced(image, method='blend', tile_size=None, overlap
         return Image.fromarray(seamless_img)
     
     elif method == 'offset':
-        # Offset method - shift image by half and blend
+        # Offset and patch seams
         offset_x = width // 2
         offset_y = height // 2
         
         # Create offset version
         offset_img = np.roll(img_array, (offset_y, offset_x), axis=(0, 1))
         
-        # Blend original and offset
-        alpha = 0.5
-        seamless_img = (alpha * img_array + (1-alpha) * offset_img).astype(img_array.dtype)
+        # Create a mask for blending
+        mask = np.zeros_like(img_array, dtype=np.float32)
+        
+        overlap_x = int(width * overlap_ratio)
+        overlap_y = int(height * overlap_ratio)
+        
+        # Create horizontal and vertical blending gradients
+        blend_x = np.linspace(0, 1, overlap_x)
+        blend_y = np.linspace(0, 1, overlap_y)
+        
+        # Apply gradients to the mask
+        mask[offset_y - overlap_y//2 : offset_y + overlap_y//2, :] *= blend_y[:, np.newaxis, np.newaxis]
+        mask[:, offset_x - overlap_x//2 : offset_x + overlap_x//2] *= blend_x[np.newaxis, :, np.newaxis]
+        
+        # Blend the original and offset images
+        seamless_img = (img_array * (1 - mask) + offset_img * mask).astype(img_array.dtype)
         
         return Image.fromarray(seamless_img)
     
