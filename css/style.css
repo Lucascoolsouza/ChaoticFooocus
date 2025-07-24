@@ -235,3 +235,39 @@ input[type='radio'] {
         width: 100%;
     }
 }
+
+/* Lightbox Modal Styles */
+#lightboxModal {
+    display: none; /* Hidden by default */
+    position: fixed; /* Stay in place */
+    z-index: 9999; /* Sit on top */
+    left: 0;
+    top: 0;
+    width: 100%; /* Full width */
+    height: 100%; /* Full height */
+    overflow: auto; /* Enable scroll if needed */
+    background-color: rgba(0, 0, 0, 0.9); /* Black w/ opacity */
+    align-items: center;
+    justify-content: center;
+}
+
+#lightboxModal img {
+    margin: auto;
+    display: block;
+    max-width: 90%;
+    max-height: 90%;
+}
+
+.modalControls {
+    position: absolute;
+    top: 15px;
+    width: 100%;
+    text-align: center;
+    color: white;
+    font-size: 2em;
+}
+
+.modalControls span {
+    cursor: pointer;
+    padding: 0 10px;
+}
