@@ -499,16 +499,27 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
         # 5. Prepare latent variables
         num_channels_latents = 4  # Standard SDXL latent channels
-        latents = self.prepare_latents(
-            batch_size * num_images_per_prompt,
-            num_channels_latents,
-            height,
-            width,
-            prompt_embeds.dtype,
-            device,
-            generator,
-            latents,
-        )
+        print(f"[NAG DEBUG] Input latents parameter: {latents.shape if latents is not None else None}")
+        if latents is not None:
+            print(f"[NAG DEBUG] Input latents mean: {latents.mean().item():.6f}, std: {latents.std().item():.6f}")
+        
+        # Try to use the input latents directly if they look reasonable
+        if latents is not None and latents.std().item() > 0.01:
+            print(f"[NAG DEBUG] Using input latents directly (they look reasonable)")
+            latents = latents.to(device=device, dtype=prompt_embeds.dtype)
+        else:
+            print(f"[NAG DEBUG] Input latents are None or zero, calling prepare_latents")
+            latents = self.prepare_latents(
+                batch_size * num_images_per_prompt,
+                num_channels_latents,
+                height,
+                width,
+                prompt_embeds.dtype,
+                device,
+                generator,
+                latents,
+            )
+        print(f"[NAG DEBUG] Final prepared latents shape: {latents.shape}, mean: {latents.mean().item():.6f}, std: {latents.std().item():.6f}")
 
         # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
