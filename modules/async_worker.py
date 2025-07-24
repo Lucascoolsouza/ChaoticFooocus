@@ -993,8 +993,14 @@ def worker():
             # Save debug output for manual inspection
             try:
                 from PIL import Image
-                Image.fromarray(uov_input_image).save('debug_bg_removed.png')
-                print('[rembg_bg_removal] Saved debug_bg_removed.png')
+                import modules.config
+                import os
+                output_path = os.path.join(modules.config.path_outputs, 'debug_bg_removed.png')
+                Image.fromarray(uov_input_image).save(output_path)
+                print(f'[rembg_bg_removal] Saved debug_bg_removed.png to {output_path}')
+                # Add debug image to results for gallery display
+                if hasattr(async_task, 'results') and isinstance(async_task.results, list):
+                    async_task.results.append(output_path)
             except Exception as e:
                 print(f'[rembg_bg_removal] Failed to save debug image: {e}')
             # Ensure the image has an alpha channel if background was removed
