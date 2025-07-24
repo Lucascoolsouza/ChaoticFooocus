@@ -114,8 +114,17 @@ class AsyncTask:
         
         # Pop all 11 detail daemon parameters
         detail_params = []
-        for i in range(11):
-            detail_params.append(args.pop())
+        try:
+            for i in range(11):
+                param = args.pop()
+                detail_params.append(param)
+                print(f"[DEBUG] Popped param {i}: {param} (type: {type(param)})")
+        except IndexError as e:
+            print(f"[DEBUG] Error popping parameter {i}: {e}")
+            print(f"[DEBUG] Args remaining: {len(args)}")
+            # Fill remaining with defaults
+            while len(detail_params) < 11:
+                detail_params.append(None)
         
         # Assign in correct order (reverse of webui.py order)
         self.detail_daemon_smooth = detail_params[0]      # 11th parameter
