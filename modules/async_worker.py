@@ -110,17 +110,27 @@ class AsyncTask:
             args.pop()) if not args_manager.args.disable_metadata else MetadataScheme.FOOOCUS
 
         # Detail daemon parameters (popped in reverse order from webui.py)
-        self.detail_daemon_smooth = args.pop()      # 11th parameter
-        self.detail_daemon_mode = args.pop()        # 10th parameter  
-        self.detail_daemon_fade = args.pop()        # 9th parameter
-        self.detail_daemon_exponent = args.pop()    # 8th parameter
-        self.detail_daemon_end_offset = args.pop()  # 7th parameter
-        self.detail_daemon_start_offset = args.pop() # 6th parameter
-        self.detail_daemon_bias = args.pop()        # 5th parameter
-        self.detail_daemon_end = args.pop()         # 4th parameter
-        self.detail_daemon_start = args.pop()       # 3rd parameter
-        self.detail_daemon_amount = args.pop()      # 2nd parameter
-        self.detail_daemon_enabled = args.pop()     # 1st parameter
+        print(f"[DEBUG] Args remaining before detail daemon: {len(args)}")
+        
+        # Pop all 11 detail daemon parameters
+        detail_params = []
+        for i in range(11):
+            detail_params.append(args.pop())
+        
+        # Assign in correct order (reverse of webui.py order)
+        self.detail_daemon_smooth = detail_params[0]      # 11th parameter
+        self.detail_daemon_mode = detail_params[1]        # 10th parameter  
+        self.detail_daemon_fade = detail_params[2]        # 9th parameter
+        self.detail_daemon_exponent = detail_params[3]    # 8th parameter
+        self.detail_daemon_end_offset = detail_params[4]  # 7th parameter
+        self.detail_daemon_start_offset = detail_params[5] # 6th parameter
+        self.detail_daemon_bias = detail_params[6]        # 5th parameter
+        self.detail_daemon_end = detail_params[7]         # 4th parameter
+        self.detail_daemon_start = detail_params[8]       # 3rd parameter
+        self.detail_daemon_amount = detail_params[9]      # 2nd parameter
+        self.detail_daemon_enabled = detail_params[10]     # 1st parameter
+        
+        print(f"[DEBUG] Detail daemon params: enabled={self.detail_daemon_enabled}, amount={self.detail_daemon_amount}, mode={self.detail_daemon_mode}")
 
         self.cn_tasks = {x: [] for x in ip_list}
         for _ in range(modules.config.default_controlnet_image_count):
