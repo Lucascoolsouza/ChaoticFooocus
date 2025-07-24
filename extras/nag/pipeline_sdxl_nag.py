@@ -252,7 +252,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             callback_on_step_end_tensor_inputs: List[str] = ["latents"],
 
             nag_scale: float = 1.0,
-            nag_tau: float = 2.5,
+            nag_tau: float = 5.0,
             nag_alpha: float = 0.5,
             nag_negative_prompt: str = None,
             nag_negative_prompt_embeds: Optional[torch.Tensor] = None,
