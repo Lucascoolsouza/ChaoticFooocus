@@ -48,7 +48,7 @@ def safe_decode(latents, vae, width=512, height=512):
             scaled_latents = latents / scaling_factor
             
             # Decode latents using VAE
-            decoded = vae.decode(scaled_latents, return_dict=False)[0]
+            result = vae.decode(scaled_latents)
             
             # Log raw decoded stats
             print(f"[safe_decode] Raw decoded shape: {decoded.shape}, dtype: {decoded.dtype}")
