@@ -755,11 +755,14 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     # First apply CFG
                     noise_pred_cfg = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
                     
+                    # TEMPORARILY DISABLE NAG to test if it's causing the pink issue
                     # Then apply NAG
-                    noise_pred = noise_pred_cfg + self._nag_scale * (noise_pred_text - noise_pred_nag)
+                    # noise_pred = noise_pred_cfg + self._nag_scale * (noise_pred_text - noise_pred_nag)
+                    noise_pred = noise_pred_cfg  # Use only CFG for now
                     
                     if i < 3:
                         print(f"[NAG DEBUG] NAG guidance - nag mean: {noise_pred_nag.mean().item():.4f}")
+                        print(f"[NAG DEBUG] NAG guidance - using CFG only (NAG disabled for testing)")
                         print(f"[NAG DEBUG] NAG guidance - final noise_pred mean: {noise_pred.mean().item():.4f}")
 
                 if self.do_classifier_free_guidance and self.guidance_rescale > 0.0:
@@ -863,6 +866,24 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             # Ensure we return the right batch size (should be 1 for single image)
             if latents.shape[0] > 1:
                 latents = latents[:1]  # Take only the first sample
+            
+            # Debug the final latents before returning
+            print(f"[NAG DEBUG] Final latents stats: mean={latents.mean().item():.4f}, std={latents.std().item():.4f}")
+            print(f"[NAG DEBUG] Final latents range: min={latents.min().item():.4f}, max={latents.max().item():.4f}")
+            print(f"[NAG DEBUG] Final latents has NaN: {torch.isnan(latents).any().item()}")
+            print(f"[NAG DEBUG] Final latents has Inf: {torch.isinf(latents).any().item()}")
+            
+            # Test decode the latents to see if the issue is in VAE decoding
+            try:
+                test_image = safe_decode(latents[:1], self.vae, width=width, height=height)
+                print(f"[NAG DEBUG] Test decode successful: {type(test_image)}, size: {test_image.size if hasattr(test_image, 'size') else 'N/A'}")
+                # Save a test image to see what it looks like
+                if hasattr(test_image, 'save'):
+                    test_image.save('/tmp/nag_test_decode.png')
+                    print(f"[NAG DEBUG] Test image saved to /tmp/nag_test_decode.png")
+            except Exception as e:
+                print(f"[NAG DEBUG] Test decode failed: {e}")
+            
             return (latents,)
         
         # For other use cases, decode and return images
