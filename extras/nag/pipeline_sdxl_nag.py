@@ -66,91 +66,23 @@ def safe_decode(latents, vae, width=512, height=512):
             
             print(f"[safe_decode] Raw decoded shape: {decoded.shape}, dtype: {decoded.dtype}")
             print(f"[safe_decode] Raw decoded min: {decoded.min():.4f}, max: {decoded.max():.4f}")
+            print(f"[safe_decode] Raw decoded mean: {decoded.mean():.4f}, std: {decoded.std():.4f}")
+            print(f"[safe_decode] Raw decoded mean: {decoded.mean():.4f}, std: {decoded.std():.4f}")
 
-            # Handle malformed VAE output - the VAE is returning [1, 1152, 896, 3] instead of [1, 3, H, W]
-            if len(decoded.shape) == 4:
-                batch_size, dim1, dim2, dim3 = decoded.shape
-                print(f"[safe_decode] Raw dimensions: B={batch_size}, D1={dim1}, D2={dim2}, D3={dim3}")
-                
-                # Check if this looks like [B, H*W*C/8, H, W] format (malformed)
-                if dim3 == 3 and dim1 > 100:  # Likely malformed: [1, 1152, 896, 3]
-                    print("[safe_decode] Detected malformed VAE output, attempting to fix...")
-                    
-                    # The actual image dimensions should be based on latent upscaling
-                    # SDXL latents are typically upscaled 8x by the VAE
-                    expected_h = scaled_latents.shape[2] * 8  # 144 * 8 = 1152
-                    expected_w = scaled_latents.shape[3] * 8  # 112 * 8 = 896
-                    
-                    print(f"[safe_decode] Expected output size: {expected_h}x{expected_w}")
-                    print(f"[safe_decode] Tensor numel: {decoded.numel()}, expected: {batch_size * 3 * expected_h * expected_w}")
-                    
-                    # The malformed tensor [1, 1152, 896, 3] suggests the VAE output is structured incorrectly
-                    # Let's try different approaches to extract the image
-                    
-                    if decoded.numel() == batch_size * 3 * expected_h * expected_w:
-                        # Total elements match, try to reshape
-                        try:
-                            decoded = decoded.contiguous().reshape(batch_size, 3, expected_h, expected_w)
-                            print(f"[safe_decode] Successfully reshaped to: {decoded.shape}")
-                        except Exception as e:
-                            print(f"[safe_decode] Reshape failed: {e}")
-                            raise ValueError(f"Cannot reshape malformed tensor: {decoded.shape}")
-                    else:
-                        # Elements don't match expected, this might be a different format
-                        print(f"[safe_decode] Element count mismatch, trying alternative extraction...")
-                        
-                        # The tensor might be [B, H, W, C] format (which is wrong for PyTorch)
-                        if dim1 == expected_h and dim2 == expected_w and dim3 == 3:
-                            # This is [B, H, W, C] - convert to [B, C, H, W]
-                            decoded = decoded.permute(0, 3, 1, 2)
-                            print(f"[safe_decode] Converted from BHWC to BCHW: {decoded.shape}")
-                        else:
-                            # Last resort: try to extract something meaningful
-                            print(f"[safe_decode] Using fallback extraction method")
-                            # Take a slice that might contain image data
-                            if dim1 >= expected_h and dim2 >= expected_w:
-                                # Extract a region that matches expected dimensions
-                                h_start = (dim1 - expected_h) // 2
-                                w_start = (dim2 - expected_w) // 2
-                                extracted = decoded[:, h_start:h_start+expected_h, w_start:w_start+expected_w, :]
-                                if extracted.shape[3] == 3:
-                                    decoded = extracted.permute(0, 3, 1, 2)
-                                    print(f"[safe_decode] Extracted and converted: {decoded.shape}")
-                                else:
-                                    raise ValueError(f"Cannot extract valid image from: {decoded.shape}")
-                            else:
-                                raise ValueError(f"Cannot handle malformed tensor: {decoded.shape}")
-                
-                elif dim1 == 3:  # Correct format [B, C, H, W]
-                    print("[safe_decode] Detected correct VAE output format")
-                    pass
-                elif dim1 > 3:  # Too many channels [B, C, H, W]
-                    decoded = decoded[:, :3]  # Take first 3 channels
-                    print(f"[safe_decode] Truncated to 3 channels: {decoded.shape}")
-                elif dim1 == 1:  # Grayscale [B, 1, H, W]
-                    decoded = decoded.repeat(1, 3, 1, 1)  # Replicate to RGB
-                    print(f"[safe_decode] Replicated to 3 channels: {decoded.shape}")
-                else:
-                    raise ValueError(f"Cannot handle tensor with {dim1} channels")
-                    
-            elif len(decoded.shape) == 3:
-                # Format [C, H, W] - add batch dimension
-                decoded = decoded.unsqueeze(0)
-                print(f"[safe_decode] Added batch dimension: {decoded.shape}")
-                
-            else:
-                raise ValueError(f"Unexpected decoded tensor shape: {decoded.shape}")
+            # Handle malformed VAE output
+            if len(decoded.shape) == 4 and decoded.shape[1] != 3:
+                # Detected [B, H, W, C] format - permute to [B, C, H, W]
+                decoded = decoded.permute(0, 3, 1, 2)
+                print(f"[safe_decode] Reshaped from BHWC to BCHW: {decoded.shape}")
 
-            print(f"[safe_decode] Processed tensor shape: {decoded.shape}")
-            
-            # Normalize from VAE output range to [0, 1] range
-            # Option 1: Simple clamping if values are already roughly in [0, 1] or a positive range
+            # Normalize decoded tensor
+            # Option 1: Simple clamping (if values are already in [0, 1])
             decoded = torch.clamp(decoded, 0.0, 1.0)
             print(f"[safe_decode] Normalized range: min={decoded.min():.4f}, max={decoded.max():.4f}")
             
-            # Convert to numpy [H, W, C] format
-            # Take first batch item and permute from [C, H, W] to [H, W, C]
+            # Convert to numpy and ensure uint8
             decoded_np = (decoded[0].permute(1, 2, 0) * 255).cpu().numpy().astype(np.uint8)
+            decoded_np = np.squeeze(decoded_np)
             print(f"[safe_decode] Final numpy shape: {decoded_np.shape}, dtype: {decoded_np.dtype}")
             
             # Final validation
