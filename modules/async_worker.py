@@ -366,6 +366,7 @@ def worker():
             detail_daemon_start=async_task.detail_daemon_start,
             detail_daemon_end=async_task.detail_daemon_end,
             detail_daemon_bias=async_task.detail_daemon_bias,
+            detail_daemon_base_multiplier=async_task.detail_daemon_base_multiplier,
             detail_daemon_start_offset=async_task.detail_daemon_start_offset,
             detail_daemon_end_offset=async_task.detail_daemon_end_offset,
             detail_daemon_exponent=async_task.detail_daemon_exponent,
