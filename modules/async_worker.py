@@ -126,19 +126,19 @@ class AsyncTask:
             while len(detail_params) < 12:
                 detail_params.append(None)
         
-        # Assign in correct order matching webui ctrls order
-        self.detail_daemon_enabled = detail_params[0]           # True
-        self.detail_daemon_amount = detail_params[1]            # 0.25
-        self.detail_daemon_start = detail_params[2]             # 0.2
-        self.detail_daemon_end = detail_params[3]               # 0.8
-        self.detail_daemon_bias = detail_params[4]              # 0.71
-        self.detail_daemon_base_multiplier = detail_params[5]   # 0.85
-        self.detail_daemon_start_offset = detail_params[6]      # 0
-        self.detail_daemon_end_offset = detail_params[7]        # -0.15
-        self.detail_daemon_exponent = detail_params[8]          # 1
-        self.detail_daemon_fade = detail_params[9]              # 0
-        self.detail_daemon_mode = detail_params[10]             # 'both'
-        self.detail_daemon_smooth = detail_params[11]           # True
+        # Assign in correct order matching webui ctrls order with defaults
+        self.detail_daemon_enabled = detail_params[0] if detail_params[0] is not None else False
+        self.detail_daemon_amount = detail_params[1] if detail_params[1] is not None else 0.25
+        self.detail_daemon_start = detail_params[2] if detail_params[2] is not None else 0.2
+        self.detail_daemon_end = detail_params[3] if detail_params[3] is not None else 0.8
+        self.detail_daemon_bias = detail_params[4] if detail_params[4] is not None else 0.71
+        self.detail_daemon_base_multiplier = detail_params[5] if detail_params[5] is not None else 0.85
+        self.detail_daemon_start_offset = detail_params[6] if detail_params[6] is not None else 0
+        self.detail_daemon_end_offset = detail_params[7] if detail_params[7] is not None else -0.15
+        self.detail_daemon_exponent = detail_params[8] if detail_params[8] is not None else 1
+        self.detail_daemon_fade = detail_params[9] if detail_params[9] is not None else 0
+        self.detail_daemon_mode = detail_params[10] if detail_params[10] is not None else 'both'
+        self.detail_daemon_smooth = detail_params[11] if detail_params[11] is not None else True
         
         print(f"[DEBUG] Detail daemon params: enabled={self.detail_daemon_enabled}, amount={self.detail_daemon_amount}, mode={self.detail_daemon_mode}")
 
