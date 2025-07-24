@@ -766,7 +766,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 
                 # Convert to PIL Image, then to uint8 HWC numpy array
                 preview_img = safe_decode(latents_for_preview[:1], pipe.vae, width=width, height=height)
-                preview_np = np.asarray(preview_img.convert("RGB"), dtype=np.uint8)
+                preview_np = preview_img
 
                 # Call the original callback with the decoded latent
                 # The original callback expects (step, x0, x, total_steps, y)
