@@ -16,7 +16,7 @@ from ldm_patched.modules.model_base import SDXL, SDXLRefiner
 from modules.sample_hijack import clip_separate
 from modules.util import get_file_from_folder_list, get_enabled_loras
 from extras.nag.pipeline_sdxl_nag import NAGStableDiffusionXLPipeline, safe_decode
-from extras.Token_Perturbation_Guidance_main.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
+from extras.TPG.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
 
 
 model_base = core.StableDiffusionModel()

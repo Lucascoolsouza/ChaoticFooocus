@@ -18,7 +18,7 @@ import copy
 import launch
 from extras.inpaint_mask import SAMOptions
 from extras.nag import NAGStableDiffusionXLPipeline
-from extras.Token-Perturbation-Guidance-main.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
+from extras.TPG.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
 
 from modules.sdxl_styles import legal_style_names
 from modules.private_logger import get_current_html_path
