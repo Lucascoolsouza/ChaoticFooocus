@@ -157,13 +157,15 @@ def perform_seamless_tiling(img, async_task=None):
     """
     from PIL import Image
     
-    print(f'Applying seamless tiling to image with shape {str(img.shape)} ...')
+    print(f'[SEAMLESS] Starting seamless tiling on image with shape {str(img.shape)} ...')
     
     # Convert numpy array to PIL Image
     if isinstance(img, np.ndarray):
         pil_img = Image.fromarray(img.astype(np.uint8))
+        print(f'[SEAMLESS] Converted numpy array to PIL Image: {pil_img.size}')
     else:
         pil_img = img
+        print(f'[SEAMLESS] Using PIL Image directly: {pil_img.size}')
     
     # Get tiling method from async_task if available, otherwise use default
     method = 'blend'  # Default method
@@ -171,41 +173,62 @@ def perform_seamless_tiling(img, async_task=None):
     
     if async_task and hasattr(async_task, 'seamless_tiling_method'):
         method = async_task.seamless_tiling_method
+        print(f'[SEAMLESS] Using method from async_task: {method}')
     if async_task and hasattr(async_task, 'seamless_tiling_overlap'):
         overlap_ratio = async_task.seamless_tiling_overlap
+        print(f'[SEAMLESS] Using overlap ratio from async_task: {overlap_ratio}')
     
-    # Process seamless tiling
-    result = process_seamless_enhancement(
-        pil_img, 
-        method=method, 
-        overlap_ratio=overlap_ratio,
-        create_preview=False
-    )
+    print(f'[SEAMLESS] Processing with method={method}, overlap_ratio={overlap_ratio}')
     
-    # Convert back to numpy array
-    seamless_img = np.array(result['result'])
-    
-    print(f'Seamless tiling completed. Output shape: {str(seamless_img.shape)}')
-    
-    return seamless_img
+    try:
+        # Process seamless tiling
+        result = process_seamless_enhancement(
+            pil_img, 
+            method=method, 
+            overlap_ratio=overlap_ratio,
+            create_preview=False
+        )
+        
+        print(f'[SEAMLESS] process_seamless_enhancement returned: {type(result)}')
+        
+        # Convert back to numpy array
+        seamless_img = np.array(result['result'])
+        
+        print(f'[SEAMLESS] Seamless tiling completed. Output shape: {str(seamless_img.shape)}')
+        
+        return seamless_img
+        
+    except Exception as e:
+        print(f'[SEAMLESS] ERROR in seamless tiling: {e}')
+        import traceback
+        traceback.print_exc()
+        print(f'[SEAMLESS] Returning original image due to error')
+        return img
 
 
 def perform_upscale(img, method, async_task=None, vae_model=None):
     global model_default, model_ultrasharp, model_realistic_rescaler, final_vae
 
-    print(f'Upscaling image with shape {str(img.shape)} using method {method} ...')
+    print(f'[UPSCALER] Upscaling image with shape {str(img.shape)} using method "{method}" ...')
 
-    method = method.casefold()
+    method_lower = method.casefold()
+    print(f'[UPSCALER] Method lowercased: "{method_lower}"')
+    print(f'[UPSCALER] Available flags: ultrasharp="{modules.flags.ultrasharp.casefold()}", realistic_rescaler="{modules.flags.realistic_rescaler.casefold()}", latent_upscale="{modules.flags.latent_upscale.casefold()}", seamless_tiling="{modules.flags.seamless_tiling.casefold()}"')
 
-    if method == modules.flags.ultrasharp.casefold():
+    if method_lower == modules.flags.ultrasharp.casefold():
+        print(f'[UPSCALER] Using UltraSharp method')
         return perform_upscale_without_tiling(img, "UltraSharp", [model_ultrasharp], downloading_ultrasharp_model, async_task=async_task, vae=vae_model)
-    elif method == modules.flags.realistic_rescaler.casefold():
+    elif method_lower == modules.flags.realistic_rescaler.casefold():
+        print(f'[UPSCALER] Using Realistic Rescaler method')
         return perform_upscale_without_tiling(img, "Realistic Rescaler", [model_realistic_rescaler], downloading_realistic_rescaler_model, vae=vae_model)
-    elif method == modules.flags.latent_upscale.casefold():
+    elif method_lower == modules.flags.latent_upscale.casefold():
+        print(f'[UPSCALER] Using Latent Upscale method')
         return perform_latent_upscale(img, async_task=async_task, vae_model=vae_model)
-    elif method == modules.flags.seamless_tiling.casefold():
+    elif method_lower == modules.flags.seamless_tiling.casefold():
+        print(f'[UPSCALER] Using Seamless Tiling method')
         return perform_seamless_tiling(img, async_task=async_task)
     else: # Default upscaling
+        print(f'[UPSCALER] Using default upscaling method')
         if model_default is None:
             model_filename = downloading_upscale_model()
             sd = torch.load(model_filename, weights_only=True)
