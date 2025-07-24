@@ -165,3 +165,36 @@ def plot_detail_daemon_schedule(schedule: np.ndarray) -> Image.Image:
 # --------------------------------------------------
 # 6. Register samplers in Focus
 # --------------------------------------------------
+import modules.scripts as scripts
+import gradio as gr
+
+class Script(scripts.Script):
+    def title(self):
+        return "Detail-Daemon"
+
+    def show(self, is_img2img):
+        return scripts.AlwaysVisible
+
+    def ui(self, is_img2img):
+        with gr.Accordion("Detail-Daemon Parameters", open=False):
+            start = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, value=0.0, label="Start")
+            end = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, value=1.0, label="End")
+            bias = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, value=0.5, label="Bias")
+            amount = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, value=0.0, label="Amount")
+            exponent = gr.Slider(minimum=0.0, maximum=10.0, step=0.1, value=1.0, label="Exponent")
+            start_offset = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, value=0.0, label="Start Offset")
+            end_offset = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, value=0.0, label="End Offset")
+            fade = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, value=0.0, label="Fade")
+            smooth = gr.Checkbox(value=True, label="Smooth")
+            cfg_scale_override = gr.Slider(minimum=0.0, maximum=20.0, step=0.1, value=0.0, label="CFG Scale Override (0 for none)")
+        return [start, end, bias, amount, exponent, start_offset, end_offset, fade, smooth, cfg_scale_override]
+
+    def run(self, p, start, end, bias, amount, exponent, start_offset, end_offset, fade, smooth, cfg_scale_override):
+        p.dds_make_schedule = lambda steps: make_detail_daemon_schedule(
+            steps, start, end, bias, amount, exponent, start_offset, end_offset, fade, smooth
+        )
+        p.dds_cfg_scale_override = cfg_scale_override
+        p.sampler_name = "detail_daemon_sampler"
+        return p
+
+
