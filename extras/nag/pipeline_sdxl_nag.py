@@ -755,14 +755,12 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     # First apply CFG
                     noise_pred_cfg = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
                     
-                    # TEMPORARILY DISABLE NAG to test if it's causing the pink issue
-                    # Then apply NAG
-                    # noise_pred = noise_pred_cfg + self._nag_scale * (noise_pred_text - noise_pred_nag)
-                    noise_pred = noise_pred_cfg  # Use only CFG for now
+                    # Apply NAG guidance
+                    noise_pred = noise_pred_cfg + self._nag_scale * (noise_pred_text - noise_pred_nag)
                     
                     if i < 3:
                         print(f"[NAG DEBUG] NAG guidance - nag mean: {noise_pred_nag.mean().item():.4f}")
-                        print(f"[NAG DEBUG] NAG guidance - using CFG only (NAG disabled for testing)")
+                        print(f"[NAG DEBUG] NAG guidance - cfg mean: {noise_pred_cfg.mean().item():.4f}")
                         print(f"[NAG DEBUG] NAG guidance - final noise_pred mean: {noise_pred.mean().item():.4f}")
 
                 if self.do_classifier_free_guidance and self.guidance_rescale > 0.0:
@@ -780,8 +778,9 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     # Simple denoising step: gradually reduce noise
                     step_ratio = (1000 - t) / 1000.0  # How far through denoising we are (0 to 1)
                     
-                    # Use a small, stable step size that decreases over time
-                    step_size = 0.02 * (1.0 - step_ratio * 0.8)  # Start at 0.02, end at ~0.004
+                    # Use a more aggressive step size that decreases over time
+                    # Early steps need to be more aggressive to remove noise effectively
+                    step_size = 0.05 * (1.0 - step_ratio * 0.7)  # Start at 0.05, end at ~0.015
                     
                     # Simple step: move latents towards less noisy version
                     latents = latents - step_size * noise_pred
