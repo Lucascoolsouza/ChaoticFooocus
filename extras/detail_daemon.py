@@ -13,10 +13,7 @@ import matplotlib
 matplotlib.use('Agg')  # non-GUI
 import matplotlib.pyplot as plt
 
-from modules.sdxl_styles import apply_style
-from modules.core import StableDiffusionProcessing, SamplerData
-from modules.shared import opts, state
-from modules import images
+
 
 
 # --------------------------------------------------
@@ -70,34 +67,24 @@ def make_detail_daemon_schedule(steps: int,
 # --------------------------------------------------
 # 2. Core sampler wrapper
 # --------------------------------------------------
-def detail_daemon_sampler(p: StableDiffusionProcessing,
-                          model,
-                          x,
-                          sigmas,
-                          sampler_orig,
-                          detail_amount=0.1,
-                          start=0.2,
-                          end=0.8,
-                          bias=0.5,
-                          exponent=1,
-                          start_offset=0,
-                          end_offset=0,
-                          fade=0,
-                          smooth=True,
-                          cfg_override=0.0,
-                          **kwargs):
+def detail_daemon_sampler(
+    model: object,
+    x: torch.Tensor,
+    sigmas: torch.Tensor,
+    *,
+    dds_wrapped_sampler: object,
+    dds_make_schedule: callable,
+    dds_cfg_scale_override: float,
+    **kwargs: dict,
+):
     """
     Wrapped sampler that modulates the sigma schedule according to Detail-Daemon.
     """
     steps = len(sigmas) - 1
-    schedule_np = make_detail_daemon_schedule(steps,
-                                              start, end, bias,
-                                              detail_amount, exponent,
-                                              start_offset, end_offset,
-                                              fade, smooth)
+    schedule_np = dds_make_schedule(steps)
     schedule = torch.from_numpy(schedule_np).float().to(sigmas.device)
 
-    cfg = cfg_override if cfg_override > 0 else p.cfg_scale
+    cfg = dds_cfg_scale_override if dds_cfg_scale_override > 0 else 1.0 # Assuming default cfg_scale is 1.0 if not overridden
 
     def model_fn(x_in, sigma_in, **extra_args):
         sigma_cpu = sigma_in.detach().cpu()
@@ -119,7 +106,7 @@ def detail_daemon_sampler(p: StableDiffusionProcessing,
         sigma_adj = sigma_in * max(1e-6, 1.0 - dd * 0.1 * cfg)
         return model(x_in, sigma_adj, **extra_args)
 
-    return sampler_orig(p, model_fn, x, sigmas, **kwargs)
+    return dds_wrapped_sampler.sampler_function(model_fn, x, sigmas, **kwargs)
 
 
 # --------------------------------------------------
@@ -178,27 +165,3 @@ def plot_detail_daemon_schedule(schedule: np.ndarray) -> Image.Image:
 # --------------------------------------------------
 # 6. Register samplers in Focus
 # --------------------------------------------------
-def install():
-    extra_samplers = [
-        SamplerData(
-            "DD-Detail-Daemon",
-            lambda model, func=detail_daemon_sampler: func,
-            ["dd_detail_daemon"],
-            {}),
-        SamplerData(
-            "Multiply-Sigmas",
-            lambda model, func=multiply_sigmas: func,
-            ["multiply_sigmas"],
-            {}),
-        SamplerData(
-            "Lying-Sigma",
-            lambda model, func=lying_sigma_sampler: func,
-            ["lying_sigma"],
-            {}),
-    ]
-    # Append to global list
-    from modules import sd_samplers
-    sd_samplers.all_samplers.extend(extra_samplers)
-
-
-install()
