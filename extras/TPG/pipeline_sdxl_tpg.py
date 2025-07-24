@@ -1137,6 +1137,7 @@ class StableDiffusionXLTPGPipeline(
             ip_adapter_image_embeds,
             callback_on_step_end_tensor_inputs,
         )
+        logger.debug("Inputs checked.")
 
         self._guidance_scale = guidance_scale
         self._guidance_rescale = guidance_rescale
@@ -1192,6 +1193,7 @@ class StableDiffusionXLTPGPipeline(
             lora_scale=lora_scale,
             clip_skip=self.clip_skip,
         )
+        logger.debug("Prompt encoded.")
 
         # 4. Prepare timesteps
         timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps)
@@ -1212,9 +1214,11 @@ class StableDiffusionXLTPGPipeline(
         logger.debug(f"Device of latents: {latents.device}")
         logger.debug(f"Device of prompt_embeds: {prompt_embeds.device}")
         logger.debug(f"Device of UNet model: {next(actual_unet_model.parameters()).device}")
+        logger.debug("Latents prepared.")
 
         # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
+        logger.debug("Extra step kwargs prepared.")
 
         # 7. Prepare added time ids & embeddings
         add_text_embeds = pooled_prompt_embeds
@@ -1260,6 +1264,7 @@ class StableDiffusionXLTPGPipeline(
         prompt_embeds = prompt_embeds.to(device)
         add_text_embeds = add_text_embeds.to(device)
         add_time_ids = add_time_ids.to(device).repeat(batch_size * num_images_per_prompt, 1)
+        logger.debug("Added time IDs and embeddings prepared.")
 
         if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
             image_embeds = self.prepare_ip_adapter_image_embeds(
@@ -1269,6 +1274,7 @@ class StableDiffusionXLTPGPipeline(
                 batch_size * num_images_per_prompt,
                 self.do_classifier_free_guidance,
             )
+            logger.debug("IP Adapter image embeds prepared.")
 
         # 8. Denoising loop
         num_warmup_steps = max(len(timesteps) - num_inference_steps * self.scheduler.order, 0)
@@ -1288,6 +1294,7 @@ class StableDiffusionXLTPGPipeline(
             )
             num_inference_steps = len(list(filter(lambda ts: ts >= discrete_timestep_cutoff, timesteps)))
             timesteps = timesteps[:num_inference_steps]
+        logger.debug("Denoising end applied.")
 
         # 9. Optionally get Guidance Scale Embedding
         timestep_cond = None
@@ -1296,6 +1303,7 @@ class StableDiffusionXLTPGPipeline(
             timestep_cond = self.get_guidance_scale_embedding(
                 guidance_scale_tensor, embedding_dim=self.unet.config.time_cond_proj_dim
             ).to(device=device, dtype=latents.dtype)
+        logger.debug("Guidance scale embedding obtained.")
 
         # 10. Create down mid and up layer lists - Temporarily commented out for debugging
         # if self.do_token_perturbation_guidance:
@@ -1348,10 +1356,11 @@ class StableDiffusionXLTPGPipeline(
         #             raise ValueError(
         #                 f"Invalid layer index: {drop_layer}. Available layers: {len(down_layers)} down layers, {len(mid_layers)} mid layers, {len(up_layers)} up layers."
         #             )
+        logger.debug("TPG layer lists and attention layer changes (if TPG active) processed.")
 
         self._num_timesteps = len(timesteps)
-        # with self.progress_bar(total=num_inference_steps) as progress_bar:
-        for i, t in enumerate(timesteps):
+        with self.progress_bar(total=num_inference_steps) as progress_bar:
+            for i, t in enumerate(timesteps):
                 logger.debug(f"Processing timestep {t} ({i}/{len(timesteps)})")
                 if self.interrupt:
                     continue
