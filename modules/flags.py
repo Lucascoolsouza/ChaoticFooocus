@@ -11,7 +11,7 @@ ultrasharp = 'Ultrasharp'
 realistic_rescaler = 'Realistic Rescaler'
 latent_upscale = 'Latent Upscale'
 pixelsharpen = '1xPixelSharpen'
-tghqface8x = '4xLSDIRplusN'
+tghqface8x = 'REEEFOCUS'
 
 remove_background = 'Remove Background'
 seamless_tiling = 'Seamless Tiling'
