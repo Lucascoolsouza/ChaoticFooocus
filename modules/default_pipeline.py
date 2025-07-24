@@ -815,7 +815,8 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         else:
             # old path: still latents (B, C, H, W) tensor
             latent_dict = {'samples': output}
-            imgs = core.pytorch_to_numpy(core.decode_vae(target_vae, latent_dict))
+            # Use tiled VAE decoding for better memory efficiency
+            imgs = core.pytorch_to_numpy(core.decode_vae(target_vae, latent_dict, tiled=True))
         
         print("Final deliverable:", type(imgs[0]), getattr(imgs[0], 'size', '-'))
         

@@ -374,10 +374,16 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         width = width or self.default_sample_size * self.vae_scale_factor
 
         # Enable VAE tiling and attention slicing for memory optimization
+        # For ComfyUI VAE, tiling is handled differently
         if hasattr(self.vae, "enable_tiling"):
             self.vae.enable_tiling()
+        elif hasattr(self.vae, "model") and hasattr(self.vae.model, "enable_tiling"):
+            self.vae.model.enable_tiling()
+        
         if hasattr(self.unet, "enable_attention_slicing"):
             self.unet.enable_attention_slicing()
+        elif hasattr(self.unet, "model") and hasattr(self.unet.model, "enable_attention_slicing"):
+            self.unet.model.enable_attention_slicing()
 
         original_size = original_size or (height, width)
         target_size = target_size or (height, width)
