@@ -219,7 +219,7 @@ onUiLoaded(async() => {
                 );
 
             if (input) {
-                input.click();
+                if (input.tagName === 'INPUT') { input.click(); }
                 if (!withoutValue) {
                     const maxValue =
                         parseFloat(input.getAttribute("max")) || 100;
