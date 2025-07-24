@@ -110,7 +110,16 @@ class AsyncTask:
             args.pop()) if not args_manager.args.disable_metadata else MetadataScheme.FOOOCUS
 
         # Detail daemon parameters
-        self.detail_daemon_strength = args.pop()
+        self.detail_daemon_smooth = args.pop()
+        self.detail_daemon_mode = args.pop()
+        self.detail_daemon_fade = args.pop()
+        self.detail_daemon_exponent = args.pop()
+        self.detail_daemon_end_offset = args.pop()
+        self.detail_daemon_start_offset = args.pop()
+        self.detail_daemon_bias = args.pop()
+        self.detail_daemon_end = args.pop()
+        self.detail_daemon_start = args.pop()
+        self.detail_daemon_amount = args.pop()
         self.detail_daemon_enabled = args.pop()
 
         self.cn_tasks = {x: [] for x in ip_list}
@@ -1565,7 +1574,20 @@ def worker():
                 # Apply detail enhancement if enabled
                 if task.detail_daemon_enabled and len(task.results) > 0:
                     from modules.detail_daemon import detail_daemon
-                    print(f'[Detail Daemon] Enhancing {len(task.results)} images with strength {task.detail_daemon_strength}')
+                    # Update detail daemon with current task parameters
+                    detail_daemon.enabled = task.detail_daemon_enabled
+                    detail_daemon.detail_amount = task.detail_daemon_amount
+                    detail_daemon.start = task.detail_daemon_start
+                    detail_daemon.end = task.detail_daemon_end
+                    detail_daemon.bias = task.detail_daemon_bias
+                    detail_daemon.start_offset = task.detail_daemon_start_offset
+                    detail_daemon.end_offset = task.detail_daemon_end_offset
+                    detail_daemon.exponent = task.detail_daemon_exponent
+                    detail_daemon.fade = task.detail_daemon_fade
+                    detail_daemon.mode = task.detail_daemon_mode
+                    detail_daemon.smooth = task.detail_daemon_smooth
+                    
+                    print(f'[Detail Daemon] Enhancing {len(task.results)} images with amount {task.detail_daemon_amount}')
                     enhanced_results = []
                     for img_path in task.results:
                         if isinstance(img_path, str) and os.path.exists(img_path):

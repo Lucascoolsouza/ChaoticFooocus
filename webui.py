@@ -733,27 +733,52 @@ with shared.gradio_root:
                 with gr.Accordion(label='Detail Enhancement', open=False):
                     detail_daemon_enabled = gr.Checkbox(label='Enable Detail Daemon', value=False,
                                                         info='Apply detail enhancement to generated images')
-                    detail_daemon_strength = gr.Slider(label='Detail Strength', minimum=0.1, maximum=2.0, step=0.1,
-                                                       value=1.0, info='Strength of detail enhancement')
-                    detail_daemon_status = gr.Textbox(label='Status', interactive=False, value='Detail Daemon: Disabled, Strength: 1.0')
                     
-                    def update_detail_daemon_settings(enabled, strength):
+                    # Main parameters
+                    detail_daemon_amount = gr.Slider(label='Detail Amount', minimum=0.0, maximum=1.0, step=0.01,
+                                                     value=0.25, info='Amount of detail enhancement')
+                    detail_daemon_start = gr.Slider(label='Start', minimum=0.0, maximum=1.0, step=0.01,
+                                                    value=0.2, info='Start position for detail enhancement')
+                    detail_daemon_end = gr.Slider(label='End', minimum=0.0, maximum=1.0, step=0.01,
+                                                  value=0.8, info='End position for detail enhancement')
+                    detail_daemon_bias = gr.Slider(label='Bias', minimum=0.0, maximum=1.0, step=0.01,
+                                                   value=0.71, info='Bias for detail enhancement')
+                    
+                    # Advanced parameters
+                    with gr.Accordion(label='More Knobs', open=False):
+                        with gr.Row():
+                            detail_daemon_start_offset = gr.Slider(label='Start Offset', minimum=-1.0, maximum=1.0, step=0.01,
+                                                                   value=0, info='Offset for start position')
+                            detail_daemon_end_offset = gr.Slider(label='End Offset', minimum=-1.0, maximum=1.0, step=0.01,
+                                                                 value=-0.15, info='Offset for end position')
+                        with gr.Row():
+                            detail_daemon_exponent = gr.Slider(label='Exponent', minimum=0.1, maximum=3.0, step=0.1,
+                                                               value=1, info='Curve exponent')
+                            detail_daemon_fade = gr.Slider(label='Fade', minimum=0, maximum=1.0, step=0.01,
+                                                           value=0, info='Fade amount')
+                        with gr.Row():
+                            detail_daemon_mode = gr.Dropdown(label='Mode', choices=['both', 'horizontal', 'vertical'], 
+                                                             value='both', info='Enhancement direction')
+                            detail_daemon_smooth = gr.Checkbox(label='Smooth', value=True, info='Apply smoothing')
+                    
+                    detail_daemon_status = gr.Textbox(label='Status', interactive=False, value='Detail Daemon: Disabled, Amount: 0.25')
+                    
+                    def update_detail_daemon_settings_ui(enabled, amount, start, end, bias, start_offset, end_offset, exponent, fade, mode, smooth):
                         from modules.detail_daemon import update_detail_daemon_settings
-                        return update_detail_daemon_settings(enabled, strength)
+                        return update_detail_daemon_settings(enabled, amount, start, end, bias, start_offset, end_offset, exponent, fade, mode, smooth)
                     
-                    detail_daemon_enabled.change(
-                        update_detail_daemon_settings,
-                        inputs=[detail_daemon_enabled, detail_daemon_strength],
-                        outputs=detail_daemon_status,
-                        queue=False
-                    )
+                    # Update on any parameter change
+                    detail_inputs = [detail_daemon_enabled, detail_daemon_amount, detail_daemon_start, detail_daemon_end, 
+                                   detail_daemon_bias, detail_daemon_start_offset, detail_daemon_end_offset, 
+                                   detail_daemon_exponent, detail_daemon_fade, detail_daemon_mode, detail_daemon_smooth]
                     
-                    detail_daemon_strength.change(
-                        update_detail_daemon_settings,
-                        inputs=[detail_daemon_enabled, detail_daemon_strength],
-                        outputs=detail_daemon_status,
-                        queue=False
-                    )
+                    for input_component in detail_inputs:
+                        input_component.change(
+                            update_detail_daemon_settings_ui,
+                            inputs=detail_inputs,
+                            outputs=detail_daemon_status,
+                            queue=False
+                        )
                 
                 gr.HTML('<a href="https://github.com/lllyasviel/Fooocus/discussions/117" target="_blank">\U0001F4D4 Documentation</a>')
                 dev_mode = gr.Checkbox(label='Developer Debug Mode', value=modules.config.default_developer_debug_mode_checkbox, container=False)
@@ -1078,7 +1103,9 @@ with shared.gradio_root:
         if not args_manager.args.disable_metadata:
             ctrls += [save_metadata_to_images, metadata_scheme]
             
-        ctrls += [detail_daemon_enabled, detail_daemon_strength]
+        ctrls += [detail_daemon_enabled, detail_daemon_amount, detail_daemon_start, detail_daemon_end, 
+                  detail_daemon_bias, detail_daemon_start_offset, detail_daemon_end_offset, 
+                  detail_daemon_exponent, detail_daemon_fade, detail_daemon_mode, detail_daemon_smooth]
 
         ctrls += ip_ctrls
         ctrls += [debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox,
