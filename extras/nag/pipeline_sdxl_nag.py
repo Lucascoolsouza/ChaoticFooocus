@@ -34,20 +34,58 @@ def safe_decode(latents, vae, width=512, height=512):
         with torch.no_grad():
             latents = latents.to(vae.device)
             print(f"[safe_decode] Latents device: {latents.device}, dtype: {latents.dtype}")
-            decoded = vae.decode(latents)
+            
+            # Handle different VAE interfaces
+            if hasattr(vae, 'decode') and callable(vae.decode):
+                # Standard diffusers VAE
+                decoded = vae.decode(latents / vae.config.scaling_factor, return_dict=False)[0]
+            elif hasattr(vae, 'model') and hasattr(vae.model, 'decode'):
+                # ComfyUI wrapped VAE
+                decoded = vae.model.decode(latents)
+            else:
+                # Fallback direct call
+                decoded = vae.decode(latents)
+            
             print(f"[safe_decode] Decoded shape: {decoded.shape}, dtype: {decoded.dtype}")
 
-            if hasattr(vae, "post_quant_conv"):
-                vae.post_quant_conv = vae.post_quant_conv.to(decoded.device, decoded.dtype)
-                decoded = vae.post_quant_conv(decoded)
+            # Ensure we have the right tensor format [B, C, H, W]
+            if len(decoded.shape) == 4:
+                # Standard format [B, C, H, W]
+                if decoded.shape[1] == 3:
+                    # Already RGB
+                    pass
+                elif decoded.shape[1] > 3:
+                    # Take first 3 channels
+                    decoded = decoded[:, :3]
+                else:
+                    # Replicate single channel to RGB
+                    decoded = decoded.repeat(1, 3, 1, 1)
             else:
-                decoded = decoded[:, :3] if decoded.size(1) >= 3 else decoded.mean(dim=1, keepdim=True).repeat(1, 3, 1, 1)
+                print(f"[safe_decode] Unexpected decoded shape: {decoded.shape}")
+                # Try to reshape if possible
+                if decoded.numel() == width * height * 3:
+                    decoded = decoded.view(1, 3, height, width)
+                else:
+                    raise ValueError(f"Cannot handle decoded shape: {decoded.shape}")
 
-            print(f"[safe_decode] Post-quant-conv shape: {decoded.shape}, dtype: {decoded.dtype}")
-            decoded = torch.clamp((decoded + 1) * 0.5, 0, 1)
+            print(f"[safe_decode] Processed shape: {decoded.shape}, dtype: {decoded.dtype}")
+            
+            # Normalize to [0, 1] range
+            decoded = torch.clamp((decoded + 1.0) / 2.0, 0.0, 1.0)
             print(f"[safe_decode] Clamped shape: {decoded.shape}, dtype: {decoded.dtype}")
+            
+            # Convert to numpy [H, W, C] format
             decoded_np = (decoded[0].permute(1, 2, 0) * 255).cpu().numpy().astype(np.uint8)
             print(f"[safe_decode] Final numpy shape: {decoded_np.shape}, dtype: {decoded_np.dtype}")
+            
+            # Ensure we have the right dimensions
+            if decoded_np.shape[2] != 3:
+                print(f"[safe_decode] Warning: Expected 3 channels, got {decoded_np.shape[2]}")
+                if decoded_np.shape[2] == 1:
+                    decoded_np = np.repeat(decoded_np, 3, axis=2)
+                else:
+                    decoded_np = decoded_np[:, :, :3]
+            
             print(f"[safe_decode] ✅ Decode successful. Latents min: {latents.min():.4f}, max: {latents.max():.4f}, mean: {latents.mean():.4f}, std: {latents.std():.4f}")
             return Image.fromarray(decoded_np, mode='RGB')
 
