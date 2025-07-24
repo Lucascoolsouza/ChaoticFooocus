@@ -774,39 +774,21 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 
                 # Check if we have the dummy SchedulerWrapper from Fooocus
                 if type(self.scheduler).__name__ == 'SchedulerWrapper':
-                    # Implement a proper DDIM step manually since the wrapper is broken
-                    # DDIM formula with proper alpha/beta scheduling
+                    # Use a simple, stable denoising step instead of complex DDIM
+                    # This is much more stable and less likely to explode
                     
-                    # Get current and next timesteps
-                    if i < len(timesteps) - 1:
-                        t_next = timesteps[i + 1]
-                    else:
-                        t_next = torch.tensor(0, device=t.device, dtype=t.dtype)
+                    # Simple denoising step: gradually reduce noise
+                    step_ratio = (1000 - t) / 1000.0  # How far through denoising we are (0 to 1)
                     
-                    # Convert timesteps to alphas (simplified DDIM scheduling)
-                    alpha_t = 1 - (t / 1000.0) ** 2
-                    alpha_t_next = 1 - (t_next / 1000.0) ** 2
+                    # Use a small, stable step size that decreases over time
+                    step_size = 0.02 * (1.0 - step_ratio * 0.8)  # Start at 0.02, end at ~0.004
                     
-                    # Clamp alphas to reasonable range
-                    alpha_t = torch.clamp(alpha_t, 0.001, 0.999)
-                    alpha_t_next = torch.clamp(alpha_t_next, 0.001, 0.999)
-                    
-                    # DDIM step: predict x0, then compute x_{t-1}
-                    sqrt_alpha_t = torch.sqrt(alpha_t)
-                    sqrt_one_minus_alpha_t = torch.sqrt(1 - alpha_t)
-                    
-                    # Predict x0 from current latents and noise prediction
-                    pred_x0 = (latents - sqrt_one_minus_alpha_t * noise_pred) / sqrt_alpha_t
-                    
-                    # Compute x_{t-1} using DDIM formula
-                    sqrt_alpha_t_next = torch.sqrt(alpha_t_next)
-                    sqrt_one_minus_alpha_t_next = torch.sqrt(1 - alpha_t_next)
-                    
-                    latents = sqrt_alpha_t_next * pred_x0 + sqrt_one_minus_alpha_t_next * noise_pred
+                    # Simple step: move latents towards less noisy version
+                    latents = latents - step_size * noise_pred
                     
                     # Add some debugging for the first few steps
                     if i < 3:
-                        print(f"[NAG DEBUG] Step {i}: t={t.item():.0f}, alpha_t={alpha_t.item():.4f}, alpha_t_next={alpha_t_next.item():.4f}")
+                        print(f"[NAG DEBUG] Step {i}: t={t.item():.0f}, step_ratio={step_ratio:.4f}, step_size={step_size:.6f}")
                         print(f"[NAG DEBUG] latents mean: {latents.mean().item():.4f}, std: {latents.std().item():.4f}")
                 else:
                     # Use the real scheduler
