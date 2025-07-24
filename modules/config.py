@@ -616,19 +616,19 @@ default_enhance_uov_method = get_config_item_or_set_default(
     key='default_enhance_uov_method',
     default_value=modules.flags.disabled,
     validator=lambda x: x in modules.flags.uov_list,
-    expected_type=int
+    expected_type=str
 )
 default_enhance_uov_processing_order = get_config_item_or_set_default(
     key='default_enhance_uov_processing_order',
     default_value=modules.flags.enhancement_uov_before,
     validator=lambda x: x in modules.flags.enhancement_uov_processing_order,
-    expected_type=int
+    expected_type=str
 )
 default_enhance_uov_prompt_type = get_config_item_or_set_default(
     key='default_enhance_uov_prompt_type',
     default_value=modules.flags.enhancement_uov_prompt_type_original,
     validator=lambda x: x in modules.flags.enhancement_uov_prompt_types,
-    expected_type=int
+    expected_type=str
 )
 default_enhance_bg_removal_model = get_config_item_or_set_default(
     key='default_enhance_bg_removal_model',

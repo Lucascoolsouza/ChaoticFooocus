@@ -1048,6 +1048,17 @@ def worker():
                 import os
                 output_path = os.path.join(modules.config.path_outputs, 'debug_bg_removed.png')
                 Image.fromarray(uov_input_image).save(output_path)
+        elif 'seamless tiling' in uov_method.lower():
+            goals.append('upscale')  # Use upscale goal for seamless tiling
+            skip_prompt_processing = True
+            steps = 0  # No diffusion steps needed for seamless tiling
+            
+            if advance_progress:
+                current_progress += 1
+            progressbar(async_task, current_progress, 'Preparing seamless tiling ...')
+            
+            print(f"[SEAMLESS] Seamless tiling method detected: {uov_method}")
+            print(f"[SEAMLESS] Image shape: {uov_input_image.shape}")
                 print(f'[rembg_bg_removal] Saved debug_bg_removed.png to {output_path}')
                 # Add debug image to results for gallery display
                 if hasattr(async_task, 'results') and isinstance(async_task.results, list):
