@@ -43,10 +43,13 @@ def safe_decode(latents, vae, width=512, height=512):
 
             decoded = torch.clamp((decoded + 1) * 0.5, 0, 1)
             decoded_np = (decoded[0].permute(1, 2, 0) * 255).cpu().numpy().astype(np.uint8)
+            print(f"[safe_decode] ✅ Decode successful. Latents min: {latents.min():.4f}, max: {latents.max():.4f}, mean: {latents.mean():.4f}, std: {latents.std():.4f}")
             return Image.fromarray(decoded_np, mode='RGB')
 
     except Exception as e:
-        print(f"[safe_decode] ❌ Decode failed: {e}")
+        print(f"[safe_decode] ❌ Decode failed: {e}. Latents shape: {latents.shape}, dtype: {latents.dtype}, device: {latents.device}")
+        if latents.numel() > 0:
+            print(f"[safe_decode] Latents min: {latents.min():.4f}, max: {latents.max():.4f}, mean: {latents.mean():.4f}, std: {latents.std():.4f}")
         # Return error image
         img = Image.new("RGB", (width, height), color="red")
         draw = ImageDraw.Draw(img)
@@ -845,6 +848,9 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             return (latents,)
         
         # For other use cases, decode and return images
+        print(f"[NAG Pipeline] Before final decode. Latents shape: {latents.shape}, dtype: {latents.dtype}, device: {latents.device}")
+        if latents.numel() > 0:
+            print(f"[NAG Pipeline] Latents min: {latents.min():.4f}, max: {latents.max():.4f}, mean: {latents.mean():.4f}, std: {latents.std():.4f}")
         final_image = safe_decode(latents, self.vae, width=width, height=height)
         self.maybe_free_model_hooks()
 
