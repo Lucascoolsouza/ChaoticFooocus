@@ -238,7 +238,7 @@ def worker():
     import extras.ip_adapter as ip_adapter
     import extras.face_crop
     import fooocus_version
-    from extras.Token_Perturbation_Guidance_main.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
+    from extras.TPG.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
 
     from extras.censor import default_censor
     from modules.sdxl_styles import apply_style, get_random_style, fooocus_expansion, apply_arrays, random_style_name
