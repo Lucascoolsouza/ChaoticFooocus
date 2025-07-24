@@ -126,18 +126,18 @@ class AsyncTask:
             while len(detail_params) < 11:
                 detail_params.append(None)
         
-        # Assign in correct order (reverse of webui.py order)
-        self.detail_daemon_smooth = detail_params[0]      # 11th parameter
-        self.detail_daemon_mode = detail_params[1]        # 10th parameter  
-        self.detail_daemon_fade = detail_params[2]        # 9th parameter
-        self.detail_daemon_exponent = detail_params[3]    # 8th parameter
-        self.detail_daemon_end_offset = detail_params[4]  # 7th parameter
-        self.detail_daemon_start_offset = detail_params[5] # 6th parameter
-        self.detail_daemon_bias = detail_params[6]        # 5th parameter
-        self.detail_daemon_end = detail_params[7]         # 4th parameter
-        self.detail_daemon_start = detail_params[8]       # 3rd parameter
-        self.detail_daemon_amount = detail_params[9]      # 2nd parameter
-        self.detail_daemon_enabled = detail_params[10]     # 1st parameter
+        # Assign in correct order based on debug output
+        self.detail_daemon_smooth = detail_params[0]      # True
+        self.detail_daemon_amount = detail_params[1]      # 0.25
+        self.detail_daemon_start = detail_params[2]       # 0.2
+        self.detail_daemon_end = detail_params[3]         # 0.8
+        self.detail_daemon_bias = detail_params[4]        # 0.71
+        self.detail_daemon_start_offset = detail_params[5] # 0
+        self.detail_daemon_end_offset = detail_params[6]  # -0.15
+        self.detail_daemon_exponent = detail_params[7]    # 1
+        self.detail_daemon_fade = detail_params[8]        # 0
+        self.detail_daemon_mode = detail_params[9]        # 'both'
+        self.detail_daemon_enabled = detail_params[10]    # True
         
         print(f"[DEBUG] Detail daemon params: enabled={self.detail_daemon_enabled}, amount={self.detail_daemon_amount}, mode={self.detail_daemon_mode}")
 
@@ -1595,22 +1595,21 @@ def worker():
                     from modules.detail_daemon import detail_daemon
                     # Update detail daemon with current task parameters
                     detail_daemon.enabled = task.detail_daemon_enabled
-                    # TEMPORARY FIX: Parameters are shifted, so we need to manually correct them
-                    # Based on debug output: amount=mode, mode=amount, start=bias, end=start_offset, etc.
+                    # Now parameters should be correctly assigned in constructor
                     try:
-                        detail_daemon.detail_amount = float(task.detail_daemon_mode) if task.detail_daemon_mode is not None else 0.25
+                        detail_daemon.detail_amount = float(task.detail_daemon_amount) if task.detail_daemon_amount is not None else 0.25
                     except (ValueError, TypeError) as e:
-                        print(f'[Detail Daemon] Error converting detail_amount from mode: {task.detail_daemon_mode} - {e}')
+                        print(f'[Detail Daemon] Error converting detail_amount: {task.detail_daemon_amount} - {e}')
                         detail_daemon.detail_amount = 0.25
                     
-                    detail_daemon.start = float(task.detail_daemon_bias) if task.detail_daemon_bias is not None else 0.2
-                    detail_daemon.end = float(task.detail_daemon_start_offset) if task.detail_daemon_start_offset is not None else 0.8
-                    detail_daemon.bias = float(task.detail_daemon_end_offset) if task.detail_daemon_end_offset is not None else 0.71
-                    detail_daemon.start_offset = float(task.detail_daemon_exponent) if task.detail_daemon_exponent is not None else 0
-                    detail_daemon.end_offset = float(task.detail_daemon_fade) if task.detail_daemon_fade is not None else -0.15
-                    detail_daemon.exponent = float(task.detail_daemon_start) if task.detail_daemon_start is not None else 1
-                    detail_daemon.fade = float(task.detail_daemon_end) if task.detail_daemon_end is not None else 0
-                    detail_daemon.mode = task.detail_daemon_amount if task.detail_daemon_amount is not None else 'both'
+                    detail_daemon.start = float(task.detail_daemon_start) if task.detail_daemon_start is not None else 0.2
+                    detail_daemon.end = float(task.detail_daemon_end) if task.detail_daemon_end is not None else 0.8
+                    detail_daemon.bias = float(task.detail_daemon_bias) if task.detail_daemon_bias is not None else 0.71
+                    detail_daemon.start_offset = float(task.detail_daemon_start_offset) if task.detail_daemon_start_offset is not None else 0
+                    detail_daemon.end_offset = float(task.detail_daemon_end_offset) if task.detail_daemon_end_offset is not None else -0.15
+                    detail_daemon.exponent = float(task.detail_daemon_exponent) if task.detail_daemon_exponent is not None else 1
+                    detail_daemon.fade = float(task.detail_daemon_fade) if task.detail_daemon_fade is not None else 0
+                    detail_daemon.mode = task.detail_daemon_mode if task.detail_daemon_mode is not None else 'both'
                     detail_daemon.smooth = bool(task.detail_daemon_smooth) if task.detail_daemon_smooth is not None else True
                     
                     print(f'[Detail Daemon] Debug - enabled: {task.detail_daemon_enabled}')
