@@ -112,10 +112,10 @@ class AsyncTask:
         # Detail daemon parameters (popped in reverse order from webui.py)
         print(f"[DEBUG] Args remaining before detail daemon: {len(args)}")
         
-        # Pop all 11 detail daemon parameters
+        # Pop all 12 detail daemon parameters
         detail_params = []
         try:
-            for i in range(11):
+            for i in range(12):
                 param = args.pop()
                 detail_params.append(param)
                 print(f"[DEBUG] Popped param {i}: {param} (type: {type(param)})")
