@@ -580,7 +580,7 @@ class StableDiffusionXLTPGPipeline(
 
             image_embeds = []
             for single_ip_adapter_image, image_proj_layer in zip(
-                ip_adapter_image, self.unet.encoder_hid_proj.image_projection_layers
+                                ip_adapter_image, self.unet.encoder_hid_proj.image_projection_layers
             ):
                 output_hidden_state = not isinstance(image_proj_layer, ImageProjection)
                 single_image_embeds, single_negative_image_embeds = self.encode_image(
