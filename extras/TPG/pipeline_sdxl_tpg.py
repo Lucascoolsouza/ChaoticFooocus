@@ -1337,7 +1337,18 @@ class StableDiffusionXLTPGPipeline(
                 added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
                 if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
                     added_cond_kwargs["image_embeds"] = image_embeds
-                noise_pred = self.unet.model(
+                # Determine which UNet object to call
+                unet_to_call = None
+                if hasattr(self.unet, 'model') and isinstance(self.unet.model, torch.nn.Module):
+                    # If self.unet has a 'model' attribute and it's a torch.nn.Module, use it
+                    unet_to_call = self.unet.model
+                elif isinstance(self.unet, torch.nn.Module):
+                    # Otherwise, if self.unet itself is a torch.nn.Module, use it
+                    unet_to_call = self.unet
+                else:
+                    raise TypeError("Neither self.unet nor self.unet.model is a callable torch.nn.Module.")
+
+                noise_pred = unet_to_call(
                     latent_model_input,
                     t,
                     encoder_hidden_states=prompt_embeds,
