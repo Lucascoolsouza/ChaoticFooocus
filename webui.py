@@ -729,6 +729,32 @@ with shared.gradio_root:
                 sharpness = gr.Slider(label='Image Sharpness', minimum=0.0, maximum=30.0, step=0.001,
                                       value=modules.config.default_sample_sharpness,
                                       info='Higher value means image and texture are sharper.')
+                
+                with gr.Accordion(label='Detail Enhancement', open=False):
+                    detail_daemon_enabled = gr.Checkbox(label='Enable Detail Daemon', value=False,
+                                                        info='Apply detail enhancement to generated images')
+                    detail_daemon_strength = gr.Slider(label='Detail Strength', minimum=0.1, maximum=2.0, step=0.1,
+                                                       value=1.0, info='Strength of detail enhancement')
+                    detail_daemon_status = gr.Textbox(label='Status', interactive=False, value='Detail Daemon: Disabled, Strength: 1.0')
+                    
+                    def update_detail_daemon_settings(enabled, strength):
+                        from modules.detail_daemon import update_detail_daemon_settings
+                        return update_detail_daemon_settings(enabled, strength)
+                    
+                    detail_daemon_enabled.change(
+                        update_detail_daemon_settings,
+                        inputs=[detail_daemon_enabled, detail_daemon_strength],
+                        outputs=detail_daemon_status,
+                        queue=False
+                    )
+                    
+                    detail_daemon_strength.change(
+                        update_detail_daemon_settings,
+                        inputs=[detail_daemon_enabled, detail_daemon_strength],
+                        outputs=detail_daemon_status,
+                        queue=False
+                    )
+                
                 gr.HTML('<a href="https://github.com/lllyasviel/Fooocus/discussions/117" target="_blank">\U0001F4D4 Documentation</a>')
                 dev_mode = gr.Checkbox(label='Developer Debug Mode', value=modules.config.default_developer_debug_mode_checkbox, container=False)
 
@@ -1045,6 +1071,7 @@ with shared.gradio_root:
         ctrls += freeu_ctrls
         ctrls += inpaint_ctrls
         ctrls += nag_ctrls
+        ctrls += [detail_daemon_enabled, detail_daemon_strength]
 
         if not args_manager.args.disable_image_log:
             ctrls += [save_final_enhanced_image_only]

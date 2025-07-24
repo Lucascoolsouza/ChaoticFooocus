@@ -108,6 +108,10 @@ class AsyncTask:
         self.metadata_scheme = MetadataScheme(
             args.pop()) if not args_manager.args.disable_metadata else MetadataScheme.FOOOCUS
 
+        # Detail daemon parameters
+        self.detail_daemon_strength = args.pop()
+        self.detail_daemon_enabled = args.pop()
+
         self.cn_tasks = {x: [] for x in ip_list}
         for _ in range(modules.config.default_controlnet_image_count):
             cn_img = args.pop()
@@ -1557,6 +1561,27 @@ def worker():
 
             try:
                 handler(task)
+                # Apply detail enhancement if enabled
+                if task.detail_daemon_enabled and len(task.results) > 0:
+                    from modules.detail_daemon import detail_daemon
+                    print(f'[Detail Daemon] Enhancing {len(task.results)} images with strength {task.detail_daemon_strength}')
+                    enhanced_results = []
+                    for img_path in task.results:
+                        if isinstance(img_path, str) and os.path.exists(img_path):
+                            # Load image
+                            img = cv2.imread(img_path)
+                            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                            # Apply detail enhancement
+                            enhanced_img = detail_daemon.process(img)
+                            # Save enhanced image
+                            enhanced_img = cv2.cvtColor(enhanced_img, cv2.COLOR_RGB2BGR)
+                            enhanced_path = img_path.replace('.png', '_enhanced.png').replace('.jpg', '_enhanced.jpg')
+                            cv2.imwrite(enhanced_path, enhanced_img)
+                            enhanced_results.append(enhanced_path)
+                        else:
+                            enhanced_results.append(img_path)
+                    task.results = enhanced_results
+                
                 if task.generate_image_grid:
                     build_image_wall(task)
                 task.yields.append(['finish', task.results])
