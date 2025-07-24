@@ -884,35 +884,3 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         return []
     
     return imgs
-    else:
-        imgs = core.ksampler(
-            model=final_unet,
-            positive=positive_cond,
-            negative=negative_cond,
-            latent=initial_latent,
-            seed=image_seed,
-            steps=steps,
-            cfg=cfg_scale,
-            sampler_name=sampler_name,
-            scheduler=scheduler_name,
-            denoise=denoise,
-            disable_preview=disable_preview,
-            refiner=final_refiner_unet,
-            refiner_switch=switch,
-            sigmas=minmax_sigmas,
-            callback_function=callback
-        )['samples']
-        
-        # Convert latents to images
-        if imgs is not None:
-            latent_dict = {'samples': imgs}
-            imgs = core.decode_vae(target_vae, latent_dict)
-            
-            # Detail daemon is now applied via sigma manipulation during sampling
-            
-            # Convert to numpy arrays for saving
-            return core.pytorch_to_numpy(imgs)
-        
-        return []
-    
-    return imgs
