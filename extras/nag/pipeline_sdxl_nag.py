@@ -162,30 +162,51 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         if isinstance(prompt, str) and prompt.strip() != "":
             # For NAG negative prompts, we need to encode them safely
             try:
-                # Try to use parent method for proper text encoding
-                return super().encode_prompt(prompt, prompt_2, device, num_images_per_prompt, do_classifier_free_guidance, negative_prompt, negative_prompt_2, prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds, lora_scale, clip_skip)
+                # Apply the user's specific embedding logic for string prompts
+                inputs = self.tokenizer(
+                    prompt, # Use 'prompt' here as it's the string input
+                    padding="max_length",
+                    truncation=True,
+                    max_length=self.tokenizer.model_max_length,
+                    return_tensors="pt"
+                ).to(device)
+
+                output = self.text_encoder(
+                    input_ids=inputs.input_ids,
+                    attention_mask=inputs.attention_mask,
+                    output_hidden_states=True,
+                    return_dict=True,
+                )
+
+                # Pegando o penúltimo hidden state (como SDXL faz)
+                prompt_embeds = output.hidden_states[-2]
+                pooled_prompt_embeds = output.pooled_output # Get pooled output as well
+
+                # For negative prompts, we don't need negative_prompt_embeds or negative_pooled_prompt_embeds
+                return prompt_embeds, None, pooled_prompt_embeds, None
+
             except Exception as e:
                 print(f"[NAG] Error encoding NAG negative prompt '{prompt}': {e}")
                 print("[NAG] Falling back to zero embeddings for NAG negative prompt")
                 # Fall back to zero embeddings if encoding fails
                 import torch
                 batch_size = num_images_per_prompt
-                
+
                 # Try to get sequence length from stored shape
                 seq_len = 77  # Default CLIP sequence length
                 embed_dim = 2048  # Default SDXL embedding dimension
-                
+
                 if hasattr(self, '_current_prompt_embeds_shape') and self._current_prompt_embeds_shape is not None:
                     seq_len = self._current_prompt_embeds_shape[1]
                     embed_dim = self._current_prompt_embeds_shape[2]
-                
+
                 embed_dim = 2048  # Standard SDXL embedding dimension
                 pooled_dim = 1280  # Standard SDXL pooled dimension
-                
+
                 # Create zero embeddings (neutral)
                 dummy_embeds = torch.zeros((batch_size, seq_len, embed_dim), device=device, dtype=torch.float16 if device.type == 'cuda' else torch.float32)
                 dummy_pooled = torch.zeros((batch_size, pooled_dim), device=device, dtype=torch.float16 if device.type == 'cuda' else torch.float32)
-                
+
                 return dummy_embeds, None, dummy_pooled, None
         elif isinstance(prompt, str) and prompt.strip() == "":
             import torch
