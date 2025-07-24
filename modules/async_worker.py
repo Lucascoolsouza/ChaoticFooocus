@@ -109,11 +109,10 @@ class AsyncTask:
         self.tpg_scale = args.pop()
         self.tpg_applied_layers_index = args.pop()
         
-        # Pop metadata_scheme first, then save_metadata_to_images
-        metadata_scheme_value = args.pop() if not args_manager.args.disable_metadata else MetadataScheme.FOOOCUS.value
-        self.save_metadata_to_images = args.pop() if not args_manager.args.disable_metadata else False
-        self.metadata_scheme = MetadataScheme(metadata_scheme_value)
         self.save_final_enhanced_image_only = args.pop() if not args_manager.args.disable_image_log else False
+        self.save_metadata_to_images = args.pop() if not args_manager.args.disable_metadata else False
+        self.metadata_scheme = MetadataScheme(
+            args.pop()) if not args_manager.args.disable_metadata else MetadataScheme.FOOOCUS
 
         # Detail daemon parameters (popped in reverse order from webui.py)
         print(f"[DEBUG] Args remaining before detail daemon: {len(args)}")
