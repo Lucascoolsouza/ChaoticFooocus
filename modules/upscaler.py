@@ -6,7 +6,7 @@ import modules.core as core
 import torch
 from ldm_patched.contrib.external_upscale_model import ImageUpscaleWithModel
 from ldm_patched.pfn.architecture.RRDB import RRDBNet as ESRGAN
-from modules.config import downloading_upscale_model, downloading_ultrasharp_model, downloading_realistic_rescaler_model
+from modules.config import downloading_upscale_model, downloading_ultrasharp_model, downloading_realistic_rescaler_model, downloading_pixelsharpen_model
 import modules.flags
 from modules.seamless_tiling import process_seamless_enhancement
 
@@ -24,6 +24,7 @@ opImageUpscaleWithModel = ImageUpscaleWithModel()
 model_default = None
 model_ultrasharp = None
 model_realistic_rescaler = None
+model_pixelsharpen = None
 
 def perform_upscale_without_tiling(img, model_name, model_var, download_func, async_task=None, vae=None):
     global model_realistic_rescaler, model_ultrasharp
@@ -221,6 +222,9 @@ def perform_upscale(img, method, async_task=None, vae_model=None):
     elif method_lower == modules.flags.realistic_rescaler.casefold():
         print(f'[UPSCALER] Using Realistic Rescaler method')
         return perform_upscale_without_tiling(img, "Realistic Rescaler", [model_realistic_rescaler], downloading_realistic_rescaler_model, vae=vae_model)
+    elif method_lower == modules.flags.pixelsharpen.casefold():
+        print(f'[UPSCALER] Using PixelSharpen method')
+        return perform_upscale_without_tiling(img, "PixelSharpen", [model_pixelsharpen], downloading_pixelsharpen_model, vae=vae_model)
     elif method_lower == modules.flags.latent_upscale.casefold():
         print(f'[UPSCALER] Using Latent Upscale method')
         return perform_latent_upscale(img, async_task=async_task, vae_model=vae_model)

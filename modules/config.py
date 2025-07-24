@@ -985,6 +985,15 @@ def downloading_realistic_rescaler_model():
     return os.path.join(path_upscale_models, 'realistic_rescaler.pth')
 
 
+def downloading_pixelsharpen_model():
+    load_file_from_url(
+        url='https://huggingface.co/Pinguin/888-xl-diffusion-testmodel-v02-blue-star-sdxl-SAFETENSORS/resolve/main/1x_PixelSharpen_100000.pth',
+        model_dir=path_upscale_models,
+        file_name='1x_PixelSharpen_100000.pth'
+    )
+    return os.path.join(path_upscale_models, '1x_PixelSharpen_100000.pth')
+
+
 def downloading_safety_checker_model():
     load_file_from_url(
         url='https://huggingface.co/mashb1t/misc/resolve/main/stable-diffusion-safety-checker.bin',
