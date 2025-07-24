@@ -44,17 +44,24 @@ def safe_decode(latents, vae, width=512, height=512):
             decoded = torch.clamp((decoded + 1) * 0.5, 0, 1)
             decoded_np = (decoded[0].permute(1, 2, 0) * 255).cpu().numpy().astype(np.uint8)
             print(f"[safe_decode] ✅ Decode successful. Latents min: {latents.min():.4f}, max: {latents.max():.4f}, mean: {latents.mean():.4f}, std: {latents.std():.4f}")
-            return Image.fromarray(decoded_np, mode='RGB')
+            latents = latents.to(vae.device)
+            print(f"[safe_decode] Latents device: {latents.device}, dtype: {latents.dtype}")
+            decoded = vae.decode(latents)
+            print(f"[safe_decode] Decoded shape: {decoded.shape}, dtype: {decoded.dtype}")
 
-    except Exception as e:
-        print(f"[safe_decode] ❌ Decode failed: {e}. Latents shape: {latents.shape}, dtype: {latents.dtype}, device: {latents.device}")
-        if latents.numel() > 0:
-            print(f"[safe_decode] Latents min: {latents.min():.4f}, max: {latents.max():.4f}, mean: {latents.mean():.4f}, std: {latents.std():.4f}")
-        # Return error image
-        img = Image.new("RGB", (width, height), color="red")
-        draw = ImageDraw.Draw(img)
-        draw.text((10, 10), f"Decode Error", fill="white")
-        return img
+            if hasattr(vae, "post_quant_conv"):
+                vae.post_quant_conv = vae.post_quant_conv.to(decoded.device, decoded.dtype)
+                decoded = vae.post_quant_conv(decoded)
+            else:
+                decoded = decoded[:, :3] if decoded.size(1) >= 3 else decoded.mean(dim=1, keepdim=True).repeat(1, 3, 1, 1)
+
+            print(f"[safe_decode] Post-quant-conv shape: {decoded.shape}, dtype: {decoded.dtype}")
+            decoded = torch.clamp((decoded + 1) * 0.5, 0, 1)
+            print(f"[safe_decode] Clamped shape: {decoded.shape}, dtype: {decoded.dtype}")
+            decoded_np = (decoded[0].permute(1, 2, 0) * 255).cpu().numpy().astype(np.uint8)
+            print(f"[safe_decode] Final numpy shape: {decoded_np.shape}, dtype: {decoded_np.dtype}")
+            print(f"[safe_decode] ✅ Decode successful. Latents min: {latents.min():.4f}, max: {latents.max():.4f}, mean: {latents.mean():.4f}, std: {latents.std():.4f}")
+            return Image.fromarray(decoded_np, mode='RGB')
 
 
 
@@ -856,6 +863,14 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         latents = torch.clamp(latents, -3, 3)
         print(f"[NAG Pipeline] Latents clamped. Min: {latents.min():.4f}, Max: {latents.max():.4f}, Mean: {latents.mean():.4f}, Std: {latents.std():.4f}")
         
+        # Normalize latents to the expected VAE input range
+        latents = latents / latents.std() * 0.18215
+        print(f"[NAG Pipeline] Latents normalized. Min: {latents.min():.4f}, Max: {latents.max():.4f}, Mean: {latents.mean():.4f}, Std: {latents.std():.4f}")
+
+        # Ensure VAE is in evaluation mode and on the correct device
+        self.vae.eval()
+        self.vae.to(latents.device)
+
         final_image = safe_decode(latents, self.vae, width=width, height=height)
         self.maybe_free_model_hooks()
 
