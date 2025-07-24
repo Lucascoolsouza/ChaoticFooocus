@@ -910,7 +910,7 @@ class StableDiffusionXLTPGPipeline(
         prompt: Union[str, List[str]] = None,
         prompt_2: Optional[Union[str, List[str]]] = None,
         height: Optional[int] = None,
-        width: Optional[int] = None, # defaults to self.unet.model.config.sample_size * self.vae_scale_factor
+        width: Optional[int] = None, # defaults to self.unet.config.sample_size * self.vae_scale_factor):
         num_inference_steps: int = 50,
         timesteps: List[int] = None,
         denoising_end: Optional[float] = None,
