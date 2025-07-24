@@ -707,6 +707,21 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     print(f"[NAG DEBUG] prompt_embeds shape: {prompt_embeds.shape}")
                     print(f"[NAG DEBUG] comfy_kwargs keys: {list(comfy_kwargs.keys())}")
                     
+                    # Also ensure prompt_embeds batch size matches latent_model_input
+                    target_batch_size = latent_model_input.shape[0]
+                    if prompt_embeds.shape[0] != target_batch_size:
+                        print(f"[NAG DEBUG] Adjusting prompt_embeds batch size from {prompt_embeds.shape[0]} to {target_batch_size}")
+                        if prompt_embeds.shape[0] < target_batch_size:
+                            # Repeat to match target batch size
+                            repeat_factor = target_batch_size // prompt_embeds.shape[0]
+                            remainder = target_batch_size % prompt_embeds.shape[0]
+                            prompt_embeds = torch.cat([prompt_embeds.repeat(repeat_factor, 1, 1)] + 
+                                                    ([prompt_embeds[:remainder]] if remainder > 0 else []), dim=0)
+                        else:
+                            # Truncate to match target batch size
+                            prompt_embeds = prompt_embeds[:target_batch_size]
+                        print(f"[NAG DEBUG] Adjusted prompt_embeds shape: {prompt_embeds.shape}")
+                    
                     noise_pred = self.unet.model.apply_model(
                         latent_model_input,
                         t,
