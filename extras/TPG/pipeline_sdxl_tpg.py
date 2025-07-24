@@ -1111,9 +1111,6 @@ class StableDiffusionXLTPGPipeline(
         original_size = original_size or (height, width)
         target_size = target_size or (height, width)
 
-        # Ensure unet is on the correct device
-        self.unet.to(self._execution_device)
-
         # 1. Check inputs. Raise error if not correct
         self.check_inputs(
             prompt,
@@ -1335,6 +1332,10 @@ class StableDiffusionXLTPGPipeline(
                     latent_model_input = latents
 
                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+
+                # Ensure the underlying UNet model is on the correct device
+                if hasattr(self.unet, 'model') and isinstance(self.unet.model, torch.nn.Module):
+                    self.unet.model.to(device)
 
                 # predict the noise residual
                 added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
