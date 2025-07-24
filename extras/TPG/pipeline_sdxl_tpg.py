@@ -1337,15 +1337,79 @@ class StableDiffusionXLTPGPipeline(
                 added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
                 if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
                     added_cond_kwargs["image_embeds"] = image_embeds
-                noise_pred = self.unet.model.model(
-                    latent_model_input,
-                    t,
-                    encoder_hidden_states=prompt_embeds,
-                    timestep_cond=timestep_cond,
-                    cross_attention_kwargs=self.cross_attention_kwargs,
-                    added_cond_kwargs=added_cond_kwargs,
-                    return_dict=False,
-                )[0]
+                # Use ComfyUI model interface or standard Diffusers UNet
+                if hasattr(self.unet, 'model') and hasattr(self.unet.model, 'apply_model'):
+                    # ComfyUI wrapped model - convert Diffusers conditioning to ComfyUI format
+                    comfy_kwargs = {}
+                    if "text_embeds" in added_cond_kwargs and "time_ids" in added_cond_kwargs:
+                        pooled_output = added_cond_kwargs["text_embeds"]
+                        time_ids = added_cond_kwargs["time_ids"]
+
+                        target_batch_size = latent_model_input.shape[0]
+                        if pooled_output.shape[0] != target_batch_size:
+                            if pooled_output.shape[0] < target_batch_size:
+                                repeat_factor = target_batch_size // pooled_output.shape[0]
+                                remainder = target_batch_size % pooled_output.shape[0]
+                                pooled_output = torch.cat([pooled_output.repeat(repeat_factor, 1)] + 
+                                                        ([pooled_output[:remainder]] if remainder > 0 else []), dim=0)
+                            else:
+                                pooled_output = pooled_output[:target_batch_size]
+                        
+                        if time_ids.shape[0] != target_batch_size:
+                            if time_ids.shape[0] < target_batch_size:
+                                repeat_factor = target_batch_size // time_ids.shape[0]
+                                remainder = target_batch_size % time_ids.shape[0]
+                                time_ids = torch.cat([time_ids.repeat(repeat_factor, 1)] + 
+                                                   ([time_ids[:remainder]] if remainder > 0 else []), dim=0)
+                            else:
+                                time_ids = time_ids[:target_batch_size]
+                        
+                        if time_ids.shape[-1] >= 6:
+                            height = int(time_ids[0, 0].item())
+                            width = int(time_ids[0, 1].item())
+                            crop_h = int(time_ids[0, 2].item())
+                            crop_w = int(time_ids[0, 3].item())
+                            target_height = int(time_ids[0, 4].item())
+                            target_width = int(time_ids[0, 5].item())
+                            
+                            comfy_kwargs.update({
+                                "pooled_output": pooled_output,
+                                "width": width,
+                                "height": height,
+                                "crop_w": crop_w,
+                                "crop_h": crop_h,
+                                "target_width": target_width,
+                                "target_height": target_height,
+                                "device": latent_model_input.device,
+                            })
+                    
+                    target_batch_size = latent_model_input.shape[0]
+                    if prompt_embeds.shape[0] != target_batch_size:
+                        if prompt_embeds.shape[0] < target_batch_size:
+                            repeat_factor = target_batch_size // prompt_embeds.shape[0]
+                            remainder = target_batch_size % prompt_embeds.shape[0]
+                            prompt_embeds = torch.cat([prompt_embeds.repeat(repeat_factor, 1, 1)] + 
+                                                    ([prompt_embeds[:remainder]] if remainder > 0 else []), dim=0)
+                        else:
+                            prompt_embeds = prompt_embeds[:target_batch_size]
+                    
+                    noise_pred = self.unet.model.apply_model(
+                        latent_model_input,
+                        t,
+                        c_crossattn=prompt_embeds,
+                        **comfy_kwargs,
+                    )
+                else:
+                    # Standard Diffusers UNet
+                    noise_pred = self.unet(
+                        latent_model_input,
+                        t,
+                        encoder_hidden_states=prompt_embeds,
+                        timestep_cond=timestep_cond,
+                        cross_attention_kwargs=self.cross_attention_kwargs,
+                        added_cond_kwargs=added_cond_kwargs,
+                        return_dict=False,
+                    )[0]
 
                 # perform guidance
                 # cfg
