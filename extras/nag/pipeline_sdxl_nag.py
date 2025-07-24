@@ -35,16 +35,33 @@ def safe_decode(latents, vae, width=512, height=512):
             latents = latents.to(vae.device)
             print(f"[safe_decode] Latents device: {latents.device}, dtype: {latents.dtype}")
             
+            # Determine scaling factor
+            scaling_factor = 0.18215  # Default SDXL scaling factor
+            if hasattr(vae, 'config') and hasattr(vae.config, 'scaling_factor'):
+                scaling_factor = vae.config.scaling_factor
+            elif hasattr(vae, 'model') and hasattr(vae.model, 'config') and hasattr(vae.model.config, 'scaling_factor'):
+                scaling_factor = vae.model.config.scaling_factor
+            print(f"[safe_decode] Using scaling factor: {scaling_factor}")
+            
+            # Scale latents
+            scaled_latents = latents / scaling_factor
+            
             # Handle different VAE interfaces
             if hasattr(vae, 'decode') and callable(vae.decode):
                 # Standard diffusers VAE
-                decoded = vae.decode(latents / vae.config.scaling_factor, return_dict=False)[0]
+                try:
+                    decoded = vae.decode(scaled_latents, return_dict=False)[0]
+                except:
+                    # Fallback without return_dict
+                    decoded = vae.decode(scaled_latents)
+                    if hasattr(decoded, 'sample'):
+                        decoded = decoded.sample
             elif hasattr(vae, 'model') and hasattr(vae.model, 'decode'):
                 # ComfyUI wrapped VAE
-                decoded = vae.model.decode(latents)
+                decoded = vae.model.decode(scaled_latents)
             else:
                 # Fallback direct call
-                decoded = vae.decode(latents)
+                decoded = vae.decode(scaled_latents)
             
             print(f"[safe_decode] Decoded shape: {decoded.shape}, dtype: {decoded.dtype}")
 
