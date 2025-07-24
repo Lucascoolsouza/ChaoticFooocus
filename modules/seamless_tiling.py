@@ -180,27 +180,43 @@ def make_seamless_tiling_advanced(image, method='blend', tile_size=None, overlap
         return Image.fromarray(seamless_img)
     
     elif method == 'offset':
-        # Offset and patch seams
+        # Offset method - shift image by half and blend at the seams
         offset_x = width // 2
         offset_y = height // 2
         
         # Create offset version
         offset_img = np.roll(img_array, (offset_y, offset_x), axis=(0, 1))
         
-        # Create a mask for blending
-        mask = np.zeros_like(img_array, dtype=np.float32)
-        
+        # Create a mask for blending.
+        if len(img_array.shape) == 2:
+            mask = np.zeros((height, width), dtype=np.float32)
+        else:
+            mask = np.zeros_like(img_array, dtype=np.float32)
+
         overlap_x = int(width * overlap_ratio)
         overlap_y = int(height * overlap_ratio)
-        
-        # Create horizontal and vertical blending gradients
-        blend_x = np.linspace(0, 1, overlap_x)
-        blend_y = np.linspace(0, 1, overlap_y)
-        
-        # Apply gradients to the mask
-        mask[offset_y - overlap_y//2 : offset_y + overlap_y//2, :] *= blend_y[:, np.newaxis, np.newaxis]
-        mask[:, offset_x - overlap_x//2 : offset_x + overlap_x//2] *= blend_x[np.newaxis, :, np.newaxis]
-        
+
+        # Vertical seam
+        y_slice = slice(offset_y - overlap_y // 2, offset_y + overlap_y // 2)
+        v_seam_height = y_slice.stop - y_slice.start
+        if v_seam_height > 0:
+            blend_y = np.linspace(0, 1, v_seam_height)
+            if mask.ndim == 3:
+                mask[y_slice, :] = blend_y[:, np.newaxis, np.newaxis]
+            else:
+                mask[y_slice, :] = blend_y[:, np.newaxis]
+
+        # Horizontal seam
+        x_slice = slice(offset_x - overlap_x // 2, offset_x + overlap_x // 2)
+        h_seam_width = x_slice.stop - x_slice.start
+        if h_seam_width > 0:
+            blend_x = np.linspace(0, 1, h_seam_width)
+            if mask.ndim == 3:
+                # Combine with vertical seam using maximum
+                mask[:, x_slice] = np.maximum(mask[:, x_slice], blend_x[np.newaxis, :, np.newaxis])
+            else:
+                mask[:, x_slice] = np.maximum(mask[:, x_slice], blend_x[np.newaxis, :])
+
         # Blend the original and offset images
         seamless_img = (img_array * (1 - mask) + offset_img * mask).astype(img_array.dtype)
         
