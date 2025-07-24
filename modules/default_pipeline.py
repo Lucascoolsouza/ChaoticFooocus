@@ -795,12 +795,18 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             nag_end=nag_end,
             callback_on_step_end=nag_pipe_callback,
             callback_on_step_end_tensor_inputs=["latents"],
+            return_dict=False,
             )
         
         print("[NAG] Using NAG pipeline for generation")
         
         # ---------- after NAG pipeline call ----------
-        if isinstance(output, Image.Image):
+        # NAG pipeline returns a tuple with latents when return_dict=False
+        if isinstance(output, tuple):
+            latents = output[0]  # Extract latents from tuple
+            latent_dict = {'samples': latents}
+            imgs = core.pytorch_to_numpy(core.decode_vae(target_vae, latent_dict))
+        elif isinstance(output, Image.Image):
             # already decoded → convert to numpy HWC uint8 for Fooocus
             imgs = [np.asarray(output.convert("RGB"), dtype=np.uint8)] # skip decode & pytorch_to_numpy
         elif isinstance(output, np.ndarray) and output.ndim == 3:

@@ -711,12 +711,16 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 if XLA_AVAILABLE:
                     xm.mark_step()
 
+        # For Fooocus integration, we need to return the latents, not decoded images
+        # The Fooocus pipeline will handle the decoding itself
+        if not return_dict:
+            # Return latents for Fooocus processing
+            return (latents,)
+        
+        # For other use cases, decode and return images
         final_image = safe_decode(latents, self.vae, width=width, height=height)
         self.maybe_free_model_hooks()
 
-        # Always return the PIL image(s) when used as a Gradio callback
         print("Returning:", type(final_image), final_image.size if hasattr(final_image, 'size') else "-")
-        if return_dict is False:               # Gradio uses return_dict=False
-            return (final_image,)              # Gradio expects a tuple
         return StableDiffusionXLPipelineOutput(images=[final_image])
 
