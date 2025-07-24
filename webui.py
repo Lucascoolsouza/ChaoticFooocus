@@ -743,6 +743,8 @@ with shared.gradio_root:
                                                   value=0.8, info='End position for detail enhancement')
                     detail_daemon_bias = gr.Slider(label='Bias', minimum=0.0, maximum=1.0, step=0.01,
                                                    value=0.71, info='Bias for detail enhancement')
+                    detail_daemon_base_multiplier = gr.Slider(label='Base Multiplier (Sigma)', minimum=0.1, maximum=1.0, step=0.01,
+                                                             value=0.85, info='Base sigma multiplier for detail enhancement')
                     
                     # Advanced parameters
                     with gr.Accordion(label='More Knobs', open=False):
@@ -763,13 +765,13 @@ with shared.gradio_root:
                     
                     detail_daemon_status = gr.Textbox(label='Status', interactive=False, value='Detail Daemon: Disabled, Amount: 0.25')
                     
-                    def update_detail_daemon_settings_ui(enabled, amount, start, end, bias, start_offset, end_offset, exponent, fade, mode, smooth):
+                    def update_detail_daemon_settings_ui(enabled, amount, start, end, bias, base_multiplier, start_offset, end_offset, exponent, fade, mode, smooth):
                         from modules.detail_daemon import update_detail_daemon_settings
-                        return update_detail_daemon_settings(enabled, amount, start, end, bias, start_offset, end_offset, exponent, fade, mode, smooth)
+                        return update_detail_daemon_settings(enabled, amount, start, end, bias, base_multiplier, start_offset, end_offset, exponent, fade, mode, smooth)
                     
                     # Update on any parameter change
                     detail_inputs = [detail_daemon_enabled, detail_daemon_amount, detail_daemon_start, detail_daemon_end, 
-                                   detail_daemon_bias, detail_daemon_start_offset, detail_daemon_end_offset, 
+                                   detail_daemon_bias, detail_daemon_base_multiplier, detail_daemon_start_offset, detail_daemon_end_offset, 
                                    detail_daemon_exponent, detail_daemon_fade, detail_daemon_mode, detail_daemon_smooth]
                     
                     for input_component in detail_inputs:
@@ -1104,7 +1106,7 @@ with shared.gradio_root:
             ctrls += [save_metadata_to_images, metadata_scheme]
             
         ctrls += [detail_daemon_enabled, detail_daemon_amount, detail_daemon_start, detail_daemon_end, 
-                  detail_daemon_bias, detail_daemon_start_offset, detail_daemon_end_offset, 
+                  detail_daemon_bias, detail_daemon_base_multiplier, detail_daemon_start_offset, detail_daemon_end_offset, 
                   detail_daemon_exponent, detail_daemon_fade, detail_daemon_mode, detail_daemon_smooth]
 
         ctrls += ip_ctrls

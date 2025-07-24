@@ -89,6 +89,7 @@ class DetailDaemon:
         self.start = 0.2
         self.end = 0.8
         self.bias = 0.71
+        self.base_multiplier = 0.85
         self.start_offset = 0
         self.end_offset = -0.15
         self.exponent = 1
@@ -116,7 +117,7 @@ class DetailDaemon:
 # Create a global instance
 detail_daemon = DetailDaemon()
 
-def update_detail_daemon_settings(enabled, detail_amount, start, end, bias, 
+def update_detail_daemon_settings(enabled, detail_amount, start, end, bias, base_multiplier,
                                  start_offset, end_offset, exponent, fade, mode, smooth):
     """Update the detail daemon settings"""
     detail_daemon.enabled = enabled
@@ -124,6 +125,7 @@ def update_detail_daemon_settings(enabled, detail_amount, start, end, bias,
     detail_daemon.start = start
     detail_daemon.end = end
     detail_daemon.bias = bias
+    detail_daemon.base_multiplier = base_multiplier
     detail_daemon.start_offset = start_offset
     detail_daemon.end_offset = end_offset
     detail_daemon.exponent = exponent
