@@ -234,4 +234,66 @@ input[type='radio'] {
     .generate_button {
         width: 100%;
     }
+<<<<<<< HEAD
+<<<<<<< HEAD
+}
+
+/* Lightbox Modal Styles */
+#lightboxModal {
+    display: none; /* Hidden by default */
+    position: fixed; /* Stay in place */
+    z-index: 9999; /* Sit on top */
+    left: 0;
+    top: 0;
+    width: 100%; /* Full width */
+    height: 100%; /* Full height */
+    overflow: auto; /* Enable scroll if needed */
+    background-color: rgba(0, 0, 0, 0.9); /* Black w/ opacity */
+    align-items: center;
+    justify-content: center;
+}
+
+#lightboxModal img {
+    margin: auto;
+    display: block;
+    max-width: 90%;
+    max-height: 90%;
+}
+
+.modalControls {
+    position: absolute;
+    top: 15px;
+    width: 100%;
+    text-align: center;
+    color: white;
+    font-size: 2em;
+}
+
+.modalControls span {
+    cursor: pointer;
+    padding: 0 10px;
+}
+
+/* Easter Egg: Trans Flag Emoji */
+.gradio-container {
+    position: relative; /* Needed for absolute positioning of the pseudo-element */
+}
+
+.gradio-container::after {
+    content: "🏳️‍⚧️"; /* Transgender flag emoji */
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    font-size: 2em; /* Make it visible */
+    opacity: 0; /* Hidden by default */
+    transition: opacity 0.3s ease-in-out; /* Smooth transition */
+    pointer-events: none; /* Allow clicks through */
+}
+
+.gradio-container:hover::after {
+    opacity: 1; /* Show on hover */
+=======
+>>>>>>> parent of 8974369 (ui solving)
+=======
+>>>>>>> parent of 8974369 (ui solving)
 }
