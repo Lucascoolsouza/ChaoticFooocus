@@ -16,6 +16,7 @@ from ldm_patched.modules.model_base import SDXL, SDXLRefiner
 from modules.sample_hijack import clip_separate
 from modules.util import get_file_from_folder_list, get_enabled_loras
 from extras.nag.pipeline_sdxl_nag import NAGStableDiffusionXLPipeline, safe_decode
+from extras.Token_Perturbation_Guidance_main.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
 
 
 model_base = core.StableDiffusionModel()
@@ -336,7 +337,7 @@ def get_candidate_vae(steps, switch, denoise=1.0, refiner_swap_method='joint'):
 
 @torch.no_grad()
 @torch.inference_mode()
-def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, nag_scale=1.0, nag_tau=2.5, nag_alpha=0.5, nag_negative_prompt=None, nag_end=1.0, original_prompt=None, original_negative_prompt=None, detail_daemon_enabled=False, detail_daemon_amount=0.25, detail_daemon_start=0.2, detail_daemon_end=0.8, detail_daemon_bias=0.71, detail_daemon_base_multiplier=0.85, detail_daemon_start_offset=0, detail_daemon_end_offset=-0.15, detail_daemon_exponent=1, detail_daemon_fade=0, detail_daemon_mode='both', detail_daemon_smooth=True):
+def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, nag_scale=1.0, nag_tau=2.5, nag_alpha=0.5, nag_negative_prompt=None, nag_end=1.0, original_prompt=None, original_negative_prompt=None, detail_daemon_enabled=False, detail_daemon_amount=0.25, detail_daemon_start=0.2, detail_daemon_end=0.8, detail_daemon_bias=0.71, detail_daemon_base_multiplier=0.85, detail_daemon_start_offset=0, detail_daemon_end_offset=-0.15, detail_daemon_exponent=1, detail_daemon_fade=0, detail_daemon_mode='both', detail_daemon_smooth=True, tpg_enabled=False, tpg_scale=3.0, tpg_applied_layers_index=None):
     if steps == 0:
         # If steps is 0, no diffusion is performed. Return the initial latent or an empty list.
         if latent is not None:
@@ -441,20 +442,30 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
 
     decoded_latent = None
 
-    final_nag_negative_prompt = "" # Initialize to empty string
-    if nag_scale > 1.0:
-        print(f"[NAG] NAG is active with nag_scale={nag_scale}, nag_tau={nag_tau}, nag_alpha={nag_alpha}, nag_negative_prompt='{nag_negative_prompt}', nag_end={nag_end}")
-        # Use nag_negative_prompt if provided, otherwise use the extracted negative_prompt_str
-        if nag_negative_prompt is not None and nag_negative_prompt.strip() != "":
-            final_nag_negative_prompt = nag_negative_prompt.strip()
-            print(f"[NAG] Using provided NAG negative prompt: '{final_nag_negative_prompt}'")
-        elif original_negative_prompt is not None and original_negative_prompt.strip() != "":
-            final_nag_negative_prompt = original_negative_prompt.strip()
-            print(f"[NAG] Using original negative prompt for NAG: '{final_nag_negative_prompt}'")
+    if nag_scale > 1.0 or tpg_enabled:
+        if tpg_enabled:
+            print(f"[TPG] TPG is active with tpg_scale={tpg_scale}, tpg_applied_layers_index={tpg_applied_layers_index}")
+            if isinstance(tpg_applied_layers_index, str):
+                tpg_applied_layers_index = [s.strip() for s in tpg_applied_layers_index.split(',') if s.strip()]
+            else:
+                tpg_applied_layers_index = [] # Ensure it's a list if not a string
+
+        if nag_scale > 1.0:
+            print(f"[NAG] NAG is active with nag_scale={nag_scale}, nag_tau={nag_tau}, nag_alpha={nag_alpha}, nag_negative_prompt='{nag_negative_prompt}', nag_end={nag_end}")
+            # Use nag_negative_prompt if provided, otherwise use the extracted negative_prompt_str
+            if nag_negative_prompt is not None and nag_negative_prompt.strip() != "":
+                final_nag_negative_prompt = nag_negative_prompt.strip()
+                print(f"[NAG] Using provided NAG negative prompt: '{final_nag_negative_prompt}'")
+            elif original_negative_prompt is not None and original_negative_prompt.strip() != "":
+                final_nag_negative_prompt = original_negative_prompt.strip()
+                print(f"[NAG] Using original negative prompt for NAG: '{final_nag_negative_prompt}'")
+            else:
+                # If no negative prompt is available, use a default strong negative prompt for NAG
+                final_nag_negative_prompt = "blurry, low quality, distorted, deformed, ugly, bad anatomy, worst quality"
+                print(f"[NAG] Using default NAG negative prompt: '{final_nag_negative_prompt}'")
         else:
-            # If no negative prompt is available, use a default strong negative prompt for NAG
-            final_nag_negative_prompt = "blurry, low quality, distorted, deformed, ugly, bad anatomy, worst quality"
-            print(f"[NAG] Using default NAG negative prompt: '{final_nag_negative_prompt}'")
+            final_nag_negative_prompt = None # Ensure it's None if NAG is not active
+
         # Dynamically add a 'config' attribute to model_base.vae if it doesn't exist
         if not hasattr(model_base.vae, 'config'):
             class VAEConfig:
@@ -735,9 +746,16 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         tokenizer_l_on_device = add_tokenizer_compatibility(tokenizer_l_on_device)
         tokenizer_g_on_device = add_tokenizer_compatibility(tokenizer_g_on_device)
 
+        # Select pipeline based on TPG enabled
+        if tpg_enabled:
+            pipe_class = StableDiffusionXLTPGPipeline
+            print("[TPG] Using StableDiffusionXLTPGPipeline")
+        else:
+            pipe_class = NAGStableDiffusionXLPipeline
+            print("[NAG] Using NAGStableDiffusionXLPipeline")
 
-        # Instantiate NAGStableDiffusionXLPipeline with the components on the correct device
-        nag_pipe = NAGStableDiffusionXLPipeline(
+        # Instantiate the selected pipeline with the components on the correct device
+        pipe = pipe_class(
             vae=vae_on_device,
             text_encoder=text_encoder_l_on_device,
             text_encoder_2=text_encoder_g_on_device,
@@ -746,12 +764,10 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             unet=unet_on_device,
             scheduler=scheduler_on_device
         )
-        print(f"NAG pipeline instantiated. Its internal device should now be correctly set.")
+        print(f"Pipeline instantiated. Its internal device should now be correctly set.")
         
-        
-
         # Define a wrapper for the callback to decode latents for preview
-        def nag_pipe_callback(pipe, step, timestep, callback_kwargs):
+        def pipe_callback(pipe, step, timestep, callback_kwargs):
             import numpy as np # Added import for numpy
             if callback is not None and not disable_preview:
                 latents_for_preview = callback_kwargs["latents"]
@@ -774,34 +790,49 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 callback(step, preview_np, latents_for_preview, steps, decoded_latents_tensor)
                 return {"latents": latents_for_preview}
 
-        # Call the NAG pipeline
-        output = nag_pipe(
-            prompt=original_prompt,
-            negative_prompt=original_negative_prompt,
-            prompt_embeds=prompt_embeds,
-            pooled_prompt_embeds=pooled_prompt_embeds,
-            negative_prompt_embeds=negative_prompt_embeds,
-            negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
-            height=height,
-            width=width,
-            num_inference_steps=steps,
-            guidance_scale=cfg_scale,
-            generator=torch.Generator(device="cpu").manual_seed(image_seed),
-            latents=initial_latent["samples"],
-            nag_scale=nag_scale,
-            nag_tau=nag_tau,
-            nag_alpha=nag_alpha,
-            nag_negative_prompt=final_nag_negative_prompt,
-            nag_end=nag_end,
-            callback_on_step_end=nag_pipe_callback,
-            callback_on_step_end_tensor_inputs=["latents"],
-            return_dict=False,
-            )
+        # Prepare common pipeline arguments
+        pipeline_args = {
+            "prompt": original_prompt,
+            "negative_prompt": original_negative_prompt,
+            "prompt_embeds": prompt_embeds,
+            "pooled_prompt_embeds": pooled_prompt_embeds,
+            "negative_prompt_embeds": negative_prompt_embeds,
+            "negative_pooled_prompt_embeds": negative_pooled_prompt_embeds,
+            "height": height,
+            "width": width,
+            "num_inference_steps": steps,
+            "guidance_scale": cfg_scale,
+            "generator": torch.Generator(device="cpu").manual_seed(image_seed),
+            "latents": initial_latent["samples"],
+            "callback_on_step_end": pipe_callback,
+            "callback_on_step_end_tensor_inputs": ["latents"],
+            "return_dict": False,
+        }
+
+        # Add NAG specific arguments if NAG is enabled
+        if nag_scale > 1.0:
+            pipeline_args.update({
+                "nag_scale": nag_scale,
+                "nag_tau": nag_tau,
+                "nag_alpha": nag_alpha,
+                "nag_negative_prompt": final_nag_negative_prompt,
+                "nag_end": nag_end,
+            })
+
+        # Add TPG specific arguments if TPG is enabled
+        if tpg_enabled:
+            pipeline_args.update({
+                "tpg_scale": tpg_scale,
+                "tpg_applied_layers_index": tpg_applied_layers_index,
+            })
+
+        # Call the selected pipeline
+        output = pipe(**pipeline_args)
         
-        print("[NAG] Using NAG pipeline for generation")
+        print(f"Using {'TPG' if tpg_enabled else 'NAG'} pipeline for generation")
         
-        # ---------- after NAG pipeline call ----------
-        # NAG pipeline returns a tuple with latents when return_dict=False
+        # ---------- after pipeline call ----------
+        # Pipeline returns a tuple with latents when return_dict=False
         if isinstance(output, tuple):
             latents = output[0]  # Extract latents from tuple
             latent_dict = {'samples': latents}
@@ -820,7 +851,39 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         
         print("Final deliverable:", type(imgs[0]), getattr(imgs[0], 'size', '-'))
         
-        # Skip the regular ksampler since we used NAG pipeline
+        # Skip the regular ksampler since we used NAG/TPG pipeline
+    else:
+        imgs = core.ksampler(
+            model=final_unet,
+            positive=positive_cond,
+            negative=negative_cond,
+            latent=initial_latent,
+            seed=image_seed,
+            steps=steps,
+            cfg=cfg_scale,
+            sampler_name=sampler_name,
+            scheduler=scheduler_name,
+            denoise=denoise,
+            disable_preview=disable_preview,
+            refiner=final_refiner_unet,
+            refiner_switch=switch,
+            sigmas=minmax_sigmas,
+            callback_function=callback
+        )['samples']
+        
+        # Convert latents to images
+        if imgs is not None:
+            latent_dict = {'samples': imgs}
+            imgs = core.decode_vae(target_vae, latent_dict)
+            
+            # Detail daemon is now applied via sigma manipulation during sampling
+            
+            # Convert to numpy arrays for saving
+            return core.pytorch_to_numpy(imgs)
+        
+        return []
+    
+    return imgs
     else:
         imgs = core.ksampler(
             model=final_unet,

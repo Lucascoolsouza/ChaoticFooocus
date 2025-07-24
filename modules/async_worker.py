@@ -103,6 +103,10 @@ class AsyncTask:
         self.nag_alpha = args.pop()
         self.nag_negative_prompt = args.pop()
         self.nag_end = args.pop()
+
+        self.tpg_enabled = args.pop()
+        self.tpg_scale = args.pop()
+        self.tpg_applied_layers_index = args.pop()
         
         self.save_final_enhanced_image_only = args.pop() if not args_manager.args.disable_image_log else False
         self.save_metadata_to_images = args.pop() if not args_manager.args.disable_metadata else False
@@ -234,6 +238,7 @@ def worker():
     import extras.ip_adapter as ip_adapter
     import extras.face_crop
     import fooocus_version
+    from extras.Token_Perturbation_Guidance_main.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
 
     from extras.censor import default_censor
     from modules.sdxl_styles import apply_style, get_random_style, fooocus_expansion, apply_arrays, random_style_name
@@ -363,6 +368,9 @@ def worker():
             nag_alpha=async_task.nag_alpha,
             nag_negative_prompt=async_task.nag_negative_prompt,
             nag_end=async_task.nag_end,
+            tpg_enabled=async_task.tpg_enabled,
+            tpg_scale=async_task.tpg_scale,
+            tpg_applied_layers_index=async_task.tpg_applied_layers_index,
             detail_daemon_enabled=async_task.detail_daemon_enabled,
             detail_daemon_amount=async_task.detail_daemon_amount,
             detail_daemon_start=async_task.detail_daemon_start,

@@ -18,6 +18,7 @@ import copy
 import launch
 from extras.inpaint_mask import SAMOptions
 from extras.nag import NAGStableDiffusionXLPipeline
+from extras.Token_Perturbation_Guidance_main.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
 
 from modules.sdxl_styles import legal_style_names
 from modules.private_logger import get_current_html_path
@@ -991,6 +992,15 @@ with shared.gradio_root:
                         nag_end = gr.Slider(label='NAG End At Step', minimum=0.0, maximum=1.0, step=0.01, value=1.0,
                                             info='When to end NAG guidance (0.0 to 1.0 of total steps).')
                         nag_ctrls = [nag_scale, nag_tau, nag_alpha, nag_negative_prompt, nag_end]
+                    with gr.Tab(label='TPG'):
+                        tpg_enabled = gr.Checkbox(label='Enable Token Perturbation Guidance', value=False,
+                                                  info='Enables Token Perturbation Guidance.')
+                        tpg_scale = gr.Slider(label='TPG Scale', minimum=0.0, maximum=10.0, step=0.1, value=3.0,
+                                              info='Controls the strength of Token Perturbation Guidance.')
+                        tpg_applied_layers_index = gr.Textbox(label='TPG Applied Layers Index', show_label=True,
+                                                              placeholder="e.g., d6,d7,d8,d9,d10,d11,d12,d13,d14,d15,d16,d17,d18,d19,d20,d21,d22,d23", lines=1,
+                                                              info='Comma-separated list of layers to apply TPG. d=down, m=mid, u=up. e.g., d6,d7,m0,u0')
+                        tpg_ctrls = [tpg_enabled, tpg_scale, tpg_applied_layers_index]
 
                 def dev_mode_checked(r):
                     return gr.update(visible=r)
@@ -1125,6 +1135,7 @@ with shared.gradio_root:
         ctrls += freeu_ctrls
         ctrls += inpaint_ctrls
         ctrls += nag_ctrls
+        ctrls += tpg_ctrls
         
         if not args_manager.args.disable_image_log:
             ctrls += [save_final_enhanced_image_only]
