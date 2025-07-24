@@ -1021,7 +1021,7 @@ def worker():
         uov_input_image = HWC3(uov_input_image)
         if 'vary' in uov_method:
             goals.append('vary')
-        elif 'upscale' in uov_method or 'ultrasharp' in uov_method or 'web photo' in uov_method or 'realistic rescaler' in uov_method or 'skin contrast' in uov_method or '4xnomos' in uov_method or 'faces' in uov_method:
+        elif 'upscale' in uov_method or 'ultrasharp' in uov_method or 'web photo' in uov_method or 'realistic rescaler' in uov_method or 'skin contrast' in uov_method or '4xnomos' in uov_method or 'faces' in uov_method or 'pixelsharpen' in uov_method:
             goals.append('upscale')
             if 'fast' in uov_method:
                 skip_prompt_processing = True
