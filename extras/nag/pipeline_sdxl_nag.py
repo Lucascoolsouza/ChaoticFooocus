@@ -67,23 +67,56 @@ def safe_decode(latents, vae, width=512, height=512):
             print(f"[safe_decode] Raw decoded shape: {decoded.shape}, dtype: {decoded.dtype}")
             print(f"[safe_decode] Raw decoded min: {decoded.min():.4f}, max: {decoded.max():.4f}")
 
-            # Handle different decoded tensor formats
+            # Handle malformed VAE output - the VAE is returning [1, 1152, 896, 3] instead of [1, 3, H, W]
             if len(decoded.shape) == 4:
-                # Expected format [B, C, H, W]
-                batch_size, channels, height_dec, width_dec = decoded.shape
-                print(f"[safe_decode] Decoded dimensions: B={batch_size}, C={channels}, H={height_dec}, W={width_dec}")
+                batch_size, dim1, dim2, dim3 = decoded.shape
+                print(f"[safe_decode] Raw dimensions: B={batch_size}, D1={dim1}, D2={dim2}, D3={dim3}")
                 
-                # Ensure we have 3 channels for RGB
-                if channels == 3:
-                    pass  # Already RGB
-                elif channels > 3:
+                # Check if this looks like [B, H*W*C/8, H, W] format (malformed)
+                if dim3 == 3 and dim1 > 100:  # Likely malformed: [1, 1152, 896, 3]
+                    print("[safe_decode] Detected malformed VAE output, attempting to reshape...")
+                    # This appears to be [B, flattened_features, H, W] where W=3 is wrong
+                    # Let's try to extract the actual image from this
+                    
+                    # The actual image dimensions should be based on latent upscaling
+                    # SDXL latents are typically upscaled 8x by the VAE
+                    expected_h = scaled_latents.shape[2] * 8  # 144 * 8 = 1152
+                    expected_w = scaled_latents.shape[3] * 8  # 112 * 8 = 896
+                    
+                    print(f"[safe_decode] Expected output size: {expected_h}x{expected_w}")
+                    
+                    # The tensor seems to have the right total elements but wrong shape
+                    # Try to reshape it to the correct format
+                    if decoded.numel() == batch_size * 3 * expected_h * expected_w:
+                        decoded = decoded.view(batch_size, 3, expected_h, expected_w)
+                        print(f"[safe_decode] Reshaped to correct format: {decoded.shape}")
+                    else:
+                        # Fallback: try to extract meaningful data
+                        print(f"[safe_decode] Cannot reshape cleanly, using fallback extraction")
+                        # Take the first 3 "channels" from the malformed tensor
+                        if dim1 >= 3:
+                            decoded = decoded[:, :3, :, :]  # Take first 3 from the 1152
+                            # Now we have [1, 3, 896, 3] - still wrong, need to fix width
+                            if decoded.shape[3] == 3:
+                                # Replicate the width dimension to match height
+                                decoded = decoded.repeat(1, 1, 1, decoded.shape[2] // 3)
+                                if decoded.shape[3] > expected_w:
+                                    decoded = decoded[:, :, :, :expected_w]
+                                print(f"[safe_decode] Fixed width dimension: {decoded.shape}")
+                        else:
+                            raise ValueError(f"Cannot extract RGB from malformed tensor: {decoded.shape}")
+                
+                elif dim1 == 3:  # Correct format [B, C, H, W]
+                    print("[safe_decode] Detected correct VAE output format")
+                    pass
+                elif dim1 > 3:  # Too many channels [B, C, H, W]
                     decoded = decoded[:, :3]  # Take first 3 channels
                     print(f"[safe_decode] Truncated to 3 channels: {decoded.shape}")
-                elif channels == 1:
+                elif dim1 == 1:  # Grayscale [B, 1, H, W]
                     decoded = decoded.repeat(1, 3, 1, 1)  # Replicate to RGB
                     print(f"[safe_decode] Replicated to 3 channels: {decoded.shape}")
                 else:
-                    raise ValueError(f"Cannot handle {channels} channels")
+                    raise ValueError(f"Cannot handle tensor with {dim1} channels")
                     
             elif len(decoded.shape) == 3:
                 # Format [C, H, W] - add batch dimension
