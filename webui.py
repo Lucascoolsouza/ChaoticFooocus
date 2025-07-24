@@ -18,6 +18,7 @@ import copy
 import launch
 from extras.inpaint_mask import SAMOptions
 from extras.nag import NAGStableDiffusionXLPipeline
+import extras.detail_daemon
 
 from modules.sdxl_styles import legal_style_names
 from modules.private_logger import get_current_html_path
@@ -733,6 +734,18 @@ with shared.gradio_root:
                                       info='Higher value means image and texture are sharper.')
                 gr.HTML('<a href="https://github.com/lllyasviel/Fooocus/discussions/117" target="_blank">\U0001F4D4 Documentation</a>')
                 dev_mode = gr.Checkbox(label='Developer Debug Mode', value=modules.config.default_developer_debug_mode_checkbox, container=False)
+
+                # --- Detail Daemon Integration ---
+                detail_daemon_script = extras.detail_daemon.Script()
+                detail_daemon_ui = detail_daemon_script.ui(is_img2img=False)
+                # Place the Detail Daemon UI at the bottom of the Advanced tab
+                # (gradio components can be added as a list)
+                if isinstance(detail_daemon_ui, list):
+                    for comp in detail_daemon_ui:
+                        comp.render()
+                else:
+                    detail_daemon_ui.render()
+                # --- End Detail Daemon Integration ---
 
                 with gr.Column(visible=modules.config.default_developer_debug_mode_checkbox) as dev_tools:
                     with gr.Tab(label='Debug Tools'):
