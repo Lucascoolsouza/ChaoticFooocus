@@ -1061,6 +1061,13 @@ with shared.gradio_root:
         ctrls += inpaint_ctrls
         ctrls += nag_ctrls
 
+        # --- Detail Daemon Integration ---
+        if isinstance(detail_daemon_ui, list):
+            ctrls += detail_daemon_ui
+        else:
+            ctrls.append(detail_daemon_ui)
+        # --- End Detail Daemon Integration ---
+
         if not args_manager.args.disable_image_log:
             ctrls += [save_final_enhanced_image_only]
 

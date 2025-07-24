@@ -168,6 +168,20 @@ class AsyncTask:
         self.images_to_enhance_count = 0
         self.enhance_stats = {}
 
+        # --- Detail Daemon Integration ---
+        self.dd_enabled = args.pop()
+        self.dd_mode = args.pop()
+        self.dd_start = args.pop()
+        self.dd_end = args.pop()
+        self.dd_bias = args.pop()
+        self.dd_amount = args.pop()
+        self.dd_exponent = args.pop()
+        self.dd_start_offset = args.pop()
+        self.dd_end_offset = args.pop()
+        self.dd_fade = args.pop()
+        self.dd_smooth = args.pop()
+        # --- End Detail Daemon Integration ---
+
 async_tasks = []
 
 
@@ -1142,6 +1156,25 @@ def worker():
     def handler(async_task: AsyncTask):
         preparation_start_time = time.perf_counter()
         async_task.processing = True
+
+        # --- Detail Daemon Integration ---
+        if hasattr(async_task, 'dd_enabled') and async_task.dd_enabled:
+            dd_script = extras.detail_daemon.Script()
+            dd_script.process(
+                async_task,
+                async_task.dd_enabled,
+                async_task.dd_mode,
+                async_task.dd_start,
+                async_task.dd_end,
+                async_task.dd_bias,
+                async_task.dd_amount,
+                async_task.dd_exponent,
+                async_task.dd_start_offset,
+                async_task.dd_end_offset,
+                async_task.dd_fade,
+                async_task.dd_smooth
+            )
+        # --- End Detail Daemon Integration ---
 
         async_task.outpaint_selections = [o.lower() for o in async_task.outpaint_selections]
         base_model_additional_loras = []
