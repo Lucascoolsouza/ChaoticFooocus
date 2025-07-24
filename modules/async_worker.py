@@ -1576,16 +1576,16 @@ def worker():
                     from modules.detail_daemon import detail_daemon
                     # Update detail daemon with current task parameters
                     detail_daemon.enabled = task.detail_daemon_enabled
-                    detail_daemon.detail_amount = float(task.detail_daemon_amount)
-                    detail_daemon.start = float(task.detail_daemon_start)
-                    detail_daemon.end = float(task.detail_daemon_end)
-                    detail_daemon.bias = float(task.detail_daemon_bias)
-                    detail_daemon.start_offset = float(task.detail_daemon_start_offset)
-                    detail_daemon.end_offset = float(task.detail_daemon_end_offset)
-                    detail_daemon.exponent = float(task.detail_daemon_exponent)
-                    detail_daemon.fade = float(task.detail_daemon_fade)
-                    detail_daemon.mode = task.detail_daemon_mode
-                    detail_daemon.smooth = task.detail_daemon_smooth
+                    detail_daemon.detail_amount = float(task.detail_daemon_amount) if task.detail_daemon_amount is not None else 0.25
+                    detail_daemon.start = float(task.detail_daemon_start) if task.detail_daemon_start is not None else 0.2
+                    detail_daemon.end = float(task.detail_daemon_end) if task.detail_daemon_end is not None else 0.8
+                    detail_daemon.bias = float(task.detail_daemon_bias) if task.detail_daemon_bias is not None else 0.71
+                    detail_daemon.start_offset = float(task.detail_daemon_start_offset) if task.detail_daemon_start_offset is not None else 0
+                    detail_daemon.end_offset = float(task.detail_daemon_end_offset) if task.detail_daemon_end_offset is not None else -0.15
+                    detail_daemon.exponent = float(task.detail_daemon_exponent) if task.detail_daemon_exponent is not None else 1
+                    detail_daemon.fade = float(task.detail_daemon_fade) if task.detail_daemon_fade is not None else 0
+                    detail_daemon.mode = task.detail_daemon_mode if task.detail_daemon_mode is not None else 'both'
+                    detail_daemon.smooth = bool(task.detail_daemon_smooth) if task.detail_daemon_smooth is not None else True
                     
                     print(f'[Detail Daemon] Enhancing {len(task.results)} images with amount {task.detail_daemon_amount}')
                     enhanced_results = []
