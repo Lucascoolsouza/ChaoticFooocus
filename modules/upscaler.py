@@ -131,9 +131,6 @@ def perform_latent_upscale(img, async_task=None, vae_model=None):
         new_h = int(pil_img.height * scale)
         pil_img = pil_img.resize((new_w, new_h), Image.LANCZOS)
         img = np.array(pil_img)
-    # Get denoise strength
-    denoise_strength = getattr(async_task, 'latent_upscale_denoise', 0.5)
-    print(f"[Latent Upscale] Denoise strength: {denoise_strength}")
     p = DummyProcessing(img)
     script = LatentUpscaleScript()
     # Use options from async_task if available
