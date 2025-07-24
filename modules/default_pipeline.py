@@ -586,7 +586,16 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                     for attr_name in dir(original_encoder):
                         if not attr_name.startswith('_'):
                             setattr(self, attr_name, getattr(original_encoder, attr_name))
-                
+                    
+                    # Add a mock config attribute with projection_dim
+                    class Config:
+                        def __init__(self, projection_dim):
+                            self.projection_dim = projection_dim
+                    
+                    # Attempt to get projection_dim from original_encoder.config, otherwise use a default
+                    proj_dim = getattr(getattr(original_encoder, 'config', None), 'projection_dim', 1280) # Default for SDXL CLIP G
+                    self.config = Config(proj_dim)
+
                 def __call__(self, input_ids, output_hidden_states=False, **kwargs):
                     # Call the original encoder, ignoring unsupported parameters
                     # Make sure input_ids is properly formatted
