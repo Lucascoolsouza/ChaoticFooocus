@@ -411,9 +411,11 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             mask_padded = torch.nn.functional.pad(mask.unsqueeze(0).unsqueeze(0), (padding, padding), mode='reflect')
             mask = torch.nn.functional.avg_pool1d(mask_padded, kernel_size, stride=1, padding=0).squeeze()
         
-        # Calculate detail multiplier based on bias
+        # Calculate detail multiplier based on amount
         # Lower multiplier = less denoising = more detail
-        detail_multiplier = 1.0 - (detail_daemon_amount * mask)
+        # Use 0.85 as base multiplier for good detail enhancement
+        base_multiplier = 0.85
+        detail_multiplier = torch.lerp(torch.ones_like(mask), torch.full_like(mask, base_multiplier), detail_daemon_amount * mask)
         detail_multiplier = detail_multiplier * detail_daemon_bias + detail_multiplier * (1 - detail_daemon_bias) * 0.5
         
         # Apply the multiplier to sigmas
