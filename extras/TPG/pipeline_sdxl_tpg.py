@@ -1250,16 +1250,16 @@ class StableDiffusionXLTPGPipeline(
             prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
             add_text_embeds = torch.cat([negative_pooled_prompt_embeds, add_text_embeds], dim=0)
             add_time_ids = torch.cat([negative_add_time_ids, add_time_ids], dim=0)
-        #tpg - Temporarily commented out for debugging
-        # elif not self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
-        #     prompt_embeds = torch.cat([prompt_embeds, prompt_embeds], dim=0)
-        #     add_text_embeds = torch.cat([add_text_embeds, add_text_embeds], dim=0)
-        #     add_time_ids = torch.cat([add_time_ids, add_time_ids], dim=0)
-        #both - Temporarily commented out for debugging
-        # elif self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
-        #     prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds, prompt_embeds], dim=0)
-        #     add_text_embeds = torch.cat([negative_pooled_prompt_embeds, add_text_embeds, add_text_embeds], dim=0)
-        #     add_time_ids = torch.cat([negative_add_time_ids, add_time_ids, add_time_ids], dim=0)
+        #tpg
+        elif not self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
+            prompt_embeds = torch.cat([prompt_embeds, prompt_embeds], dim=0)
+            add_text_embeds = torch.cat([add_text_embeds, add_text_embeds], dim=0)
+            add_time_ids = torch.cat([add_time_ids, add_time_ids], dim=0)
+        #both
+        elif self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
+            prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds, prompt_embeds], dim=0)
+            add_text_embeds = torch.cat([negative_pooled_prompt_embeds, add_text_embeds, add_text_embeds], dim=0)
+            add_time_ids = torch.cat([negative_add_time_ids, add_time_ids, add_time_ids], dim=0)
 
         prompt_embeds = prompt_embeds.to(device)
         add_text_embeds = add_text_embeds.to(device)
@@ -1305,57 +1305,57 @@ class StableDiffusionXLTPGPipeline(
             ).to(device=device, dtype=latents.dtype)
         logger.debug("Guidance scale embedding obtained.")
 
-        # 10. Create down mid and up layer lists - Temporarily commented out for debugging
-        # if self.do_token_perturbation_guidance:
-        #     down_layers = []
-        #     mid_layers = []
-        #     up_layers = []
-        #     for name, module in self.unet.model.named_modules():
-        #         if isinstance(module, BasicTransformerBlock):
-        #             layer_type = name.split(".")[0].split("_")[0]
-        #             if layer_type == "down":
-        #                 down_layers.append(module)
-        #             elif layer_type == "mid":
-        #                 mid_layers.append(module)
-        #             elif layer_type == "up":
-        #                 up_layers.append(module)
-        #             else:
-        #                 raise ValueError(f"Invalid layer type: {layer_type}")
+        # 10. Create down mid and up layer lists
+        if self.do_token_perturbation_guidance:
+            down_layers = []
+            mid_layers = []
+            up_layers = []
+            for name, module in self.unet.model.named_modules():
+                if isinstance(module, BasicTransformerBlock):
+                    layer_type = name.split(".")[0].split("_")[0]
+                    if layer_type == "down":
+                        down_layers.append(module)
+                    elif layer_type == "mid":
+                        mid_layers.append(module)
+                    elif layer_type == "up":
+                        up_layers.append(module)
+                    else:
+                        raise ValueError(f"Invalid layer type: {layer_type}")
                     
-        # change attention layer in UNet if use tpg - Temporarily commented out for debugging
-        # if self.do_token_perturbation_guidance:
-        #     drop_layers = self.tpg_applied_layers_index
-        #     for drop_layer in drop_layers:
-        #         try:
-        #             if drop_layer[0] == "d":
-        #                 # Replace the forward method directly
-        #                 original_forward = down_layers[int(drop_layer[1:])].forward
-        #                 modified_block = make_tpg_block(down_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
-        #                 down_layers[int(drop_layer[1:])].forward = modified_block.forward
-        #                 # Store original forward for later restoration
-        #                 if not hasattr(down_layers[int(drop_layer[1:])], '_original_forward'):
-        #                     down_layers[int(drop_layer[1:])]._original_forward = original_forward
+        # change attention layer in UNet if use tpg
+        if self.do_token_perturbation_guidance:
+            drop_layers = self.tpg_applied_layers_index
+            for drop_layer in drop_layers:
+                try:
+                    if drop_layer[0] == "d":
+                        # Replace the forward method directly
+                        original_forward = down_layers[int(drop_layer[1:])].forward
+                        modified_block = make_tpg_block(down_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
+                        down_layers[int(drop_layer[1:])].forward = modified_block.forward
+                        # Store original forward for later restoration
+                        if not hasattr(down_layers[int(drop_layer[1:])], '_original_forward'):
+                            down_layers[int(drop_layer[1:])]._original_forward = original_forward
 
-        #             elif drop_layer[0] == "m":
-        #                 original_forward = mid_layers[int(drop_layer[1:])].forward
-        #                 modified_block = make_tpg_block(mid_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
-        #                 mid_layers[int(drop_layer[1:])].forward = modified_block.forward
-        #                 if not hasattr(mid_layers[int(drop_layer[1:])], '_original_forward'):
-        #                     mid_layers[int(drop_layer[1:])]._original_forward = original_forward
+                    elif drop_layer[0] == "m":
+                        original_forward = mid_layers[int(drop_layer[1:])].forward
+                        modified_block = make_tpg_block(mid_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
+                        mid_layers[int(drop_layer[1:])].forward = modified_block.forward
+                        if not hasattr(mid_layers[int(drop_layer[1:])], '_original_forward'):
+                            mid_layers[int(drop_layer[1:])]._original_forward = original_forward
 
-        #             elif drop_layer[0] == "u":
-        #                 original_forward = up_layers[int(drop_layer[1:])].forward
-        #                 modified_block = make_tpg_block(up_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
-        #                 up_layers[int(drop_layer[1:])].forward = modified_block.forward
-        #                 if not hasattr(up_layers[int(drop_layer[1:])], '_original_forward'):
-        #                     up_layers[int(drop_layer[1:])]._original_forward = original_forward
+                    elif drop_layer[0] == "u":
+                        original_forward = up_layers[int(drop_layer[1:])].forward
+                        modified_block = make_tpg_block(up_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
+                        up_layers[int(drop_layer[1:])].forward = modified_block.forward
+                        if not hasattr(up_layers[int(drop_layer[1:])], '_original_forward'):
+                            up_layers[int(drop_layer[1:])]._original_forward = original_forward
 
-        #             else:
-        #                 raise ValueError(f"Invalid layer type: {drop_layer[0]}")
-        #         except IndexError:
-        #             raise ValueError(
-        #                 f"Invalid layer index: {drop_layer}. Available layers: {len(down_layers)} down layers, {len(mid_layers)} mid layers, {len(up_layers)} up layers."
-        #             )
+                    else:
+                        raise ValueError(f"Invalid layer type: {drop_layer[0]}")
+                except IndexError:
+                    raise ValueError(
+                        f"Invalid layer index: {drop_layer}. Available layers: {len(down_layers)} down layers, {len(mid_layers)} mid layers, {len(up_layers)} up layers."
+                    )
         logger.debug("TPG layer lists and attention layer changes (if TPG active) processed.")
 
         self._num_timesteps = len(timesteps)
@@ -1466,15 +1466,15 @@ class StableDiffusionXLTPGPipeline(
                 if self.do_classifier_free_guidance:
                     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                     noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
-                # TPG guidance temporarily disabled for debugging
-                # elif not self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
-                #     noise_pred_original, noise_pred_perturb = noise_pred.chunk(2)
-                #     signal_scale = self.tpg_scale
-                #     noise_pred = noise_pred_original + signal_scale * (noise_pred_original - noise_pred_perturb)
-                # elif self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
-                #     noise_pred_uncond, noise_pred_text, noise_pred_text_perturb = noise_pred.chunk(3)
-                #     signal_scale = self.tpg_scale
-                #     noise_pred = noise_pred_text + (self.guidance_scale-1.0) * (noise_pred_text - noise_pred_uncond) + signal_scale * (noise_pred_text - noise_pred_text_perturb)
+                # TPG guidance
+                elif not self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
+                    noise_pred_original, noise_pred_perturb = noise_pred.chunk(2)
+                    signal_scale = self.tpg_scale
+                    noise_pred = noise_pred_original + signal_scale * (noise_pred_original - noise_pred_perturb)
+                elif self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
+                    noise_pred_uncond, noise_pred_text, noise_pred_text_perturb = noise_pred.chunk(3)
+                    signal_scale = self.tpg_scale
+                    noise_pred = noise_pred_text + (self.guidance_scale-1.0) * (noise_pred_text - noise_pred_uncond) + signal_scale * (noise_pred_text - noise_pred_text_perturb)
 
                 if self.do_classifier_free_guidance and self.guidance_rescale > 0.0:
                     # Based on 3.4. in https://arxiv.org/pdf/2305.08891.pdf
