@@ -9,10 +9,11 @@ upscale_2 = 'Upscale (2x)'
 upscale_fast = 'Upscale (Fast 2x)'
 ultrasharp = 'Ultrasharp'
 realistic_rescaler = 'Realistic Rescaler'
+latent_upscale = 'Latent Upscale'
 
 remove_background = 'Remove Background'
 
-uov_list = [disabled, subtle_variation, strong_variation, upscale_15, upscale_2, upscale_fast, ultrasharp, realistic_rescaler, remove_background]
+uov_list = [disabled, subtle_variation, strong_variation, upscale_15, upscale_2, upscale_fast, ultrasharp, realistic_rescaler, latent_upscale, remove_background]
 
 enhancement_uov_before = "Before First Enhancement"
 enhancement_uov_after = "After Last Enhancement"

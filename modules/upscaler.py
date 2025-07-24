@@ -9,6 +9,16 @@ from ldm_patched.pfn.architecture.RRDB import RRDBNet as ESRGAN
 from modules.config import downloading_upscale_model, downloading_ultrasharp_model, downloading_realistic_rescaler_model
 import modules.flags
 
+import sys
+import os
+latent_upscale_path = os.path.join(os.path.dirname(__file__), '../extras/latent-upscale-main/scripts')
+if latent_upscale_path not in sys.path:
+    sys.path.append(latent_upscale_path)
+try:
+    from latent_upscale import Script as LatentUpscaleScript
+except ImportError:
+    LatentUpscaleScript = None
+
 opImageUpscaleWithModel = ImageUpscaleWithModel()
 model_default = None
 model_ultrasharp = None
@@ -81,6 +91,50 @@ def perform_upscale_without_tiling(img, model_name, model_var, download_func, as
             torch.cuda.empty_cache()
         raise e
 
+def perform_latent_upscale(img, async_task=None, vae_model=None):
+    # Integrate latent upscale logic
+    if LatentUpscaleScript is None:
+        print('LatentUpscaleScript not found. Returning original image.')
+        return img
+    # Create a dummy processing object with required attributes
+    class DummyProcessing:
+        def __init__(self, init_images):
+            self.init_images = [img]
+            self.sampler_name = 'euler'
+            self.sd_model = None
+            self.image_mask = None
+            self.inpainting_mask_invert = False
+            self.mask_blur_x = 0
+            self.mask_blur_y = 0
+            self.inpaint_full_res = False
+            self.inpaint_full_res_padding = 0
+            self.resize_mode = 0
+            self.width = img.shape[1]
+            self.height = img.shape[0]
+            self.latent_mask = None
+            self.color_corrections = None
+            self.overlay_images = []
+            self.mask_for_overlay = None
+            self.paste_to = None
+    p = DummyProcessing(img)
+    script = LatentUpscaleScript()
+    # Use options from async_task if available
+    upscale_method = getattr(async_task, 'latent_upscale_method', 'bilinear')
+    scheduler = getattr(async_task, 'latent_upscale_scheduler', 'normal')
+    # Run the latent upscale script
+    try:
+        result = script.run(p, upscale_method, scheduler)
+        # The script's run method may return a Processed object or image, handle accordingly
+        if hasattr(result, 'images') and isinstance(result.images, list) and len(result.images) > 0:
+            return result.images[0]
+        elif isinstance(result, (list, tuple)) and len(result) > 0:
+            return result[0]
+        else:
+            return img
+    except Exception as e:
+        print(f'Latent Upscale failed: {e}')
+        return img
+
 def perform_upscale(img, method, async_task=None, vae_model=None):
     global model_default, model_ultrasharp, model_realistic_rescaler, final_vae
 
@@ -92,6 +146,8 @@ def perform_upscale(img, method, async_task=None, vae_model=None):
         return perform_upscale_without_tiling(img, "UltraSharp", [model_ultrasharp], downloading_ultrasharp_model, async_task=async_task, vae=vae_model)
     elif method == modules.flags.realistic_rescaler.casefold():
         return perform_upscale_without_tiling(img, "Realistic Rescaler", [model_realistic_rescaler], downloading_realistic_rescaler_model, vae=vae_model)
+    elif method == modules.flags.latent_upscale.casefold():
+        return perform_latent_upscale(img, async_task=async_task, vae_model=vae_model)
     else: # Default upscaling
         if model_default is None:
             model_filename = downloading_upscale_model()

@@ -164,6 +164,16 @@ class AsyncTask:
         self.images_to_enhance_count = 0
         self.enhance_stats = {}
 
+        # Latent Upscale options (default to None)
+        self.latent_upscale_method = None
+        self.latent_upscale_scheduler = None
+        # If Latent Upscale is selected, try to extract options from args (if present)
+        if self.uov_method and self.uov_method.lower() == 'latent upscale':
+            # These should be passed from the UI in a known order after uov_input_image
+            if len(args) >= 2:
+                self.latent_upscale_method = args.pop()
+                self.latent_upscale_scheduler = args.pop()
+
 async_tasks = []
 
 
