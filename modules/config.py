@@ -996,7 +996,7 @@ def downloading_pixelsharpen_model():
 
 def downloading_tghqface8x_model():
     load_file_from_url(
-        url='https://huggingface.co/Pinguin/888-xl-diffusion-testmodel-v02-blue-star-sdxl-SAFETENSORS/resolve/main/TGHQFace8x_500k.pth',
+        url='https://huggingface.co/Pinguin/888-xl-diffusion-testmodel-v02-blue-star-sdxl-SAFETENSORS/resolve/main/4xLSDIRplusN.pth',
         model_dir=path_upscale_models,
         file_name='TGHQFace8x_500k.pth'
     )
