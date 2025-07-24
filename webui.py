@@ -226,8 +226,6 @@ with shared.gradio_root:
                                 latent_upscale_size = gr.Dropdown([
                                     "1x", "1.5x", "2x", "4x"
                                 ], label="Latent Upscale Size", visible=False, value="2x")
-                                upscale_loops = gr.Slider(label='Upscale Loops', minimum=1, maximum=5, step=1, value=1,
-                                                          info='Number of times to apply the upscaler. Higher values increase intensity.')
                                 def show_latent_upscale_options(selected):
                                     visible = selected==flags.latent_upscale
                                     return {
@@ -236,13 +234,6 @@ with shared.gradio_root:
                                         latent_upscale_size: gr.update(visible=visible)
                                     }
                                 uov_method.change(show_latent_upscale_options, inputs=uov_method, outputs=[latent_upscale_method, latent_upscale_scheduler, latent_upscale_size], queue=False, show_progress=False)
-                                
-                                def show_upscale_loops_option(selected):
-                                    visible = selected in [flags.ultrasharp, flags.realistic_rescaler, flags.pixelsharpen, flags.tghqface8x]
-                                    return {
-                                        upscale_loops: gr.update(visible=visible)
-                                    }
-                                uov_method.change(show_upscale_loops_option, inputs=uov_method, outputs=[upscale_loops], queue=False, show_progress=False)
                                 gr.HTML('<a href="https://github.com/lllyasviel/Fooocus/discussions/390" target="_blank">\U0001F4D4 Documentation</a>')
                     with gr.Tab(label='Image Prompt', id='ip_tab') as ip_tab:
                         with gr.Row():
@@ -876,6 +867,8 @@ with shared.gradio_root:
                                                                minimum=-1, maximum=1.0, step=0.001,
                                                                value=modules.config.default_overwrite_upscale,
                                                                 info='Set as negative number to disable. For developer debugging.')
+                        upscale_loops = gr.Slider(label='Upscale Loops', minimum=1, maximum=5, step=1, value=1,
+                                                  info='Number of times to apply the upscaler. Higher values increase intensity.')
 
                         disable_preview = gr.Checkbox(label='Disable Preview', value=modules.config.default_black_out_nsfw,
                                                       interactive=not modules.config.default_black_out_nsfw,
@@ -1132,7 +1125,7 @@ with shared.gradio_root:
 
         ctrls += [base_model, refiner_model, refiner_switch] + lora_ctrls
         ctrls += [input_image_checkbox, current_tab]
-        ctrls += [uov_method, uov_input_image, latent_upscale_method, latent_upscale_scheduler, latent_upscale_size, upscale_loops]
+        ctrls += [uov_method, uov_input_image, latent_upscale_method, latent_upscale_scheduler, latent_upscale_size]
         ctrls += [outpaint_selections, inpaint_input_image, inpaint_additional_prompt, inpaint_mask_image]
         ctrls += [disable_preview, disable_intermediate_results, disable_seed_increment, black_out_nsfw]
         ctrls += [adm_scaler_positive, adm_scaler_negative, adm_scaler_end, adaptive_cfg, clip_skip]
