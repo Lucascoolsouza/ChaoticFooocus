@@ -713,36 +713,37 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents_dtype = latents.dtype
-                print(f"[NAG DEBUG] Before scheduler step - latents shape: {latents.shape}, mean: {latents.mean().item():.6f}, std: {latents.std().item():.6f}")
-                print(f"[NAG DEBUG] Scheduler type: {type(self.scheduler)}")
-                print(f"[NAG DEBUG] extra_step_kwargs: {extra_step_kwargs}")
                 
-                # Try different scheduler call approaches
-                try:
+                # Check if we have the dummy SchedulerWrapper from Fooocus
+                if type(self.scheduler).__name__ == 'SchedulerWrapper':
+                    print(f"[NAG DEBUG] Detected Fooocus SchedulerWrapper, using manual DDIM step")
+                    # Implement a simple DDIM step manually since the wrapper is broken
+                    # DDIM formula: x_{t-1} = sqrt(alpha_{t-1}) * pred_x0 + sqrt(1 - alpha_{t-1}) * eps
+                    # For simplicity, we'll use a basic Euler step
+                    
+                    # Get the step size (this is a rough approximation)
+                    if i < len(timesteps) - 1:
+                        dt = (t - timesteps[i + 1]).float()
+                    else:
+                        dt = t.float()
+                    
+                    # Simple Euler step: x_{t-1} = x_t - dt * eps
+                    step_size = dt / 1000.0  # Normalize timestep
+                    latents = latents - step_size * noise_pred
+                    
+                    print(f"[NAG DEBUG] Manual step: dt={dt.item():.1f}, step_size={step_size.item():.6f}")
+                else:
+                    # Use the real scheduler
+                    print(f"[NAG DEBUG] Using real scheduler: {type(self.scheduler)}")
                     scheduler_output = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)
                     if hasattr(scheduler_output, 'prev_sample'):
                         latents = scheduler_output.prev_sample
-                        print(f"[NAG DEBUG] Used prev_sample attribute")
                     elif isinstance(scheduler_output, tuple):
                         latents = scheduler_output[0]
-                        print(f"[NAG DEBUG] Used tuple index 0")
                     else:
                         latents = scheduler_output
-                        print(f"[NAG DEBUG] Used direct output")
-                except Exception as e:
-                    print(f"[NAG DEBUG] Scheduler step failed: {e}")
-                    # Fallback: try without return_dict=False
-                    try:
-                        scheduler_output = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs)
-                        latents = scheduler_output.prev_sample if hasattr(scheduler_output, 'prev_sample') else scheduler_output
-                        print(f"[NAG DEBUG] Fallback scheduler call succeeded")
-                    except Exception as e2:
-                        print(f"[NAG DEBUG] Fallback scheduler call also failed: {e2}")
-                        # Last resort: manual step (this shouldn't happen)
-                        latents = latents - noise_pred * 0.1  # Very basic step
-                        print(f"[NAG DEBUG] Used manual step as last resort")
                 
-                print(f"[NAG DEBUG] After scheduler step - latents shape: {latents.shape}, mean: {latents.mean().item():.6f}, std: {latents.std().item():.6f}")
+                print(f"[NAG DEBUG] After step - latents shape: {latents.shape}, mean: {latents.mean().item():.6f}, std: {latents.std().item():.6f}")
 
                 # --- add these three lines ---
                 if callback is not None:
