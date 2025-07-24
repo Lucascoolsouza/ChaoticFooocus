@@ -1350,8 +1350,8 @@ class StableDiffusionXLTPGPipeline(
         #             )
 
         self._num_timesteps = len(timesteps)
-        with self.progress_bar(total=num_inference_steps) as progress_bar:
-            for i, t in enumerate(timesteps):
+        # with self.progress_bar(total=num_inference_steps) as progress_bar:
+        for i, t in enumerate(timesteps):
                 logger.debug(f"Processing timestep {t} ({i}/{len(timesteps)})")
                 if self.interrupt:
                     continue
