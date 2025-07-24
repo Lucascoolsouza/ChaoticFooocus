@@ -759,7 +759,7 @@ class StableDiffusionXLTPGPipeline(
     ):
         add_time_ids = list(original_size + crops_coords_top_left + target_size)
 
-        if hasattr(self.unet.model, 'add_embedding'):
+        if hasattr(self.unet.model, 'add_embedding') and self.unet.model.add_embedding is not None:
             passed_add_embed_dim = (
                             self.unet.config.addition_time_embed_dim * len(add_time_ids) + text_encoder_projection_dim
             )
@@ -770,7 +770,7 @@ class StableDiffusionXLTPGPipeline(
                     f"Model expects an added time embedding vector of length {expected_add_embed_dim}, but a vector of {passed_add_embed_dim} was created. The model has an incorrect config. Please check `unet.config.time_embedding_type` and `text_encoder_2.config.projection_dim`."
                 )
         else:
-            logger.warning("The UNet model does not have an 'add_embedding' attribute. Skipping time embedding check.")
+            logger.warning("The UNet model does not have an 'add_embedding' attribute or it is None. Skipping time embedding check.")
 
         add_time_ids = torch.tensor([add_time_ids], dtype=dtype)
         return add_time_ids
@@ -1337,7 +1337,7 @@ class StableDiffusionXLTPGPipeline(
                 added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
                 if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
                     added_cond_kwargs["image_embeds"] = image_embeds
-                noise_pred = self.unet(
+                noise_pred = self.unet.model(
                     latent_model_input,
                     t,
                     encoder_hidden_states=prompt_embeds,
