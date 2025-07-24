@@ -1048,8 +1048,23 @@ def worker():
                 import os
                 output_path = os.path.join(modules.config.path_outputs, 'debug_bg_removed.png')
                 Image.fromarray(uov_input_image).save(output_path)
+                print(f'[rembg_bg_removal] Saved debug_bg_removed.png to {output_path}')
+                # Add debug image to results for gallery display
+                if hasattr(async_task, 'results') and isinstance(async_task.results, list):
+                    async_task.results.append(output_path)
             except Exception as e:
-                print(f"[DEBUG] Failed to save debug image: {e}")
+                print(f'[rembg_bg_removal] Failed to save debug image: {e}')
+            
+            # Ensure the image has an alpha channel if background was removed
+            if uov_input_image.shape[2] == 3: # If it's RGB, add an alpha channel
+                import numpy as np
+                alpha_channel = np.full((uov_input_image.shape[0], uov_input_image.shape[1], 1), 255, dtype=np.uint8)
+                uov_input_image = np.concatenate((uov_input_image, alpha_channel), axis=2)
+                print(f"[rembg_bg_removal] Converted to RGBA. New shape: {uov_input_image.shape}")
+            print(f'Background removed using {bg_removal_model} model')
+            # Force output format to PNG for gallery/visibility
+            async_task.output_format = 'png'
+            
         elif 'seamless tiling' in uov_method.lower():
             goals.append('upscale')  # Use upscale goal for seamless tiling
             skip_prompt_processing = True
@@ -1061,21 +1076,6 @@ def worker():
             
             print(f"[SEAMLESS] Seamless tiling method detected: {uov_method}")
             print(f"[SEAMLESS] Image shape: {uov_input_image.shape}")
-                print(f'[rembg_bg_removal] Saved debug_bg_removed.png to {output_path}')
-                # Add debug image to results for gallery display
-                if hasattr(async_task, 'results') and isinstance(async_task.results, list):
-                    async_task.results.append(output_path)
-            except Exception as e:
-                print(f'[rembg_bg_removal] Failed to save debug image: {e}')
-            # Ensure the image has an alpha channel if background was removed
-            if uov_input_image.shape[2] == 3: # If it's RGB, add an alpha channel
-                import numpy as np
-                alpha_channel = np.full((uov_input_image.shape[0], uov_input_image.shape[1], 1), 255, dtype=np.uint8)
-                uov_input_image = np.concatenate((uov_input_image, alpha_channel), axis=2)
-                print(f"[rembg_bg_removal] Converted to RGBA. New shape: {uov_input_image.shape}")
-            print(f'Background removed using {bg_removal_model} model')
-            # Force output format to PNG for gallery/visibility
-            async_task.output_format = 'png'
             
         return uov_input_image, skip_prompt_processing, steps
 
