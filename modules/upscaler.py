@@ -116,6 +116,21 @@ def perform_latent_upscale(img, async_task=None, vae_model=None):
             self.overlay_images = []
             self.mask_for_overlay = None
             self.paste_to = None
+    # Determine upscaling factor
+    scale_map = {"1x": 1.0, "1.5x": 1.5, "2x": 2.0, "4x": 4.0}
+    upscale_size = getattr(async_task, 'latent_upscale_size', '2x')
+    scale = scale_map.get(upscale_size, 2.0)
+    # Resize image if needed
+    if scale != 1.0:
+        from PIL import Image
+        if isinstance(img, np.ndarray):
+            pil_img = Image.fromarray(img.astype(np.uint8))
+        else:
+            pil_img = img
+        new_w = int(pil_img.width * scale)
+        new_h = int(pil_img.height * scale)
+        pil_img = pil_img.resize((new_w, new_h), Image.LANCZOS)
+        img = np.array(pil_img)
     p = DummyProcessing(img)
     script = LatentUpscaleScript()
     # Use options from async_task if available

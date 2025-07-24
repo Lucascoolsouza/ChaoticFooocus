@@ -53,6 +53,7 @@ class AsyncTask:
         self.uov_input_image = args.pop()
         self.latent_upscale_method = args.pop()
         self.latent_upscale_scheduler = args.pop()
+        self.latent_upscale_size = args.pop()
         self.outpaint_selections = args.pop()
         self.inpaint_input_image = args.pop()
         self.inpaint_additional_prompt = args.pop()
@@ -988,6 +989,13 @@ def worker():
             bg_removal_model = async_task.enhance_bg_removal_model
             uov_input_image = remove_background(uov_input_image, model_name=bg_removal_model)
             print(f"[rembg_bg_removal] Output image shape after removal: {uov_input_image.shape}")
+            # Save debug output for manual inspection
+            try:
+                from PIL import Image
+                Image.fromarray(uov_input_image).save('debug_bg_removed.png')
+                print('[rembg_bg_removal] Saved debug_bg_removed.png')
+            except Exception as e:
+                print(f'[rembg_bg_removal] Failed to save debug image: {e}')
             # Ensure the image has an alpha channel if background was removed
             if uov_input_image.shape[2] == 3: # If it's RGB, add an alpha channel
                 import numpy as np
@@ -995,6 +1003,8 @@ def worker():
                 uov_input_image = np.concatenate((uov_input_image, alpha_channel), axis=2)
                 print(f"[rembg_bg_removal] Converted to RGBA. New shape: {uov_input_image.shape}")
             print(f'Background removed using {bg_removal_model} model')
+            # Force output format to PNG for gallery/visibility
+            async_task.output_format = 'png'
             
         return uov_input_image, skip_prompt_processing, steps
 

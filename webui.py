@@ -222,10 +222,17 @@ with shared.gradio_root:
                                     "simple", "normal", "karras", "exponential",
                                     "polyexponential", "automatic"
                                 ], label="Latent Upscale Scheduler", visible=False, value="normal")
+                                latent_upscale_size = gr.Dropdown([
+                                    "1x", "1.5x", "2x", "4x"
+                                ], label="Latent Upscale Size", visible=False, value="2x")
                                 def show_latent_upscale_options(selected):
-                                    return {latent_upscale_method: gr.update(visible=selected==flags.latent_upscale),
-                                            latent_upscale_scheduler: gr.update(visible=selected==flags.latent_upscale)}
-                                uov_method.change(show_latent_upscale_options, inputs=uov_method, outputs=[latent_upscale_method, latent_upscale_scheduler], queue=False, show_progress=False)
+                                    visible = selected==flags.latent_upscale
+                                    return {
+                                        latent_upscale_method: gr.update(visible=visible),
+                                        latent_upscale_scheduler: gr.update(visible=visible),
+                                        latent_upscale_size: gr.update(visible=visible)
+                                    }
+                                uov_method.change(show_latent_upscale_options, inputs=uov_method, outputs=[latent_upscale_method, latent_upscale_scheduler, latent_upscale_size], queue=False, show_progress=False)
                                 gr.HTML('<a href="https://github.com/lllyasviel/Fooocus/discussions/390" target="_blank">\U0001F4D4 Documentation</a>')
                     with gr.Tab(label='Image Prompt', id='ip_tab') as ip_tab:
                         with gr.Row():
@@ -1026,7 +1033,7 @@ with shared.gradio_root:
 
         ctrls += [base_model, refiner_model, refiner_switch] + lora_ctrls
         ctrls += [input_image_checkbox, current_tab]
-        ctrls += [uov_method, uov_input_image, latent_upscale_method, latent_upscale_scheduler]
+        ctrls += [uov_method, uov_input_image, latent_upscale_method, latent_upscale_scheduler, latent_upscale_size]
         ctrls += [outpaint_selections, inpaint_input_image, inpaint_additional_prompt, inpaint_mask_image]
         ctrls += [disable_preview, disable_intermediate_results, disable_seed_increment, black_out_nsfw]
         ctrls += [adm_scaler_positive, adm_scaler_negative, adm_scaler_end, adaptive_cfg, clip_skip]
