@@ -735,8 +735,32 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
                 # perform guidance
                 if self.do_classifier_free_guidance:
-                    noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-                    noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
+                    if noise_pred.shape[0] >= 2:
+                        noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+                        noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
+                        
+                        # Debug guidance for first few steps
+                        if i < 3:
+                            print(f"[NAG DEBUG] CFG guidance - uncond mean: {noise_pred_uncond.mean().item():.4f}, text mean: {noise_pred_text.mean().item():.4f}")
+                            print(f"[NAG DEBUG] CFG guidance - final noise_pred mean: {noise_pred.mean().item():.4f}")
+                    else:
+                        print(f"[NAG DEBUG] Warning: Expected at least 2 noise predictions for CFG, got {noise_pred.shape[0]}")
+                
+                # Handle NAG guidance if enabled
+                if self.do_normalized_attention_guidance and noise_pred.shape[0] >= 3:
+                    # For NAG, we have [uncond, text, nag_uncond] predictions
+                    # Apply NAG guidance between text and nag_uncond
+                    noise_pred_uncond, noise_pred_text, noise_pred_nag = noise_pred.chunk(3)
+                    
+                    # First apply CFG
+                    noise_pred_cfg = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
+                    
+                    # Then apply NAG
+                    noise_pred = noise_pred_cfg + self._nag_scale * (noise_pred_text - noise_pred_nag)
+                    
+                    if i < 3:
+                        print(f"[NAG DEBUG] NAG guidance - nag mean: {noise_pred_nag.mean().item():.4f}")
+                        print(f"[NAG DEBUG] NAG guidance - final noise_pred mean: {noise_pred.mean().item():.4f}")
 
                 if self.do_classifier_free_guidance and self.guidance_rescale > 0.0:
                     # Based on 3.4. in https://arxiv.org/pdf/2305.08891.pdf
@@ -747,16 +771,40 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 
                 # Check if we have the dummy SchedulerWrapper from Fooocus
                 if type(self.scheduler).__name__ == 'SchedulerWrapper':
-                    # Implement a simple DDIM step manually since the wrapper is broken
-                    # Get the step size (this is a rough approximation)
-                    if i < len(timesteps) - 1:
-                        dt = (t - timesteps[i + 1]).float()
-                    else:
-                        dt = t.float()
+                    # Implement a proper DDIM step manually since the wrapper is broken
+                    # DDIM formula with proper alpha/beta scheduling
                     
-                    # Simple Euler step: x_{t-1} = x_t - dt * eps
-                    step_size = dt / 1000.0  # Normalize timestep
-                    latents = latents - step_size * noise_pred
+                    # Get current and next timesteps
+                    if i < len(timesteps) - 1:
+                        t_next = timesteps[i + 1]
+                    else:
+                        t_next = torch.tensor(0, device=t.device, dtype=t.dtype)
+                    
+                    # Convert timesteps to alphas (simplified DDIM scheduling)
+                    alpha_t = 1 - (t / 1000.0) ** 2
+                    alpha_t_next = 1 - (t_next / 1000.0) ** 2
+                    
+                    # Clamp alphas to reasonable range
+                    alpha_t = torch.clamp(alpha_t, 0.001, 0.999)
+                    alpha_t_next = torch.clamp(alpha_t_next, 0.001, 0.999)
+                    
+                    # DDIM step: predict x0, then compute x_{t-1}
+                    sqrt_alpha_t = torch.sqrt(alpha_t)
+                    sqrt_one_minus_alpha_t = torch.sqrt(1 - alpha_t)
+                    
+                    # Predict x0 from current latents and noise prediction
+                    pred_x0 = (latents - sqrt_one_minus_alpha_t * noise_pred) / sqrt_alpha_t
+                    
+                    # Compute x_{t-1} using DDIM formula
+                    sqrt_alpha_t_next = torch.sqrt(alpha_t_next)
+                    sqrt_one_minus_alpha_t_next = torch.sqrt(1 - alpha_t_next)
+                    
+                    latents = sqrt_alpha_t_next * pred_x0 + sqrt_one_minus_alpha_t_next * noise_pred
+                    
+                    # Add some debugging for the first few steps
+                    if i < 3:
+                        print(f"[NAG DEBUG] Step {i}: t={t.item():.0f}, alpha_t={alpha_t.item():.4f}, alpha_t_next={alpha_t_next.item():.4f}")
+                        print(f"[NAG DEBUG] latents mean: {latents.mean().item():.4f}, std: {latents.std().item():.4f}")
                 else:
                     # Use the real scheduler
                     scheduler_output = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)
