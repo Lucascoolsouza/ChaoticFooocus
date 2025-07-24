@@ -714,13 +714,6 @@ with shared.gradio_root:
                 # --- Detail Daemon Integration ---
                 detail_daemon_script = extras.detail_daemon.Script()
                 detail_daemon_ui = detail_daemon_script.ui(is_img2img=False)
-                # Place the Detail Daemon UI at the bottom of the Advanced tab
-                # (gradio components can be added as a list)
-                if isinstance(detail_daemon_ui, list):
-                    for comp in detail_daemon_ui:
-                        comp.render()
-                else:
-                    detail_daemon_ui.render()
                 # --- End Detail Daemon Integration ---
 
                 with gr.Column(visible=modules.config.default_developer_debug_mode_checkbox) as dev_tools:
