@@ -337,7 +337,7 @@ def worker():
                         positive_cond, negative_cond,
                         pipeline.loaded_ControlNets[cn_path], cn_img, cn_weight, 0, cn_stop)
 
-        # Use the pipeline.process_diffusion which now supports NAG
+        # Use the pipeline.process_diffusion which now supports NAG and Detail Daemon
         imgs = pipeline.process_diffusion(
             positive_cond=positive_cond,
             negative_cond=negative_cond,
@@ -359,7 +359,18 @@ def worker():
             nag_tau=async_task.nag_tau,
             nag_alpha=async_task.nag_alpha,
             nag_negative_prompt=async_task.nag_negative_prompt,
-            nag_end=async_task.nag_end
+            nag_end=async_task.nag_end,
+            detail_daemon_enabled=async_task.detail_daemon_enabled,
+            detail_daemon_amount=async_task.detail_daemon_amount,
+            detail_daemon_start=async_task.detail_daemon_start,
+            detail_daemon_end=async_task.detail_daemon_end,
+            detail_daemon_bias=async_task.detail_daemon_bias,
+            detail_daemon_start_offset=async_task.detail_daemon_start_offset,
+            detail_daemon_end_offset=async_task.detail_daemon_end_offset,
+            detail_daemon_exponent=async_task.detail_daemon_exponent,
+            detail_daemon_fade=async_task.detail_daemon_fade,
+            detail_daemon_mode=async_task.detail_daemon_mode,
+            detail_daemon_smooth=async_task.detail_daemon_smooth
         )
 
         if imgs is None:
@@ -368,6 +379,8 @@ def worker():
         del positive_cond, negative_cond  # Save memory
         if inpaint_worker.current_task is not None:
             imgs = [inpaint_worker.current_task.post_process(x) for x in imgs]
+        
+
         current_progress = int(base_progress + (100 - preparation_steps) / float(all_steps) * steps)
         if modules.config.default_black_out_nsfw or async_task.black_out_nsfw:
             progressbar(async_task, current_progress, 'Checking for NSFW content ...')

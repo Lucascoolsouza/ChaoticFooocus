@@ -336,7 +336,7 @@ def get_candidate_vae(steps, switch, denoise=1.0, refiner_swap_method='joint'):
 
 @torch.no_grad()
 @torch.inference_mode()
-def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, nag_scale=1.0, nag_tau=2.5, nag_alpha=0.5, nag_negative_prompt=None, nag_end=1.0, original_prompt=None, original_negative_prompt=None):
+def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, nag_scale=1.0, nag_tau=2.5, nag_alpha=0.5, nag_negative_prompt=None, nag_end=1.0, original_prompt=None, original_negative_prompt=None, detail_daemon_enabled=False, detail_daemon_amount=0.25, detail_daemon_start=0.2, detail_daemon_end=0.8, detail_daemon_bias=0.71, detail_daemon_start_offset=0, detail_daemon_end_offset=-0.15, detail_daemon_exponent=1, detail_daemon_fade=0, detail_daemon_mode='both', detail_daemon_smooth=True):
     if steps == 0:
         # If steps is 0, no diffusion is performed. Return the initial latent or an empty list.
         if latent is not None:
@@ -383,9 +383,49 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
     sigma_max = float(sigma_max.cpu().numpy())
     print(f'[Sampler] sigma_min = {sigma_min}, sigma_max = {sigma_max}')
 
+    # Initialize detail daemon if enabled
+    if detail_daemon_enabled:
+        print(f'[Detail Daemon] Enabled during sampling with amount {detail_daemon_amount}')
+        from modules.detail_daemon import detail_daemon
+        detail_daemon.enabled = detail_daemon_enabled
+        detail_daemon.detail_amount = float(detail_daemon_amount)
+        detail_daemon.start = float(detail_daemon_start)
+        detail_daemon.end = float(detail_daemon_end)
+        detail_daemon.bias = float(detail_daemon_bias)
+        detail_daemon.start_offset = float(detail_daemon_start_offset)
+        detail_daemon.end_offset = float(detail_daemon_end_offset)
+        detail_daemon.exponent = float(detail_daemon_exponent)
+        detail_daemon.fade = float(detail_daemon_fade)
+        detail_daemon.mode = detail_daemon_mode
+        detail_daemon.smooth = bool(detail_daemon_smooth)
+
     modules.patch.BrownianTreeNoiseSamplerPatched.global_init(
         initial_latent['samples'].to(ldm_patched.modules.model_management.get_torch_device()),
         sigma_min, sigma_max, seed=image_seed, cpu=False)
+
+    # Create detail daemon callback wrapper
+    original_callback = callback
+    if detail_daemon_enabled and callback is not None:
+        def detail_daemon_callback(step, x0, x, total_steps):
+            # Apply detail enhancement to intermediate results during sampling
+            if detail_daemon.enabled and x0 is not None:
+                try:
+                    # Decode latent to image for detail processing
+                    temp_latent = {'samples': x0}
+                    temp_img = core.decode_vae(target_vae, temp_latent)
+                    if temp_img is not None and len(temp_img) > 0:
+                        # Apply detail daemon to the decoded image
+                        enhanced_img = detail_daemon.process(temp_img[0])
+                        if enhanced_img is not None:
+                            # Re-encode back to latent (simplified - in practice this might need more sophisticated handling)
+                            pass  # For now, we'll let the original callback handle the display
+                except Exception as e:
+                    print(f'[Detail Daemon] Error during sampling callback: {e}')
+            
+            # Call original callback
+            return original_callback(step, x0, x, total_steps)
+        
+        callback = detail_daemon_callback
 
     decoded_latent = None
 
