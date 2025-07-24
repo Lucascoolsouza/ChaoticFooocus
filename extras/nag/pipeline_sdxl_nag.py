@@ -499,16 +499,11 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
         # 5. Prepare latent variables
         num_channels_latents = 4  # Standard SDXL latent channels
-        print(f"[NAG DEBUG] Input latents parameter: {latents.shape if latents is not None else None}")
-        if latents is not None:
-            print(f"[NAG DEBUG] Input latents mean: {latents.mean().item():.6f}, std: {latents.std().item():.6f}")
         
         # Try to use the input latents directly if they look reasonable
         if latents is not None and latents.std().item() > 0.01:
-            print(f"[NAG DEBUG] Using input latents directly (they look reasonable)")
             latents = latents.to(device=device, dtype=prompt_embeds.dtype)
         else:
-            print(f"[NAG DEBUG] Input latents are None or zero, calling prepare_latents")
             latents = self.prepare_latents(
                 batch_size * num_images_per_prompt,
                 num_channels_latents,
@@ -519,7 +514,6 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 generator,
                 latents,
             )
-        print(f"[NAG DEBUG] Final prepared latents shape: {latents.shape}, mean: {latents.mean().item():.6f}, std: {latents.std().item():.6f}")
 
         # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
@@ -702,15 +696,9 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                                 "device": latent_model_input.device,
                             })
                     
-                    print(f"[NAG DEBUG] Step {i}, timestep {t}")
-                    print(f"[NAG DEBUG] latent_model_input shape: {latent_model_input.shape}")
-                    print(f"[NAG DEBUG] prompt_embeds shape: {prompt_embeds.shape}")
-                    print(f"[NAG DEBUG] comfy_kwargs keys: {list(comfy_kwargs.keys())}")
-                    
                     # Also ensure prompt_embeds batch size matches latent_model_input
                     target_batch_size = latent_model_input.shape[0]
                     if prompt_embeds.shape[0] != target_batch_size:
-                        print(f"[NAG DEBUG] Adjusting prompt_embeds batch size from {prompt_embeds.shape[0]} to {target_batch_size}")
                         if prompt_embeds.shape[0] < target_batch_size:
                             # Repeat to match target batch size
                             repeat_factor = target_batch_size // prompt_embeds.shape[0]
@@ -720,7 +708,6 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                         else:
                             # Truncate to match target batch size
                             prompt_embeds = prompt_embeds[:target_batch_size]
-                        print(f"[NAG DEBUG] Adjusted prompt_embeds shape: {prompt_embeds.shape}")
                     
                     noise_pred = self.unet.model.apply_model(
                         latent_model_input,
@@ -728,7 +715,6 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                         c_crossattn=prompt_embeds,
                         **comfy_kwargs,
                     )
-                    print(f"[NAG DEBUG] noise_pred shape: {noise_pred.shape}, mean: {noise_pred.mean().item():.6f}, std: {noise_pred.std().item():.6f}")
                 else:
                     # Standard Diffusers UNet
                     noise_pred = self.unet(
@@ -755,11 +741,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 
                 # Check if we have the dummy SchedulerWrapper from Fooocus
                 if type(self.scheduler).__name__ == 'SchedulerWrapper':
-                    print(f"[NAG DEBUG] Detected Fooocus SchedulerWrapper, using manual DDIM step")
                     # Implement a simple DDIM step manually since the wrapper is broken
-                    # DDIM formula: x_{t-1} = sqrt(alpha_{t-1}) * pred_x0 + sqrt(1 - alpha_{t-1}) * eps
-                    # For simplicity, we'll use a basic Euler step
-                    
                     # Get the step size (this is a rough approximation)
                     if i < len(timesteps) - 1:
                         dt = (t - timesteps[i + 1]).float()
@@ -769,11 +751,8 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     # Simple Euler step: x_{t-1} = x_t - dt * eps
                     step_size = dt / 1000.0  # Normalize timestep
                     latents = latents - step_size * noise_pred
-                    
-                    print(f"[NAG DEBUG] Manual step: dt={dt.item():.1f}, step_size={step_size.item():.6f}")
                 else:
                     # Use the real scheduler
-                    print(f"[NAG DEBUG] Using real scheduler: {type(self.scheduler)}")
                     scheduler_output = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)
                     if hasattr(scheduler_output, 'prev_sample'):
                         latents = scheduler_output.prev_sample
@@ -781,8 +760,6 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                         latents = scheduler_output[0]
                     else:
                         latents = scheduler_output
-                
-                print(f"[NAG DEBUG] After step - latents shape: {latents.shape}, mean: {latents.mean().item():.6f}, std: {latents.std().item():.6f}")
 
                 # --- add these three lines ---
                 if callback is not None:
@@ -828,10 +805,10 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
         # For Fooocus integration, we need to return the latents, not decoded images
         # The Fooocus pipeline will handle the decoding itself
-        print(f"[NAG DEBUG] Final latents shape: {latents.shape}, mean: {latents.mean().item():.6f}, std: {latents.std().item():.6f}")
         if not return_dict:
-            # Return latents for Fooocus processing
-            print(f"[NAG DEBUG] Returning latents tuple for Fooocus")
+            # Ensure we return the right batch size (should be 1 for single image)
+            if latents.shape[0] > 1:
+                latents = latents[:1]  # Take only the first sample
             return (latents,)
         
         # For other use cases, decode and return images
