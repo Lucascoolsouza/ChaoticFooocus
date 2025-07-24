@@ -7,7 +7,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-# import modules.scripts as scripts
+import modules.scripts as scripts
 from modules.script_callbacks import on_cfg_denoiser, remove_callbacks_for_function, on_infotext_pasted
 from modules.ui_components import InputAccordion
 
