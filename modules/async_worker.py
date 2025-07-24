@@ -109,18 +109,18 @@ class AsyncTask:
         self.metadata_scheme = MetadataScheme(
             args.pop()) if not args_manager.args.disable_metadata else MetadataScheme.FOOOCUS
 
-        # Detail daemon parameters
-        self.detail_daemon_smooth = args.pop()
-        self.detail_daemon_mode = args.pop()
-        self.detail_daemon_fade = args.pop()
-        self.detail_daemon_exponent = args.pop()
-        self.detail_daemon_end_offset = args.pop()
-        self.detail_daemon_start_offset = args.pop()
-        self.detail_daemon_bias = args.pop()
-        self.detail_daemon_end = args.pop()
-        self.detail_daemon_start = args.pop()
-        self.detail_daemon_amount = args.pop()
-        self.detail_daemon_enabled = args.pop()
+        # Detail daemon parameters (popped in reverse order from webui.py)
+        self.detail_daemon_smooth = args.pop()      # 11th parameter
+        self.detail_daemon_mode = args.pop()        # 10th parameter  
+        self.detail_daemon_fade = args.pop()        # 9th parameter
+        self.detail_daemon_exponent = args.pop()    # 8th parameter
+        self.detail_daemon_end_offset = args.pop()  # 7th parameter
+        self.detail_daemon_start_offset = args.pop() # 6th parameter
+        self.detail_daemon_bias = args.pop()        # 5th parameter
+        self.detail_daemon_end = args.pop()         # 4th parameter
+        self.detail_daemon_start = args.pop()       # 3rd parameter
+        self.detail_daemon_amount = args.pop()      # 2nd parameter
+        self.detail_daemon_enabled = args.pop()     # 1st parameter
 
         self.cn_tasks = {x: [] for x in ip_list}
         for _ in range(modules.config.default_controlnet_image_count):
@@ -1591,8 +1591,12 @@ def worker():
                     detail_daemon.mode = task.detail_daemon_mode if task.detail_daemon_mode is not None else 'both'
                     detail_daemon.smooth = bool(task.detail_daemon_smooth) if task.detail_daemon_smooth is not None else True
                     
+                    print(f'[Detail Daemon] Debug - enabled: {task.detail_daemon_enabled}')
                     print(f'[Detail Daemon] Debug - amount: {task.detail_daemon_amount}, type: {type(task.detail_daemon_amount)}')
+                    print(f'[Detail Daemon] Debug - start: {task.detail_daemon_start}')
+                    print(f'[Detail Daemon] Debug - end: {task.detail_daemon_end}')
                     print(f'[Detail Daemon] Debug - mode: {task.detail_daemon_mode}, type: {type(task.detail_daemon_mode)}')
+                    print(f'[Detail Daemon] Debug - smooth: {task.detail_daemon_smooth}')
                     print(f'[Detail Daemon] Enhancing {len(task.results)} images with amount {task.detail_daemon_amount}')
                     enhanced_results = []
                     for img_path in task.results:
