@@ -1111,6 +1111,9 @@ class StableDiffusionXLTPGPipeline(
         original_size = original_size or (height, width)
         target_size = target_size or (height, width)
 
+        # Ensure unet is on the correct device
+        self.unet.to(self._execution_device)
+
         # 1. Check inputs. Raise error if not correct
         self.check_inputs(
             prompt,
