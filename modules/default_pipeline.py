@@ -852,7 +852,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         print("Final deliverable:", type(imgs[0]), getattr(imgs[0], 'size', '-'))
         
         # Skip the regular ksampler since we used NAG/TPG pipeline
-    else:
+    elif not (nag_scale > 1.0 or tpg_enabled):
         imgs = core.ksampler(
             model=final_unet,
             positive=positive_cond,
