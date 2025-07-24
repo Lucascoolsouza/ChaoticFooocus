@@ -762,7 +762,7 @@ class StableDiffusionXLTPGPipeline(
         passed_add_embed_dim = (
             self.unet.config.addition_time_embed_dim * len(add_time_ids) + text_encoder_projection_dim
         )
-        expected_add_embed_dim = self.unet.add_embedding.linear_1.in_features
+        expected_add_embed_dim = self.unet.model.add_embedding.linear_1.in_features
 
         if expected_add_embed_dim != passed_add_embed_dim:
             raise ValueError(
@@ -910,7 +910,7 @@ class StableDiffusionXLTPGPipeline(
         prompt: Union[str, List[str]] = None,
         prompt_2: Optional[Union[str, List[str]]] = None,
         height: Optional[int] = None,
-        width: Optional[int] = None,
+        width: Optional[int] = None, # defaults to self.unet.model.config.sample_size * self.vae_scale_factor
         num_inference_steps: int = 50,
         timesteps: List[int] = None,
         denoising_end: Optional[float] = None,
@@ -1277,7 +1277,7 @@ class StableDiffusionXLTPGPipeline(
             down_layers = []
             mid_layers = []
             up_layers = []
-            for name, module in self.unet.named_modules():
+            for name, module in self.unet.model.named_modules():
                 if isinstance(module, BasicTransformerBlock):
                     layer_type = name.split(".")[0].split("_")[0]
                     if layer_type == "down":
@@ -1334,7 +1334,7 @@ class StableDiffusionXLTPGPipeline(
                 added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
                 if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
                     added_cond_kwargs["image_embeds"] = image_embeds
-                noise_pred = self.unet(
+                noise_pred = self.unet.model(
                     latent_model_input,
                     t,
                     encoder_hidden_states=prompt_embeds,
