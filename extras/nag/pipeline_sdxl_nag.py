@@ -29,7 +29,7 @@ from .attention_nag import NAGAttnProcessor2_0
 import numpy as np
 from PIL import Image, ImageDraw
 
-def safe_decode(latents, vae):
+def safe_decode(latents, vae, width=512, height=512):
     try:
         with torch.no_grad():
             latents = latents.to(vae.device)
