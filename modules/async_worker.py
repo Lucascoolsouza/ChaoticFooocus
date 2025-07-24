@@ -51,6 +51,10 @@ class AsyncTask:
         self.current_tab = args.pop()
         self.uov_method = args.pop()
         self.uov_input_image = args.pop()
+        self.latent_upscale_method = args.pop()
+        self.latent_upscale_scheduler = args.pop()
+        self.latent_upscale_size = args.pop()
+        self.latent_upscale_denoise = float(args.pop())
         self.outpaint_selections = args.pop()
         self.inpaint_input_image = args.pop()
         self.inpaint_additional_prompt = args.pop()
@@ -176,7 +180,6 @@ class AsyncTask:
         self.dd_end_offset = args.pop()
         self.dd_fade = args.pop()
         self.dd_smooth = args.pop()
-        self.dd_cfg_scale_override = args.pop()
         # --- End Detail Daemon Integration ---
 
 async_tasks = []
@@ -1169,8 +1172,7 @@ def worker():
                 async_task.dd_start_offset,
                 async_task.dd_end_offset,
                 async_task.dd_fade,
-                async_task.dd_smooth,
-                async_task.dd_cfg_scale_override
+                async_task.dd_smooth
             )
         # --- End Detail Daemon Integration ---
 
