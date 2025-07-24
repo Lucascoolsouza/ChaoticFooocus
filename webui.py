@@ -1071,6 +1071,13 @@ with shared.gradio_root:
         ctrls += freeu_ctrls
         ctrls += inpaint_ctrls
         ctrls += nag_ctrls
+        
+        if not args_manager.args.disable_image_log:
+            ctrls += [save_final_enhanced_image_only]
+            
+        if not args_manager.args.disable_metadata:
+            ctrls += [save_metadata_to_images, metadata_scheme]
+            
         ctrls += [detail_daemon_enabled, detail_daemon_strength]
 
         if not args_manager.args.disable_image_log:
