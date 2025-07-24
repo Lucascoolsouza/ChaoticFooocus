@@ -8,6 +8,7 @@ from ldm_patched.contrib.external_upscale_model import ImageUpscaleWithModel
 from ldm_patched.pfn.architecture.RRDB import RRDBNet as ESRGAN
 from modules.config import downloading_upscale_model, downloading_ultrasharp_model, downloading_realistic_rescaler_model
 import modules.flags
+from modules.seamless_tiling import process_seamless_enhancement
 
 import sys
 import os
@@ -150,6 +151,45 @@ def perform_latent_upscale(img, async_task=None, vae_model=None):
         print(f'Latent Upscale failed: {e}')
         return img
 
+def perform_seamless_tiling(img, async_task=None):
+    """
+    Apply seamless tiling to make the image tileable.
+    """
+    from PIL import Image
+    
+    print(f'Applying seamless tiling to image with shape {str(img.shape)} ...')
+    
+    # Convert numpy array to PIL Image
+    if isinstance(img, np.ndarray):
+        pil_img = Image.fromarray(img.astype(np.uint8))
+    else:
+        pil_img = img
+    
+    # Get tiling method from async_task if available, otherwise use default
+    method = 'blend'  # Default method
+    overlap_ratio = 0.15  # Default overlap ratio
+    
+    if async_task and hasattr(async_task, 'seamless_tiling_method'):
+        method = async_task.seamless_tiling_method
+    if async_task and hasattr(async_task, 'seamless_tiling_overlap'):
+        overlap_ratio = async_task.seamless_tiling_overlap
+    
+    # Process seamless tiling
+    result = process_seamless_enhancement(
+        pil_img, 
+        method=method, 
+        overlap_ratio=overlap_ratio,
+        create_preview=False
+    )
+    
+    # Convert back to numpy array
+    seamless_img = np.array(result['result'])
+    
+    print(f'Seamless tiling completed. Output shape: {str(seamless_img.shape)}')
+    
+    return seamless_img
+
+
 def perform_upscale(img, method, async_task=None, vae_model=None):
     global model_default, model_ultrasharp, model_realistic_rescaler, final_vae
 
@@ -163,6 +203,8 @@ def perform_upscale(img, method, async_task=None, vae_model=None):
         return perform_upscale_without_tiling(img, "Realistic Rescaler", [model_realistic_rescaler], downloading_realistic_rescaler_model, vae=vae_model)
     elif method == modules.flags.latent_upscale.casefold():
         return perform_latent_upscale(img, async_task=async_task, vae_model=vae_model)
+    elif method == modules.flags.seamless_tiling.casefold():
+        return perform_seamless_tiling(img, async_task=async_task)
     else: # Default upscaling
         if model_default is None:
             model_filename = downloading_upscale_model()

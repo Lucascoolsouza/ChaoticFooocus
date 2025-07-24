@@ -413,6 +413,24 @@ with shared.gradio_root:
                                                                    choices=flags.bg_removal_models,
                                                                    value=modules.config.default_enhance_bg_removal_model,
                                                                    visible=modules.config.default_enhance_uov_method == flags.remove_background)
+                                
+                                # Seamless Tiling Options
+                                enhance_seamless_tiling_method = gr.Radio(
+                                    label='Seamless Tiling Method:',
+                                    choices=['blend', 'mirror', 'offset'],
+                                    value='blend',
+                                    visible=modules.config.default_enhance_uov_method == flags.seamless_tiling,
+                                    info='Method for creating seamless tiles'
+                                )
+                                enhance_seamless_tiling_overlap = gr.Slider(
+                                    label='Edge Overlap Ratio',
+                                    minimum=0.05,
+                                    maximum=0.3,
+                                    value=0.15,
+                                    step=0.05,
+                                    visible=modules.config.default_enhance_uov_method == flags.seamless_tiling,
+                                    info='Amount of edge blending for seamless effect'
+                                )
                                 enhance_uov_processing_order = gr.Radio(label='Order of Processing',
                                                                         info='Use before to enhance small details and after to enhance large areas.',
                                                                         choices=flags.enhancement_uov_processing_order,
@@ -423,10 +441,19 @@ with shared.gradio_root:
                                                                    value=modules.config.default_enhance_uov_prompt_type,
                                                                    visible=modules.config.default_enhance_uov_processing_order == flags.enhancement_uov_after)
 
-                                enhance_uov_method.change(lambda x: gr.update(visible=x == flags.remove_background),
-                                                          inputs=enhance_uov_method,
-                                                          outputs=enhance_bg_removal_model,
-                                                          queue=False, show_progress=False)
+                                def update_enhance_uov_options(method):
+                                    return {
+                                        enhance_bg_removal_model: gr.update(visible=method == flags.remove_background),
+                                        enhance_seamless_tiling_method: gr.update(visible=method == flags.seamless_tiling),
+                                        enhance_seamless_tiling_overlap: gr.update(visible=method == flags.seamless_tiling)
+                                    }
+                                
+                                enhance_uov_method.change(
+                                    update_enhance_uov_options,
+                                    inputs=enhance_uov_method,
+                                    outputs=[enhance_bg_removal_model, enhance_seamless_tiling_method, enhance_seamless_tiling_overlap],
+                                    queue=False, show_progress=False
+                                )
                                 
                                 enhance_uov_processing_order.change(lambda x: gr.update(visible=x == flags.enhancement_uov_after),
                                                                     inputs=enhance_uov_processing_order,
