@@ -33,7 +33,7 @@ def safe_decode(latents, vae, width=512, height=512):
     try:
         with torch.no_grad():
             latents = latents.to(vae.device)
-            print(f"[safe_decode] Latents device: {latents.device}, dtype: {latents.dtype}")
+            print(f"[safe_decode] Input latents shape: {latents.shape}, dtype: {latents.dtype}")
             
             # Determine scaling factor
             scaling_factor = 0.18215  # Default SDXL scaling factor
@@ -50,7 +50,8 @@ def safe_decode(latents, vae, width=512, height=512):
             if hasattr(vae, 'decode') and callable(vae.decode):
                 # Standard diffusers VAE
                 try:
-                    decoded = vae.decode(scaled_latents, return_dict=False)[0]
+                    result = vae.decode(scaled_latents, return_dict=False)
+                    decoded = result[0] if isinstance(result, tuple) else result
                 except:
                     # Fallback without return_dict
                     decoded = vae.decode(scaled_latents)
@@ -63,57 +64,63 @@ def safe_decode(latents, vae, width=512, height=512):
                 # Fallback direct call
                 decoded = vae.decode(scaled_latents)
             
-            print(f"[safe_decode] Decoded shape: {decoded.shape}, dtype: {decoded.dtype}")
+            print(f"[safe_decode] Raw decoded shape: {decoded.shape}, dtype: {decoded.dtype}")
+            print(f"[safe_decode] Raw decoded min: {decoded.min():.4f}, max: {decoded.max():.4f}")
 
-            # Ensure we have the right tensor format [B, C, H, W]
+            # Handle different decoded tensor formats
             if len(decoded.shape) == 4:
-                # Standard format [B, C, H, W]
-                if decoded.shape[1] == 3:
-                    # Already RGB
-                    pass
-                elif decoded.shape[1] > 3:
-                    # Take first 3 channels
-                    decoded = decoded[:, :3]
+                # Expected format [B, C, H, W]
+                batch_size, channels, height_dec, width_dec = decoded.shape
+                print(f"[safe_decode] Decoded dimensions: B={batch_size}, C={channels}, H={height_dec}, W={width_dec}")
+                
+                # Ensure we have 3 channels for RGB
+                if channels == 3:
+                    pass  # Already RGB
+                elif channels > 3:
+                    decoded = decoded[:, :3]  # Take first 3 channels
+                    print(f"[safe_decode] Truncated to 3 channels: {decoded.shape}")
+                elif channels == 1:
+                    decoded = decoded.repeat(1, 3, 1, 1)  # Replicate to RGB
+                    print(f"[safe_decode] Replicated to 3 channels: {decoded.shape}")
                 else:
-                    # Replicate single channel to RGB
-                    decoded = decoded.repeat(1, 3, 1, 1)
+                    raise ValueError(f"Cannot handle {channels} channels")
+                    
+            elif len(decoded.shape) == 3:
+                # Format [C, H, W] - add batch dimension
+                decoded = decoded.unsqueeze(0)
+                print(f"[safe_decode] Added batch dimension: {decoded.shape}")
+                
             else:
-                print(f"[safe_decode] Unexpected decoded shape: {decoded.shape}")
-                # Try to reshape if possible
-                if decoded.numel() == width * height * 3:
-                    decoded = decoded.view(1, 3, height, width)
-                else:
-                    raise ValueError(f"Cannot handle decoded shape: {decoded.shape}")
+                raise ValueError(f"Unexpected decoded tensor shape: {decoded.shape}")
 
-            print(f"[safe_decode] Processed shape: {decoded.shape}, dtype: {decoded.dtype}")
+            print(f"[safe_decode] Processed tensor shape: {decoded.shape}")
             
-            # Normalize to [0, 1] range
+            # Normalize from [-1, 1] to [0, 1] range
             decoded = torch.clamp((decoded + 1.0) / 2.0, 0.0, 1.0)
-            print(f"[safe_decode] Clamped shape: {decoded.shape}, dtype: {decoded.dtype}")
+            print(f"[safe_decode] Normalized range: min={decoded.min():.4f}, max={decoded.max():.4f}")
             
             # Convert to numpy [H, W, C] format
+            # Take first batch item and permute from [C, H, W] to [H, W, C]
             decoded_np = (decoded[0].permute(1, 2, 0) * 255).cpu().numpy().astype(np.uint8)
             print(f"[safe_decode] Final numpy shape: {decoded_np.shape}, dtype: {decoded_np.dtype}")
             
-            # Ensure we have the right dimensions
-            if decoded_np.shape[2] != 3:
-                print(f"[safe_decode] Warning: Expected 3 channels, got {decoded_np.shape[2]}")
-                if decoded_np.shape[2] == 1:
-                    decoded_np = np.repeat(decoded_np, 3, axis=2)
-                else:
-                    decoded_np = decoded_np[:, :, :3]
+            # Final validation
+            if len(decoded_np.shape) != 3 or decoded_np.shape[2] != 3:
+                raise ValueError(f"Invalid final shape: {decoded_np.shape}, expected (H, W, 3)")
             
-            print(f"[safe_decode] ✅ Decode successful. Latents min: {latents.min():.4f}, max: {latents.max():.4f}, mean: {latents.mean():.4f}, std: {latents.std():.4f}")
+            print(f"[safe_decode] ✅ Decode successful. Final image shape: {decoded_np.shape}")
             return Image.fromarray(decoded_np, mode='RGB')
 
     except Exception as e:
-        print(f"[safe_decode] ❌ Decode failed: {e}. Latents shape: {latents.shape}, dtype: {latents.dtype}, device: {latents.device}")
+        print(f"[safe_decode] ❌ Decode failed: {e}")
+        print(f"[safe_decode] Latents shape: {latents.shape}, dtype: {latents.dtype}, device: {latents.device}")
         if latents.numel() > 0:
-            print(f"[safe_decode] Latents min: {latents.min():.4f}, max: {latents.max():.4f}, mean: {latents.mean():.4f}, std: {latents.std():.4f}")
-        # Return error image
+            print(f"[safe_decode] Latents stats: min={latents.min():.4f}, max={latents.max():.4f}, mean={latents.mean():.4f}, std={latents.std():.4f}")
+        
+        # Return error image with proper dimensions
         img = Image.new("RGB", (width, height), color="red")
         draw = ImageDraw.Draw(img)
-        draw.text((10, 10), f"Decode Error", fill="white")
+        draw.text((10, 10), f"Decode Error: {str(e)[:50]}", fill="white")
         return img
 
 
