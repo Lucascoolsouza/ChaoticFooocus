@@ -994,6 +994,15 @@ def downloading_pixelsharpen_model():
     return os.path.join(path_upscale_models, '1x_PixelSharpen_100000.pth')
 
 
+def downloading_tghqface8x_model():
+    load_file_from_url(
+        url='https://huggingface.co/Pinguin/888-xl-diffusion-testmodel-v02-blue-star-sdxl-SAFETENSORS/resolve/main/TGHQFace8x_500k.pth',
+        model_dir=path_upscale_models,
+        file_name='TGHQFace8x_500k.pth'
+    )
+    return os.path.join(path_upscale_models, 'TGHQFace8x_500k.pth')
+
+
 def downloading_safety_checker_model():
     load_file_from_url(
         url='https://huggingface.co/mashb1t/misc/resolve/main/stable-diffusion-safety-checker.bin',

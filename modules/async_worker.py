@@ -77,6 +77,7 @@ class AsyncTask:
         self.overwrite_height = args.pop()
         self.overwrite_vary_strength = args.pop()
         self.overwrite_upscale_strength = args.pop()
+        self.upscale_loops = args.pop()
         self.mixing_image_prompt_and_vary_upscale = args.pop()
         self.mixing_image_prompt_and_inpaint = args.pop()
         self.debugging_cn_preprocessor = args.pop()
@@ -654,26 +655,30 @@ def worker():
         return inpaint_image, inpaint_mask
 
     def apply_upscale(async_task, uov_input_image, uov_method, switch, current_progress, advance_progress=False):
+        # Apply upscaler in a loop
+        for i in range(async_task.upscale_loops):
+            progressbar(async_task, current_progress, f'Upscaling image (Loop {i+1}/{async_task.upscale_loops}) ...')
+            uov_input_image = perform_upscale(uov_input_image, uov_method, async_task=async_task, vae_model=pipeline.final_vae)
+            print(f'Image upscaled (Loop {i+1}/{async_task.upscale_loops}).')
+
+        # Get final dimensions after all loops
         H, W, C = uov_input_image.shape
-        if advance_progress:
-            current_progress += 1
-        progressbar(async_task, current_progress, f'Upscaling image from {str((W, H))} ...')
-        uov_input_image = perform_upscale(uov_input_image, uov_method, async_task=async_task, vae_model=pipeline.final_vae)
-        print(f'Image upscaled.')
-        if '1.5x' in uov_method:
-            f = 1.5
-        elif '2x' in uov_method:
-            f = 2.0
-        else:
-            f = 1.0
-        shape_ceil = get_shape_ceil(H * f, W * f)
+
+        shape_ceil = get_shape_ceil(H, W) # Use current dimensions for shape_ceil
+
         if shape_ceil < 1024:
             print(f'[Upscale] Image is resized because it is too small.')
             uov_input_image = set_image_shape_ceil(uov_input_image, 1024)
-            shape_ceil = 1024
-        else:
-            uov_input_image = resample_image(uov_input_image, width=W * f, height=H * f)
-        image_is_super_large = shape_ceil > 2800
+            shape_ceil = 1024 # Update shape_ceil after resizing
+        elif shape_ceil > 2800: # Added a check for super large images to resize down if needed
+            print(f'[Upscale] Image is resized because it is too large.')
+            uov_input_image = set_image_shape_ceil(uov_input_image, 2800) # Resize to a max reasonable size
+            shape_ceil = 2800 # Update shape_ceil after resizing
+
+        # The 'fast' and 'image_is_super_large' direct_return logic should still apply.
+        # The `image_is_super_large` check should use the `shape_ceil` after potential resizing.
+        image_is_super_large = shape_ceil > 2800 # Re-evaluate after potential resizing
+
         if 'fast' in uov_method:
             direct_return = True
         elif image_is_super_large:
@@ -1021,7 +1026,7 @@ def worker():
         uov_input_image = HWC3(uov_input_image)
         if 'vary' in uov_method:
             goals.append('vary')
-        elif 'upscale' in uov_method or 'ultrasharp' in uov_method or 'web photo' in uov_method or 'realistic rescaler' in uov_method or 'skin contrast' in uov_method or '4xnomos' in uov_method or 'faces' in uov_method or 'pixelsharpen' in uov_method:
+        elif 'upscale' in uov_method or 'ultrasharp' in uov_method or 'web photo' in uov_method or 'realistic rescaler' in uov_method or 'skin contrast' in uov_method or '4xnomos' in uov_method or 'faces' in uov_method or 'pixelsharpen' in uov_method or 'tghqface8x' in uov_method:
             goals.append('upscale')
             if 'fast' in uov_method:
                 skip_prompt_processing = True

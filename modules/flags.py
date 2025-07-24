@@ -11,11 +11,12 @@ ultrasharp = 'Ultrasharp'
 realistic_rescaler = 'Realistic Rescaler'
 latent_upscale = 'Latent Upscale'
 pixelsharpen = 'PixelSharpen'
+tghqface8x = 'TGHQFace8x'
 
 remove_background = 'Remove Background'
 seamless_tiling = 'Seamless Tiling'
 
-uov_list = [disabled, subtle_variation, strong_variation, upscale_15, upscale_2, upscale_fast, ultrasharp, realistic_rescaler, latent_upscale, pixelsharpen, remove_background, seamless_tiling]
+uov_list = [disabled, subtle_variation, strong_variation, upscale_15, upscale_2, upscale_fast, ultrasharp, realistic_rescaler, latent_upscale, pixelsharpen, tghqface8x, remove_background, seamless_tiling]
 
 enhancement_uov_before = "Before First Enhancement"
 enhancement_uov_after = "After Last Enhancement"
