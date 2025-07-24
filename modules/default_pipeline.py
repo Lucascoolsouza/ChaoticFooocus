@@ -406,7 +406,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
     # Create detail daemon callback wrapper
     original_callback = callback
     if detail_daemon_enabled and callback is not None:
-        def detail_daemon_callback(step, x0, x, total_steps):
+        def detail_daemon_callback(step, x0, x, total_steps, y=None):
             # Apply detail enhancement to intermediate results during sampling
             if detail_daemon.enabled and x0 is not None:
                 try:
@@ -422,8 +422,8 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 except Exception as e:
                     print(f'[Detail Daemon] Error during sampling callback: {e}')
             
-            # Call original callback
-            return original_callback(step, x0, x, total_steps)
+            # Call original callback with all arguments
+            return original_callback(step, x0, x, total_steps, y)
         
         callback = detail_daemon_callback
 
