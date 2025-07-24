@@ -51,6 +51,8 @@ class AsyncTask:
         self.current_tab = args.pop()
         self.uov_method = args.pop()
         self.uov_input_image = args.pop()
+        self.latent_upscale_method = args.pop()
+        self.latent_upscale_scheduler = args.pop()
         self.outpaint_selections = args.pop()
         self.inpaint_input_image = args.pop()
         self.inpaint_additional_prompt = args.pop()
@@ -163,16 +165,6 @@ class AsyncTask:
         self.should_enhance = self.enhance_checkbox and (self.enhance_uov_method != disabled.casefold() or len(self.enhance_ctrls) > 0)
         self.images_to_enhance_count = 0
         self.enhance_stats = {}
-
-        # Latent Upscale options (default to None)
-        self.latent_upscale_method = None
-        self.latent_upscale_scheduler = None
-        # If Latent Upscale is selected, try to extract options from args (if present)
-        if self.uov_method and self.uov_method.lower() == 'latent upscale':
-            # These should be passed from the UI in a known order after uov_input_image
-            if len(args) >= 2:
-                self.latent_upscale_method = args.pop()
-                self.latent_upscale_scheduler = args.pop()
 
 async_tasks = []
 
