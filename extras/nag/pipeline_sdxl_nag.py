@@ -637,15 +637,53 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
                     added_cond_kwargs["image_embeds"] = image_embeds
 
-                noise_pred = self.unet(
-                    latent_model_input,
-                    t,
-                    encoder_hidden_states=prompt_embeds,
-                    timestep_cond=timestep_cond,
-                    cross_attention_kwargs=self.cross_attention_kwargs,
-                    added_cond_kwargs=added_cond_kwargs,
-                    return_dict=False,
-                )[0]
+                # Use ComfyUI model interface
+                if hasattr(self.unet, 'model') and hasattr(self.unet.model, 'apply_model'):
+                    # ComfyUI wrapped model - convert Diffusers conditioning to ComfyUI format
+                    # For SDXL, we need to pass the additional conditioning as separate parameters
+                    comfy_kwargs = {}
+                    if "text_embeds" in added_cond_kwargs and "time_ids" in added_cond_kwargs:
+                        # Convert Diffusers SDXL conditioning to ComfyUI format
+                        pooled_output = added_cond_kwargs["text_embeds"]
+                        time_ids = added_cond_kwargs["time_ids"]
+                        
+                        # Extract dimensions from time_ids (original_size, crops_coords, target_size)
+                        if time_ids.shape[-1] >= 6:
+                            height = int(time_ids[0, 0].item())
+                            width = int(time_ids[0, 1].item())
+                            crop_h = int(time_ids[0, 2].item())
+                            crop_w = int(time_ids[0, 3].item())
+                            target_height = int(time_ids[0, 4].item())
+                            target_width = int(time_ids[0, 5].item())
+                            
+                            comfy_kwargs.update({
+                                "pooled_output": pooled_output,
+                                "width": width,
+                                "height": height,
+                                "crop_w": crop_w,
+                                "crop_h": crop_h,
+                                "target_width": target_width,
+                                "target_height": target_height,
+                                "device": latent_model_input.device,
+                            })
+                    
+                    noise_pred = self.unet.model.apply_model(
+                        latent_model_input,
+                        t,
+                        c_crossattn=prompt_embeds,
+                        **comfy_kwargs,
+                    )
+                else:
+                    # Standard Diffusers UNet
+                    noise_pred = self.unet(
+                        latent_model_input,
+                        t,
+                        encoder_hidden_states=prompt_embeds,
+                        timestep_cond=timestep_cond,
+                        cross_attention_kwargs=self.cross_attention_kwargs,
+                        added_cond_kwargs=added_cond_kwargs,
+                        return_dict=False,
+                    )[0]
 
                 # perform guidance
                 if self.do_classifier_free_guidance:
@@ -658,7 +696,8 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents_dtype = latents.dtype
-                latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+                scheduler_output = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)
+                latents = scheduler_output.prev_sample if hasattr(scheduler_output, 'prev_sample') else scheduler_output[0]
 
                 # --- add these three lines ---
                 if callback is not None:
