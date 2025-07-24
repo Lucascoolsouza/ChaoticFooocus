@@ -375,6 +375,53 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         initial_latent = latent
 
     minmax_sigmas = calculate_sigmas(sampler=sampler_name, scheduler=scheduler_name, model=final_unet.model, steps=steps, denoise=denoise)
+    
+    # Apply Detail Daemon sigma manipulation if enabled
+    if detail_daemon_enabled:
+        print(f'[Detail Daemon] Manipulating sigmas with amount {detail_daemon_amount}')
+        
+        # Create a schedule mask based on start/end parameters
+        num_steps = len(minmax_sigmas)
+        step_indices = torch.arange(num_steps, dtype=torch.float32)
+        normalized_steps = step_indices / (num_steps - 1) if num_steps > 1 else torch.zeros_like(step_indices)
+        
+        # Apply start/end range
+        mask = torch.ones_like(normalized_steps)
+        if detail_daemon_start > 0 or detail_daemon_end < 1:
+            mask = torch.where((normalized_steps >= detail_daemon_start) & (normalized_steps <= detail_daemon_end), 1.0, 0.0)
+        
+        # Apply offsets (simplified for now)
+        if detail_daemon_start_offset != 0:
+            shift_amount = int(num_steps * detail_daemon_start_offset)
+            if shift_amount != 0:
+                mask = torch.roll(mask, shift_amount)
+        
+        # Apply exponent curve
+        if detail_daemon_exponent != 1:
+            mask = torch.pow(mask, detail_daemon_exponent)
+        
+        # Apply fade (gaussian blur approximation)
+        if detail_daemon_fade > 0:
+            # Simple smoothing - in practice you'd want proper gaussian blur
+            kernel_size = max(3, int(detail_daemon_fade * 10))
+            if kernel_size % 2 == 0:
+                kernel_size += 1
+            # Simple moving average as approximation
+            padding = kernel_size // 2
+            mask_padded = torch.nn.functional.pad(mask.unsqueeze(0).unsqueeze(0), (padding, padding), mode='reflect')
+            mask = torch.nn.functional.avg_pool1d(mask_padded, kernel_size, stride=1, padding=0).squeeze()
+        
+        # Calculate detail multiplier based on bias
+        # Lower multiplier = less denoising = more detail
+        detail_multiplier = 1.0 - (detail_daemon_amount * mask)
+        detail_multiplier = detail_multiplier * detail_daemon_bias + detail_multiplier * (1 - detail_daemon_bias) * 0.5
+        
+        # Apply the multiplier to sigmas
+        original_sigmas = minmax_sigmas.clone()
+        minmax_sigmas = minmax_sigmas * detail_multiplier.to(minmax_sigmas.device)
+        
+        print(f'[Detail Daemon] Applied sigma multiplier range: {detail_multiplier.min():.3f} - {detail_multiplier.max():.3f}')
+    
     positive_sigmas = minmax_sigmas[minmax_sigmas > 0]
     if positive_sigmas.numel() == 0:
         raise ValueError("No positive sigma values found. This indicates an issue with the sampler or model configuration.")
@@ -382,22 +429,6 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
     sigma_min = float(sigma_min.cpu().numpy())
     sigma_max = float(sigma_max.cpu().numpy())
     print(f'[Sampler] sigma_min = {sigma_min}, sigma_max = {sigma_max}')
-
-    # Initialize detail daemon if enabled
-    if detail_daemon_enabled:
-        print(f'[Detail Daemon] Enabled during sampling with amount {detail_daemon_amount}')
-        from modules.detail_daemon import detail_daemon
-        detail_daemon.enabled = detail_daemon_enabled
-        detail_daemon.detail_amount = float(detail_daemon_amount)
-        detail_daemon.start = float(detail_daemon_start)
-        detail_daemon.end = float(detail_daemon_end)
-        detail_daemon.bias = float(detail_daemon_bias)
-        detail_daemon.start_offset = float(detail_daemon_start_offset)
-        detail_daemon.end_offset = float(detail_daemon_end_offset)
-        detail_daemon.exponent = float(detail_daemon_exponent)
-        detail_daemon.fade = float(detail_daemon_fade)
-        detail_daemon.mode = detail_daemon_mode
-        detail_daemon.smooth = bool(detail_daemon_smooth)
 
     modules.patch.BrownianTreeNoiseSamplerPatched.global_init(
         initial_latent['samples'].to(ldm_patched.modules.model_management.get_torch_device()),
@@ -805,32 +836,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             latent_dict = {'samples': imgs}
             imgs = core.decode_vae(target_vae, latent_dict)
             
-            # Apply detail daemon if enabled
-            if detail_daemon_enabled and detail_daemon.enabled:
-                print(f'[Detail Daemon] Applying to {len(imgs)} images after VAE decode with amount {detail_daemon.detail_amount}')
-                enhanced_imgs = []
-                for img in imgs:
-                    # Convert tensor to numpy array
-                    img_array = img
-                    if hasattr(img_array, 'cpu'):  # It's a tensor
-                        img_array = img_array.cpu().numpy()
-                    
-                    # Ensure the array is in the right format (0-255, uint8)
-                    if img_array.dtype != np.uint8:
-                        img_array = (img_array * 255).astype(np.uint8)
-                    
-                    # Apply detail daemon
-                    enhanced_img = detail_daemon.process(img_array)
-                    if enhanced_img is not None:
-                        # Convert back to tensor format if needed
-                        if hasattr(img, 'device'):  # Original was a tensor
-                            enhanced_tensor = torch.from_numpy(enhanced_img.astype(np.float32) / 255.0).to(img.device)
-                            enhanced_imgs.append(enhanced_tensor)
-                        else:
-                            enhanced_imgs.append(enhanced_img)
-                    else:
-                        enhanced_imgs.append(img)
-                imgs = enhanced_imgs
+            # Detail daemon is now applied via sigma manipulation during sampling
             
             # Convert to numpy arrays for saving
             return core.pytorch_to_numpy(imgs)
