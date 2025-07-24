@@ -403,38 +403,8 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         initial_latent['samples'].to(ldm_patched.modules.model_management.get_torch_device()),
         sigma_min, sigma_max, seed=image_seed, cpu=False)
 
-    # Create detail daemon callback wrapper
-    original_callback = callback
-    if detail_daemon_enabled and callback is not None:
-        def detail_daemon_callback(step, x0, x, total_steps, y=None):
-            # Apply detail enhancement to intermediate results during sampling
-            if detail_daemon.enabled and x0 is not None:
-                try:
-                    # Decode latent to image for detail processing
-                    temp_latent = {'samples': x0}
-                    temp_img = core.decode_vae(target_vae, temp_latent)
-                    if temp_img is not None and len(temp_img) > 0:
-                        # Convert tensor to numpy array if needed
-                        img_array = temp_img[0]
-                        if hasattr(img_array, 'cpu'):  # It's a tensor
-                            img_array = img_array.cpu().numpy()
-                        
-                        # Ensure the array is in the right format (0-255, uint8)
-                        if img_array.dtype != np.uint8:
-                            img_array = (img_array * 255).astype(np.uint8)
-                        
-                        # Apply detail daemon to the decoded image
-                        enhanced_img = detail_daemon.process(img_array)
-                        if enhanced_img is not None:
-                            # Re-encode back to latent (simplified - in practice this might need more sophisticated handling)
-                            pass  # For now, we'll let the original callback handle the display
-                except Exception as e:
-                    print(f'[Detail Daemon] Error during sampling callback: {e}')
-            
-            # Call original callback with all arguments
-            return original_callback(step, x0, x, total_steps, y)
-        
-        callback = detail_daemon_callback
+    # Note: Detail daemon callback approach is too expensive (VAE decode on every step)
+    # We'll apply detail daemon as post-processing instead
 
     decoded_latent = None
 
@@ -834,6 +804,33 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         if imgs is not None:
             latent_dict = {'samples': imgs}
             imgs = core.decode_vae(target_vae, latent_dict)
+            
+            # Apply detail daemon if enabled
+            if detail_daemon_enabled and detail_daemon.enabled:
+                print(f'[Detail Daemon] Applying to {len(imgs)} images after VAE decode with amount {detail_daemon.detail_amount}')
+                enhanced_imgs = []
+                for img in imgs:
+                    # Convert tensor to numpy array
+                    img_array = img
+                    if hasattr(img_array, 'cpu'):  # It's a tensor
+                        img_array = img_array.cpu().numpy()
+                    
+                    # Ensure the array is in the right format (0-255, uint8)
+                    if img_array.dtype != np.uint8:
+                        img_array = (img_array * 255).astype(np.uint8)
+                    
+                    # Apply detail daemon
+                    enhanced_img = detail_daemon.process(img_array)
+                    if enhanced_img is not None:
+                        # Convert back to tensor format if needed
+                        if hasattr(img, 'device'):  # Original was a tensor
+                            enhanced_tensor = torch.from_numpy(enhanced_img.astype(np.float32) / 255.0).to(img.device)
+                            enhanced_imgs.append(enhanced_tensor)
+                        else:
+                            enhanced_imgs.append(enhanced_img)
+                    else:
+                        enhanced_imgs.append(img)
+                imgs = enhanced_imgs
             
             # Convert to numpy arrays for saving
             return core.pytorch_to_numpy(imgs)
