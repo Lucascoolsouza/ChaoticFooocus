@@ -143,8 +143,9 @@ def safe_decode(latents, vae, width=512, height=512):
 
             print(f"[safe_decode] Processed tensor shape: {decoded.shape}")
             
-            # Normalize from [-1, 1] to [0, 1] range
-            decoded = torch.clamp((decoded + 1.0) / 2.0, 0.0, 1.0)
+            # Normalize from VAE output range to [0, 1] range
+            # Option 1: Simple clamping if values are already roughly in [0, 1] or a positive range
+            decoded = torch.clamp(decoded, 0.0, 1.0)
             print(f"[safe_decode] Normalized range: min={decoded.min():.4f}, max={decoded.max():.4f}")
             
             # Convert to numpy [H, W, C] format
@@ -957,29 +958,31 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             # Ensure we return the right batch size (should be 1 for single image)
             if latents.shape[0] > 1:
                 latents = latents[:1]  # Take only the first sample
+            
+
+            
             return (latents,)
         
-        # Standard decoding logic (bypassing safe_decode for testing)
-        if output_type == "latent":
-            image = latents
-        else:
-            needs_upcasting = self.vae.dtype == torch.float16 and self.vae.config.force_upcast
-            if needs_upcasting:
-                self.upcast_vae()
-                latents = latents.to(next(iter(self.vae.post_quant_conv.parameters())).dtype)
-
-            # Standard scaling (remove the custom normalization)
-            scaling_factor = self.vae.config.scaling_factor if hasattr(self.vae.config, 'scaling_factor') else 0.18215
-            latents = latents / scaling_factor
-
-            image = self.vae.decode(latents, return_dict=False)[0]
-
-            if needs_upcasting:
-                self.vae.to(dtype=torch.float16)
-
-            # Postprocessing (watermark, image_processor)
-            image = self.image_processor.postprocess(image, output_type=output_type)
+        # For other use cases, decode and return images
+        print(f"[NAG Pipeline] Before final decode. Latents shape: {latents.shape}, dtype: {latents.dtype}, device: {latents.device}")
+        if latents.numel() > 0:
+            print(f"[NAG Pipeline] Latents min: {latents.min():.4f}, max: {latents.max():.4f}, mean: {latents.mean():.4f}, std: {latents.std():.4f}")
         
+        # Clamp latents before final decode to prevent extreme values
+        latents = torch.clamp(latents, -3, 3)
+        print(f"[NAG Pipeline] Latents clamped. Min: {latents.min():.4f}, Max: {latents.max():.4f}, Mean: {latents.mean():.4f}, Std: {latents.std():.4f}")
+        
+        # Normalize latents to the expected VAE input range
+        latents = latents / latents.std() * 0.18215
+        print(f"[NAG Pipeline] Latents normalized. Min: {latents.min():.4f}, Max: {latents.max():.4f}, Mean: {latents.mean():.4f}, Std: {latents.std():.4f}")
+
+        # Ensure VAE is in evaluation mode and on the correct device
+        self.vae.eval()
+        self.vae.to(latents.device)
+
+        final_image = safe_decode(latents, self.vae, width=width, height=height)
         self.maybe_free_model_hooks()
-        return StableDiffusionXLPipelineOutput(images=[image])
+
+        print("Returning:", type(final_image), final_image.size if hasattr(final_image, 'size') else "-")
+        return StableDiffusionXLPipelineOutput(images=[final_image])
 
