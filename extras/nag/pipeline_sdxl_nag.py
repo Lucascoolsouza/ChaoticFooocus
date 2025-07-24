@@ -33,18 +33,6 @@ def safe_decode(latents, vae, width=512, height=512):
     try:
         with torch.no_grad():
             latents = latents.to(vae.device)
-            decoded = vae.decode(latents)
-
-            if hasattr(vae, "post_quant_conv"):
-                vae.post_quant_conv = vae.post_quant_conv.to(decoded.device, decoded.dtype)
-                decoded = vae.post_quant_conv(decoded)
-            else:
-                decoded = decoded[:, :3] if decoded.size(1) >= 3 else decoded.mean(dim=1, keepdim=True).repeat(1, 3, 1, 1)
-
-            decoded = torch.clamp((decoded + 1) * 0.5, 0, 1)
-            decoded_np = (decoded[0].permute(1, 2, 0) * 255).cpu().numpy().astype(np.uint8)
-            print(f"[safe_decode] ✅ Decode successful. Latents min: {latents.min():.4f}, max: {latents.max():.4f}, mean: {latents.mean():.4f}, std: {latents.std():.4f}")
-            latents = latents.to(vae.device)
             print(f"[safe_decode] Latents device: {latents.device}, dtype: {latents.dtype}")
             decoded = vae.decode(latents)
             print(f"[safe_decode] Decoded shape: {decoded.shape}, dtype: {decoded.dtype}")
