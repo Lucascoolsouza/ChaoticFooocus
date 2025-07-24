@@ -1111,6 +1111,15 @@ class StableDiffusionXLTPGPipeline(
         original_size = original_size or (height, width)
         target_size = target_size or (height, width)
 
+        # Ensure the UNet model is on the correct device
+        if isinstance(self.unet, torch.nn.Module): # Check if self.unet is a direct nn.Module
+            self.unet.to(self._execution_device)
+        elif hasattr(self.unet, 'model') and isinstance(self.unet.model, torch.nn.Module): # Check if it's a wrapper with a .model attribute
+            self.unet.model.to(self._execution_device)
+        else:
+            # Fallback or raise an error if the UNet structure is unexpected
+            raise TypeError("UNet model structure is not recognized for device placement.")
+
         # 1. Check inputs. Raise error if not correct
         self.check_inputs(
             prompt,
@@ -1148,6 +1157,16 @@ class StableDiffusionXLTPGPipeline(
             batch_size = prompt_embeds.shape[0]
 
         device = self._execution_device
+
+        # Ensure the underlying UNet model is on the correct device using ModelPatcher's method
+        if hasattr(self.unet, 'patch_model') and callable(self.unet.patch_model):
+            self.unet.patch_model(device_to=device, patch_weights=False)
+        elif hasattr(self.unet, 'model') and isinstance(self.unet.model, torch.nn.Module):
+            self.unet.model.to(device)
+        elif isinstance(self.unet, torch.nn.Module):
+            self.unet.to(device)
+        else:
+            logger.warning("UNet model structure is unexpected. Cannot ensure proper device placement.")
 
         # 3. Encode input prompt
         lora_scale = (
@@ -1298,11 +1317,28 @@ class StableDiffusionXLTPGPipeline(
             for drop_layer in drop_layers:
                 try:
                     if drop_layer[0] == "d":
-                        down_layers[int(drop_layer[1:])].__class__ = make_tpg_block(down_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)
+                        # Replace the forward method directly
+                        original_forward = down_layers[int(drop_layer[1:])].forward
+                        modified_block = make_tpg_block(down_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
+                        down_layers[int(drop_layer[1:])].forward = modified_block.forward
+                        # Store original forward for later restoration
+                        if not hasattr(down_layers[int(drop_layer[1:])], '_original_forward'):
+                            down_layers[int(drop_layer[1:])]._original_forward = original_forward
+
                     elif drop_layer[0] == "m":
-                        mid_layers[int(drop_layer[1:])].__class__ = make_tpg_block(mid_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)
+                        original_forward = mid_layers[int(drop_layer[1:])].forward
+                        modified_block = make_tpg_block(mid_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
+                        mid_layers[int(drop_layer[1:])].forward = modified_block.forward
+                        if not hasattr(mid_layers[int(drop_layer[1:])], '_original_forward'):
+                            mid_layers[int(drop_layer[1:])]._original_forward = original_forward
+
                     elif drop_layer[0] == "u":
-                        up_layers[int(drop_layer[1:])].__class__ = make_tpg_block(up_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)
+                        original_forward = up_layers[int(drop_layer[1:])].forward
+                        modified_block = make_tpg_block(up_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
+                        up_layers[int(drop_layer[1:])].forward = modified_block.forward
+                        if not hasattr(up_layers[int(drop_layer[1:])], '_original_forward'):
+                            up_layers[int(drop_layer[1:])]._original_forward = original_forward
+
                     else:
                         raise ValueError(f"Invalid layer type: {drop_layer[0]}")
                 except IndexError:
@@ -1333,16 +1369,12 @@ class StableDiffusionXLTPGPipeline(
 
                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
-                # Ensure the underlying UNet model is on the correct device
-                if hasattr(self.unet, 'model') and isinstance(self.unet.model, torch.nn.Module):
-                    self.unet.model.to(device)
-
                 # predict the noise residual
                 added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
                 if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
                     added_cond_kwargs["image_embeds"] = image_embeds
-                # Use ComfyUI model interface or standard Diffusers UNet
-                if hasattr(self.unet, 'model') and hasattr(self.unet.model, 'apply_model'):
+
+                if hasattr(actual_unet_model, 'apply_model'): # This is for ComfyUI wrapped models
                     # ComfyUI wrapped model - convert Diffusers conditioning to ComfyUI format
                     comfy_kwargs = {}
                     if "text_embeds" in added_cond_kwargs and "time_ids" in added_cond_kwargs:
@@ -1397,7 +1429,7 @@ class StableDiffusionXLTPGPipeline(
                         else:
                             prompt_embeds = prompt_embeds[:target_batch_size]
                     
-                    noise_pred = self.unet.model.apply_model(
+                    noise_pred = actual_unet_model.apply_model(
                         latent_model_input,
                         t,
                         c_crossattn=prompt_embeds,
@@ -1405,7 +1437,7 @@ class StableDiffusionXLTPGPipeline(
                     )
                 else:
                     # Standard Diffusers UNet
-                    noise_pred = self.unet(
+                    noise_pred = actual_unet_model(
                         latent_model_input,
                         t,
                         encoder_hidden_states=prompt_embeds,
@@ -1519,11 +1551,21 @@ class StableDiffusionXLTPGPipeline(
             for drop_layer in drop_layers:
                 try:
                     if drop_layer[0] == "d":
-                        down_layers[int(drop_layer[1:])].__class__ = BasicTransformerBlock
+                        # Restore the original forward method
+                        if hasattr(down_layers[int(drop_layer[1:])], '_original_forward'):
+                            down_layers[int(drop_layer[1:])].forward = down_layers[int(drop_layer[1:])]._original_forward
+                            del down_layers[int(drop_layer[1:])]._original_forward
+
                     elif drop_layer[0] == "m":
-                        mid_layers[int(drop_layer[1:])].__class__ = BasicTransformerBlock
+                        if hasattr(mid_layers[int(drop_layer[1:])], '_original_forward'):
+                            mid_layers[int(drop_layer[1:])].forward = mid_layers[int(drop_layer[1:])]._original_forward
+                            del mid_layers[int(drop_layer[1:])]._original_forward
+
                     elif drop_layer[0] == "u":
-                        up_layers[int(drop_layer[1:])].__class__ = BasicTransformerBlock
+                        if hasattr(up_layers[int(drop_layer[1:])], '_original_forward'):
+                            up_layers[int(drop_layer[1:])].forward = up_layers[int(drop_layer[1:])]._original_forward
+                            del up_layers[int(drop_layer[1:])]._original_forward
+
                     else:
                         raise ValueError(f"Invalid layer type: {drop_layer[0]}")
                 except IndexError:
