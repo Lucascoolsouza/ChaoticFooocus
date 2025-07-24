@@ -658,6 +658,30 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                         pooled_output = added_cond_kwargs["text_embeds"]
                         time_ids = added_cond_kwargs["time_ids"]
                         
+                        # Ensure batch sizes match latent_model_input
+                        target_batch_size = latent_model_input.shape[0]
+                        if pooled_output.shape[0] != target_batch_size:
+                            if pooled_output.shape[0] < target_batch_size:
+                                # Repeat to match target batch size
+                                repeat_factor = target_batch_size // pooled_output.shape[0]
+                                remainder = target_batch_size % pooled_output.shape[0]
+                                pooled_output = torch.cat([pooled_output.repeat(repeat_factor, 1)] + 
+                                                        ([pooled_output[:remainder]] if remainder > 0 else []), dim=0)
+                            else:
+                                # Truncate to match target batch size
+                                pooled_output = pooled_output[:target_batch_size]
+                        
+                        if time_ids.shape[0] != target_batch_size:
+                            if time_ids.shape[0] < target_batch_size:
+                                # Repeat to match target batch size
+                                repeat_factor = target_batch_size // time_ids.shape[0]
+                                remainder = target_batch_size % time_ids.shape[0]
+                                time_ids = torch.cat([time_ids.repeat(repeat_factor, 1)] + 
+                                                   ([time_ids[:remainder]] if remainder > 0 else []), dim=0)
+                            else:
+                                # Truncate to match target batch size
+                                time_ids = time_ids[:target_batch_size]
+                        
                         # Extract dimensions from time_ids (original_size, crops_coords, target_size)
                         if time_ids.shape[-1] >= 6:
                             height = int(time_ids[0, 0].item())
