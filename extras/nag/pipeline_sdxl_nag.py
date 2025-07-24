@@ -29,80 +29,78 @@ from .attention_nag import NAGAttnProcessor2_0
 import numpy as np
 from PIL import Image, ImageDraw
 
-def safe_decode(latents, vae, width=512, height=512):
+def safe_decode(latents, vae):
     try:
         with torch.no_grad():
             latents = latents.to(vae.device)
+            
+            # Log input latents
             print(f"[safe_decode] Input latents shape: {latents.shape}, dtype: {latents.dtype}")
             
             # Determine scaling factor
             scaling_factor = 0.18215  # Default SDXL scaling factor
             if hasattr(vae, 'config') and hasattr(vae.config, 'scaling_factor'):
                 scaling_factor = vae.config.scaling_factor
-            elif hasattr(vae, 'model') and hasattr(vae.model, 'config') and hasattr(vae.model.config, 'scaling_factor'):
-                scaling_factor = vae.model.config.scaling_factor
+            
             print(f"[safe_decode] Using scaling factor: {scaling_factor}")
             
             # Scale latents
             scaled_latents = latents / scaling_factor
             
-            # Handle different VAE interfaces
-            if hasattr(vae, 'decode') and callable(vae.decode):
-                # Standard diffusers VAE
-                try:
-                    result = vae.decode(scaled_latents, return_dict=False)
-                    decoded = result[0] if isinstance(result, tuple) else result
-                except:
-                    # Fallback without return_dict
-                    decoded = vae.decode(scaled_latents)
-                    if hasattr(decoded, 'sample'):
-                        decoded = decoded.sample
-            elif hasattr(vae, 'model') and hasattr(vae.model, 'decode'):
-                # ComfyUI wrapped VAE
-                decoded = vae.model.decode(scaled_latents)
-            else:
-                # Fallback direct call
-                decoded = vae.decode(scaled_latents)
+            # Decode latents using VAE
+            decoded = vae.decode(scaled_latents, return_dict=False)[0]
             
+            # Log raw decoded stats
             print(f"[safe_decode] Raw decoded shape: {decoded.shape}, dtype: {decoded.dtype}")
             print(f"[safe_decode] Raw decoded min: {decoded.min():.4f}, max: {decoded.max():.4f}")
             print(f"[safe_decode] Raw decoded mean: {decoded.mean():.4f}, std: {decoded.std():.4f}")
-            print(f"[safe_decode] Raw decoded mean: {decoded.mean():.4f}, std: {decoded.std():.4f}")
-
+            
             # Handle malformed VAE output
-            if len(decoded.shape) == 4 and decoded.shape[1] != 3:
-                # Detected [B, H, W, C] format - permute to [B, C, H, W]
-                decoded = decoded.permute(0, 3, 1, 2)
-                print(f"[safe_decode] Reshaped from BHWC to BCHW: {decoded.shape}")
-
-            # Normalize decoded tensor
-            # Option 1: Simple clamping (if values are already in [0, 1])
-            decoded = torch.clamp(decoded, 0.0, 1.0)
-            print(f"[safe_decode] Normalized range: min={decoded.min():.4f}, max={decoded.max():.4f}")
+            if len(decoded.shape) == 4:
+                batch_size, dim1, dim2, dim3 = decoded.shape
+                print(f"[safe_decode] Raw dimensions: B={batch_size}, D1={dim1}, D2={dim2}, D3={dim3}")
+                
+                if dim3 == 3 and dim1 > 100:  # Likely malformed: [B, H*W*C/8, H, W]
+                    print("[safe_decode] Detected malformed VAE output, attempting to fix...")
+                    
+                    # Reshape to [B, C, H, W]
+                    expected_h = scaled_latents.shape[2] * 8  # 144 * 8 = 1152
+                    expected_w = scaled_latents.shape[3] * 8  # 112 * 8 = 896
+                    print(f"[safe_decode] Expected output size: {expected_h}x{expected_w}")
+                    
+                    if decoded.numel() == batch_size * 3 * expected_h * expected_w:
+                        try:
+                            decoded = decoded.contiguous().reshape(batch_size, 3, expected_h, expected_w)
+                            print(f"[safe_decode] Successfully reshaped to: {decoded.shape}")
+                        except Exception as e:
+                            print(f"[safe_decode] Reshape failed: {e}")
+                            raise ValueError(f"Cannot reshape malformed tensor: {decoded.shape}")
+                    else:
+                        print(f"[safe_decode] Element count mismatch, trying alternative extraction...")
+                        
+                        # Convert from [B, H, W, C] to [B, C, H, W]
+                        if dim1 == expected_h and dim2 == expected_w and dim3 == 3:
+                            decoded = decoded.permute(0, 3, 1, 2)
+                            print(f"[safe_decode] Converted from BHWC to BCHW: {decoded.shape}")
             
-            # Convert to numpy and ensure uint8
-            decoded_np = (decoded[0].permute(1, 2, 0) * 255).cpu().numpy().astype(np.uint8)
-            decoded_np = np.squeeze(decoded_np)
-            print(f"[safe_decode] Final numpy shape: {decoded_np.shape}, dtype: {decoded_np.dtype}")
+            # Normalize to [0, 1] range
+            decoded = torch.clamp(decoded, 0.0, 1.0)  # Direct clamp without shifting
             
-            # Final validation
-            if len(decoded_np.shape) != 3 or decoded_np.shape[2] != 3:
-                raise ValueError(f"Invalid final shape: {decoded_np.shape}, expected (H, W, 3)")
+            # Convert to numpy [H, W, C] format
+            decoded = decoded.permute(0, 2, 3, 1).cpu().numpy()
+            decoded = (decoded * 255).astype(np.uint8)
             
-            print(f"[safe_decode] ✅ Decode successful. Final image shape: {decoded_np.shape}")
-            return Image.fromarray(decoded_np, mode='RGB')
-
-    except Exception as e:
-        print(f"[safe_decode] ❌ Decode failed: {e}")
-        print(f"[safe_decode] Latents shape: {latents.shape}, dtype: {latents.dtype}, device: {latents.device}")
-        if latents.numel() > 0:
-            print(f"[safe_decode] Latents stats: min={latents.min():.4f}, max={latents.max():.4f}, mean={latents.mean():.4f}, std={latents.std():.4f}")
+            print(f"[safe_decode] Final numpy shape: {decoded.shape}, dtype: uint8")
+            print("[safe_decode] ✅ Decode successful. Final image shape:", decoded.shape)
+            
+            return decoded
         
-        # Return error image with proper dimensions
-        img = Image.new("RGB", (width, height), color="red")
+    except Exception as e:
+        print(f"[safe_decode] Error during decode: {str(e)[:50]}")
+        img = Image.new("RGB", (512, 512), color="red")
         draw = ImageDraw.Draw(img)
         draw.text((10, 10), f"Decode Error: {str(e)[:50]}", fill="white")
-        return img
+        return np.array(img)
 
 
 
