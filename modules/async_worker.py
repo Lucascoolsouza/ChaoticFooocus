@@ -990,32 +990,18 @@ def worker():
                 current_progress += 1
             progressbar(async_task, current_progress, 'Removing background ...')
             
-            # Apply background removal using rembg
-            from rembg import remove, new_session
-            from PIL import Image
-            import numpy as np
-            
-            # Convert to PIL Image
-            if isinstance(uov_input_image, np.ndarray):
-                pil_image = Image.fromarray(uov_input_image.astype(np.uint8))
-            else:
-                pil_image = uov_input_image
-            
-            # Remove background using the selected model
+            # Use the extension for background removal
+            from extras.rembg_bg_removal import remove_background
+            # uov_input_image may be numpy or PIL
             bg_removal_model = async_task.enhance_bg_removal_model
-            session = new_session(bg_removal_model)
-            result_image = remove(pil_image, session=session)
-            
-            # Convert back to numpy array
-            uov_input_image = np.array(result_image)
-            print(f"[Rembg] Output image shape after removal: {uov_input_image.shape}")
-            
+            uov_input_image = remove_background(uov_input_image, model_name=bg_removal_model)
+            print(f"[rembg_bg_removal] Output image shape after removal: {uov_input_image.shape}")
             # Ensure the image has an alpha channel if background was removed
             if uov_input_image.shape[2] == 3: # If it's RGB, add an alpha channel
+                import numpy as np
                 alpha_channel = np.full((uov_input_image.shape[0], uov_input_image.shape[1], 1), 255, dtype=np.uint8)
                 uov_input_image = np.concatenate((uov_input_image, alpha_channel), axis=2)
-                print(f"[Rembg] Converted to RGBA. New shape: {uov_input_image.shape}")
-
+                print(f"[rembg_bg_removal] Converted to RGBA. New shape: {uov_input_image.shape}")
             print(f'Background removed using {bg_removal_model} model')
             
         return uov_input_image, skip_prompt_processing, steps
