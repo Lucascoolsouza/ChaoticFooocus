@@ -1576,14 +1576,14 @@ def worker():
                     from modules.detail_daemon import detail_daemon
                     # Update detail daemon with current task parameters
                     detail_daemon.enabled = task.detail_daemon_enabled
-                    detail_daemon.detail_amount = task.detail_daemon_amount
-                    detail_daemon.start = task.detail_daemon_start
-                    detail_daemon.end = task.detail_daemon_end
-                    detail_daemon.bias = task.detail_daemon_bias
-                    detail_daemon.start_offset = task.detail_daemon_start_offset
-                    detail_daemon.end_offset = task.detail_daemon_end_offset
-                    detail_daemon.exponent = task.detail_daemon_exponent
-                    detail_daemon.fade = task.detail_daemon_fade
+                    detail_daemon.detail_amount = float(task.detail_daemon_amount)
+                    detail_daemon.start = float(task.detail_daemon_start)
+                    detail_daemon.end = float(task.detail_daemon_end)
+                    detail_daemon.bias = float(task.detail_daemon_bias)
+                    detail_daemon.start_offset = float(task.detail_daemon_start_offset)
+                    detail_daemon.end_offset = float(task.detail_daemon_end_offset)
+                    detail_daemon.exponent = float(task.detail_daemon_exponent)
+                    detail_daemon.fade = float(task.detail_daemon_fade)
                     detail_daemon.mode = task.detail_daemon_mode
                     detail_daemon.smooth = task.detail_daemon_smooth
                     
