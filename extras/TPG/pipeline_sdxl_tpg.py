@@ -1158,15 +1158,16 @@ class StableDiffusionXLTPGPipeline(
 
         device = self._execution_device
 
-        # Ensure the underlying UNet model is on the correct device using ModelPatcher's method
-        if hasattr(self.unet, 'patch_model') and callable(self.unet.patch_model):
-            self.unet.patch_model(device_to=device, patch_weights=False)
-        elif hasattr(self.unet, 'model') and isinstance(self.unet.model, torch.nn.Module):
-            self.unet.model.to(device)
+        # Determine the actual UNet model to call and ensure it's on the correct device
+        actual_unet_model = None
+        if hasattr(self.unet, 'model') and isinstance(self.unet.model, torch.nn.Module):
+            actual_unet_model = self.unet.model
         elif isinstance(self.unet, torch.nn.Module):
-            self.unet.to(device)
+            actual_unet_model = self.unet
         else:
-            logger.warning("UNet model structure is unexpected. Cannot ensure proper device placement.")
+            raise TypeError("Neither self.unet nor self.unet.model is a callable torch.nn.Module.")
+
+        actual_unet_model.to(device)
 
         # 3. Encode input prompt
         lora_scale = (
