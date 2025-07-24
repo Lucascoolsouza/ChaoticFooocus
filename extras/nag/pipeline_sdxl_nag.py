@@ -751,8 +751,10 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
         # For Fooocus integration, we need to return the latents, not decoded images
         # The Fooocus pipeline will handle the decoding itself
+        print(f"[NAG DEBUG] Final latents shape: {latents.shape}, mean: {latents.mean().item():.6f}, std: {latents.std().item():.6f}")
         if not return_dict:
             # Return latents for Fooocus processing
+            print(f"[NAG DEBUG] Returning latents tuple for Fooocus")
             return (latents,)
         
         # For other use cases, decode and return images
