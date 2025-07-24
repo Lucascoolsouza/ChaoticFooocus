@@ -74,9 +74,7 @@ def safe_decode(latents, vae, width=512, height=512):
                 
                 # Check if this looks like [B, H*W*C/8, H, W] format (malformed)
                 if dim3 == 3 and dim1 > 100:  # Likely malformed: [1, 1152, 896, 3]
-                    print("[safe_decode] Detected malformed VAE output, attempting to reshape...")
-                    # This appears to be [B, flattened_features, H, W] where W=3 is wrong
-                    # Let's try to extract the actual image from this
+                    print("[safe_decode] Detected malformed VAE output, attempting to fix...")
                     
                     # The actual image dimensions should be based on latent upscaling
                     # SDXL latents are typically upscaled 8x by the VAE
@@ -84,27 +82,44 @@ def safe_decode(latents, vae, width=512, height=512):
                     expected_w = scaled_latents.shape[3] * 8  # 112 * 8 = 896
                     
                     print(f"[safe_decode] Expected output size: {expected_h}x{expected_w}")
+                    print(f"[safe_decode] Tensor numel: {decoded.numel()}, expected: {batch_size * 3 * expected_h * expected_w}")
                     
-                    # The tensor seems to have the right total elements but wrong shape
-                    # Try to reshape it to the correct format
+                    # The malformed tensor [1, 1152, 896, 3] suggests the VAE output is structured incorrectly
+                    # Let's try different approaches to extract the image
+                    
                     if decoded.numel() == batch_size * 3 * expected_h * expected_w:
-                        decoded = decoded.contiguous().reshape(batch_size, 3, expected_h, expected_w)
-                        print(f"[safe_decode] Reshaped to correct format: {decoded.shape}")
+                        # Total elements match, try to reshape
+                        try:
+                            decoded = decoded.contiguous().reshape(batch_size, 3, expected_h, expected_w)
+                            print(f"[safe_decode] Successfully reshaped to: {decoded.shape}")
+                        except Exception as e:
+                            print(f"[safe_decode] Reshape failed: {e}")
+                            raise ValueError(f"Cannot reshape malformed tensor: {decoded.shape}")
                     else:
-                        # Fallback: try to extract meaningful data
-                        print(f"[safe_decode] Cannot reshape cleanly, using fallback extraction")
-                        # Take the first 3 "channels" from the malformed tensor
-                        if dim1 >= 3:
-                            decoded = decoded[:, :3, :, :]  # Take first 3 from the 1152
-                            # Now we have [1, 3, 896, 3] - still wrong, need to fix width
-                            if decoded.shape[3] == 3:
-                                # Replicate the width dimension to match height
-                                decoded = decoded.repeat(1, 1, 1, decoded.shape[2] // 3)
-                                if decoded.shape[3] > expected_w:
-                                    decoded = decoded[:, :, :, :expected_w]
-                                print(f"[safe_decode] Fixed width dimension: {decoded.shape}")
+                        # Elements don't match expected, this might be a different format
+                        print(f"[safe_decode] Element count mismatch, trying alternative extraction...")
+                        
+                        # The tensor might be [B, H, W, C] format (which is wrong for PyTorch)
+                        if dim1 == expected_h and dim2 == expected_w and dim3 == 3:
+                            # This is [B, H, W, C] - convert to [B, C, H, W]
+                            decoded = decoded.permute(0, 3, 1, 2)
+                            print(f"[safe_decode] Converted from BHWC to BCHW: {decoded.shape}")
                         else:
-                            raise ValueError(f"Cannot extract RGB from malformed tensor: {decoded.shape}")
+                            # Last resort: try to extract something meaningful
+                            print(f"[safe_decode] Using fallback extraction method")
+                            # Take a slice that might contain image data
+                            if dim1 >= expected_h and dim2 >= expected_w:
+                                # Extract a region that matches expected dimensions
+                                h_start = (dim1 - expected_h) // 2
+                                w_start = (dim2 - expected_w) // 2
+                                extracted = decoded[:, h_start:h_start+expected_h, w_start:w_start+expected_w, :]
+                                if extracted.shape[3] == 3:
+                                    decoded = extracted.permute(0, 3, 1, 2)
+                                    print(f"[safe_decode] Extracted and converted: {decoded.shape}")
+                                else:
+                                    raise ValueError(f"Cannot extract valid image from: {decoded.shape}")
+                            else:
+                                raise ValueError(f"Cannot handle malformed tensor: {decoded.shape}")
                 
                 elif dim1 == 3:  # Correct format [B, C, H, W]
                     print("[safe_decode] Detected correct VAE output format")
