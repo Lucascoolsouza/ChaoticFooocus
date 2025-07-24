@@ -851,6 +851,11 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         print(f"[NAG Pipeline] Before final decode. Latents shape: {latents.shape}, dtype: {latents.dtype}, device: {latents.device}")
         if latents.numel() > 0:
             print(f"[NAG Pipeline] Latents min: {latents.min():.4f}, max: {latents.max():.4f}, mean: {latents.mean():.4f}, std: {latents.std():.4f}")
+        
+        # Clamp latents before final decode to prevent extreme values
+        latents = torch.clamp(latents, -3, 3)
+        print(f"[NAG Pipeline] Latents clamped. Min: {latents.min():.4f}, Max: {latents.max():.4f}, Mean: {latents.mean():.4f}, Std: {latents.std():.4f}")
+        
         final_image = safe_decode(latents, self.vae, width=width, height=height)
         self.maybe_free_model_hooks()
 
