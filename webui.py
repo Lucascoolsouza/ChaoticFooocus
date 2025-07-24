@@ -418,7 +418,7 @@ with shared.gradio_root:
                                 enhance_seamless_tiling_method = gr.Radio(
                                     label='Seamless Tiling Method:',
                                     choices=['blend', 'mirror', 'offset'],
-                                    value='blend',
+                                    value=modules.config.default_seamless_tiling_method,
                                     visible=modules.config.default_enhance_uov_method == flags.seamless_tiling,
                                     info='Method for creating seamless tiles'
                                 )
@@ -426,7 +426,7 @@ with shared.gradio_root:
                                     label='Edge Overlap Ratio',
                                     minimum=0.05,
                                     maximum=0.3,
-                                    value=0.15,
+                                    value=modules.config.default_seamless_tiling_overlap,
                                     step=0.05,
                                     visible=modules.config.default_enhance_uov_method == flags.seamless_tiling,
                                     info='Amount of edge blending for seamless effect'
@@ -1139,7 +1139,7 @@ with shared.gradio_root:
         ctrls += ip_ctrls
         ctrls += [debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox,
                   enhance_input_image, enhance_checkbox, enhance_uov_method, enhance_bg_removal_model, 
-                  enhance_uov_processing_order, enhance_uov_prompt_type]
+                  enhance_uov_processing_order, enhance_uov_prompt_type, enhance_seamless_tiling_method, enhance_seamless_tiling_overlap]
         ctrls += enhance_ctrls
 
         def parse_meta(raw_prompt_txt, is_generating):

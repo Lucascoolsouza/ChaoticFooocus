@@ -161,6 +161,8 @@ class AsyncTask:
         self.enhance_bg_removal_model = args.pop()
         self.enhance_uov_processing_order = args.pop()
         self.enhance_uov_prompt_type = args.pop()
+        self.seamless_tiling_method = args.pop()
+        self.seamless_tiling_overlap = args.pop()
         self.enhance_ctrls = []
         for _ in range(modules.config.default_enhance_tabs):
             enhance_enabled = args.pop()

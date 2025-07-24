@@ -636,6 +636,18 @@ default_enhance_bg_removal_model = get_config_item_or_set_default(
     validator=lambda x: x in modules.flags.bg_removal_models,
     expected_type=str
 )
+default_seamless_tiling_method = get_config_item_or_set_default(
+    key='default_seamless_tiling_method',
+    default_value='blend',
+    validator=lambda x: x in ['blend', 'mirror', 'offset'],
+    expected_type=str
+)
+default_seamless_tiling_overlap = get_config_item_or_set_default(
+    key='default_seamless_tiling_overlap',
+    default_value=0.15,
+    validator=lambda x: isinstance(x, (int, float)) and 0.05 <= x <= 0.3,
+    expected_type=float
+)
 default_sam_max_detections = get_config_item_or_set_default(
     key='default_sam_max_detections',
     default_value=0,
