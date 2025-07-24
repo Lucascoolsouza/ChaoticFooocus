@@ -1603,51 +1603,7 @@ def worker():
 
             try:
                 handler(task)
-                # Apply detail enhancement if enabled
-                if task.detail_daemon_enabled and len(task.results) > 0:
-                    from modules.detail_daemon import detail_daemon
-                    # Update detail daemon with current task parameters
-                    detail_daemon.enabled = task.detail_daemon_enabled
-                    # Now parameters should be correctly assigned in constructor
-                    try:
-                        detail_daemon.detail_amount = float(task.detail_daemon_amount) if task.detail_daemon_amount is not None else 0.25
-                    except (ValueError, TypeError) as e:
-                        print(f'[Detail Daemon] Error converting detail_amount: {task.detail_daemon_amount} - {e}')
-                        detail_daemon.detail_amount = 0.25
-                    
-                    detail_daemon.start = float(task.detail_daemon_start) if task.detail_daemon_start is not None else 0.2
-                    detail_daemon.end = float(task.detail_daemon_end) if task.detail_daemon_end is not None else 0.8
-                    detail_daemon.bias = float(task.detail_daemon_bias) if task.detail_daemon_bias is not None else 0.71
-                    detail_daemon.start_offset = float(task.detail_daemon_start_offset) if task.detail_daemon_start_offset is not None else 0
-                    detail_daemon.end_offset = float(task.detail_daemon_end_offset) if task.detail_daemon_end_offset is not None else -0.15
-                    detail_daemon.exponent = float(task.detail_daemon_exponent) if task.detail_daemon_exponent is not None else 1
-                    detail_daemon.fade = float(task.detail_daemon_fade) if task.detail_daemon_fade is not None else 0
-                    detail_daemon.mode = task.detail_daemon_mode if task.detail_daemon_mode is not None else 'both'
-                    detail_daemon.smooth = bool(task.detail_daemon_smooth) if task.detail_daemon_smooth is not None else True
-                    
-                    print(f'[Detail Daemon] Debug - enabled: {task.detail_daemon_enabled}')
-                    print(f'[Detail Daemon] Debug - amount: {task.detail_daemon_amount}, type: {type(task.detail_daemon_amount)}')
-                    print(f'[Detail Daemon] Debug - start: {task.detail_daemon_start}')
-                    print(f'[Detail Daemon] Debug - end: {task.detail_daemon_end}')
-                    print(f'[Detail Daemon] Debug - mode: {task.detail_daemon_mode}, type: {type(task.detail_daemon_mode)}')
-                    print(f'[Detail Daemon] Debug - smooth: {task.detail_daemon_smooth}')
-                    print(f'[Detail Daemon] Enhancing {len(task.results)} images with amount {task.detail_daemon_amount}')
-                    enhanced_results = []
-                    for img_path in task.results:
-                        if isinstance(img_path, str) and os.path.exists(img_path):
-                            # Load image
-                            img = cv2.imread(img_path)
-                            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                            # Apply detail enhancement
-                            enhanced_img = detail_daemon.process(img)
-                            # Save enhanced image
-                            enhanced_img = cv2.cvtColor(enhanced_img, cv2.COLOR_RGB2BGR)
-                            enhanced_path = img_path.replace('.png', '_enhanced.png').replace('.jpg', '_enhanced.jpg')
-                            cv2.imwrite(enhanced_path, enhanced_img)
-                            enhanced_results.append(enhanced_path)
-                        else:
-                            enhanced_results.append(img_path)
-                    task.results = enhanced_results
+                # Detail daemon is now integrated into the pipeline, no post-processing needed
                 
                 if task.generate_image_grid:
                     build_image_wall(task)
