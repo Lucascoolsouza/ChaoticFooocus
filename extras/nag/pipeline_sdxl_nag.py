@@ -740,9 +740,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                         noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
                         
                         # Debug guidance for first few steps
-                        if i < 3:
-                            print(f"[NAG DEBUG] CFG guidance - uncond mean: {noise_pred_uncond.mean().item():.4f}, text mean: {noise_pred_text.mean().item():.4f}")
-                            print(f"[NAG DEBUG] CFG guidance - final noise_pred mean: {noise_pred.mean().item():.4f}")
+
                     else:
                         print(f"[NAG DEBUG] Warning: Expected at least 2 noise predictions for CFG, got {noise_pred.shape[0]}")
                 
@@ -758,10 +756,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     # Apply NAG guidance
                     noise_pred = noise_pred_cfg + self._nag_scale * (noise_pred_text - noise_pred_nag)
                     
-                    if i < 3:
-                        print(f"[NAG DEBUG] NAG guidance - nag mean: {noise_pred_nag.mean().item():.4f}")
-                        print(f"[NAG DEBUG] NAG guidance - cfg mean: {noise_pred_cfg.mean().item():.4f}")
-                        print(f"[NAG DEBUG] NAG guidance - final noise_pred mean: {noise_pred.mean().item():.4f}")
+
 
                 if self.do_classifier_free_guidance and self.guidance_rescale > 0.0:
                     # Based on 3.4. in https://arxiv.org/pdf/2305.08891.pdf
@@ -785,10 +780,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     # Simple step: move latents towards less noisy version
                     latents = latents - step_size * noise_pred
                     
-                    # Add some debugging for the first few steps
-                    if i < 3:
-                        print(f"[NAG DEBUG] Step {i}: t={t.item():.0f}, step_ratio={step_ratio:.4f}, step_size={step_size:.6f}")
-                        print(f"[NAG DEBUG] latents mean: {latents.mean().item():.4f}, std: {latents.std().item():.4f}")
+
                 else:
                     # Use the real scheduler
                     scheduler_output = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)
@@ -848,22 +840,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             if latents.shape[0] > 1:
                 latents = latents[:1]  # Take only the first sample
             
-            # Debug the final latents before returning
-            print(f"[NAG DEBUG] Final latents stats: mean={latents.mean().item():.4f}, std={latents.std().item():.4f}")
-            print(f"[NAG DEBUG] Final latents range: min={latents.min().item():.4f}, max={latents.max().item():.4f}")
-            print(f"[NAG DEBUG] Final latents has NaN: {torch.isnan(latents).any().item()}")
-            print(f"[NAG DEBUG] Final latents has Inf: {torch.isinf(latents).any().item()}")
-            
-            # Test decode the latents to see if the issue is in VAE decoding
-            try:
-                test_image = safe_decode(latents[:1], self.vae, width=width, height=height)
-                print(f"[NAG DEBUG] Test decode successful: {type(test_image)}, size: {test_image.size if hasattr(test_image, 'size') else 'N/A'}")
-                # Save a test image to see what it looks like
-                if hasattr(test_image, 'save'):
-                    test_image.save('/tmp/nag_test_decode.png')
-                    print(f"[NAG DEBUG] Test image saved to /tmp/nag_test_decode.png")
-            except Exception as e:
-                print(f"[NAG DEBUG] Test decode failed: {e}")
+
             
             return (latents,)
         
