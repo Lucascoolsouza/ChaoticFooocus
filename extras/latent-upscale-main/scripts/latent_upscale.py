@@ -1,4 +1,4 @@
-import modules.scripts as scripts
+# import modules.scripts as scripts
 import gradio as gr
 
 from latent_upscale_overrides.schedulers import sampler_noise_scheduler_override
