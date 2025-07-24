@@ -1370,12 +1370,14 @@ class StableDiffusionXLTPGPipeline(
                     latent_model_input = latents
 
                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
+                logger.debug(f"Latent model input shape: {latent_model_input.shape}")
 
                 # predict the noise residual
                 added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
                 if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
                     added_cond_kwargs["image_embeds"] = image_embeds
 
+                logger.debug("Calling UNet model")
                 if hasattr(actual_unet_model, 'apply_model'): # This is for ComfyUI wrapped models
                     # ComfyUI wrapped model - convert Diffusers conditioning to ComfyUI format
                     comfy_kwargs = {}
@@ -1471,6 +1473,7 @@ class StableDiffusionXLTPGPipeline(
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents_dtype = latents.dtype
+                logger.debug("Calling scheduler step")
                 latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
                 logger.debug(f"Latents shape after step: {latents.shape}")
                 if latents.dtype != latents_dtype:
