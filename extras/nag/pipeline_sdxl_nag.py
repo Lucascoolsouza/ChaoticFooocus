@@ -51,6 +51,16 @@ def safe_decode(latents, vae, width=512, height=512):
             print(f"[safe_decode] ✅ Decode successful. Latents min: {latents.min():.4f}, max: {latents.max():.4f}, mean: {latents.mean():.4f}, std: {latents.std():.4f}")
             return Image.fromarray(decoded_np, mode='RGB')
 
+    except Exception as e:
+        print(f"[safe_decode] ❌ Decode failed: {e}. Latents shape: {latents.shape}, dtype: {latents.dtype}, device: {latents.device}")
+        if latents.numel() > 0:
+            print(f"[safe_decode] Latents min: {latents.min():.4f}, max: {latents.max():.4f}, mean: {latents.mean():.4f}, std: {latents.std():.4f}")
+        # Return error image
+        img = Image.new("RGB", (width, height), color="red")
+        draw = ImageDraw.Draw(img)
+        draw.text((10, 10), f"Decode Error", fill="white")
+        return img
+
 
 
 class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
