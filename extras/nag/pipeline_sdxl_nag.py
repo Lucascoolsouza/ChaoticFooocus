@@ -957,31 +957,29 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             # Ensure we return the right batch size (should be 1 for single image)
             if latents.shape[0] > 1:
                 latents = latents[:1]  # Take only the first sample
-            
-
-            
             return (latents,)
         
-        # For other use cases, decode and return images
-        print(f"[NAG Pipeline] Before final decode. Latents shape: {latents.shape}, dtype: {latents.dtype}, device: {latents.device}")
-        if latents.numel() > 0:
-            print(f"[NAG Pipeline] Latents min: {latents.min():.4f}, max: {latents.max():.4f}, mean: {latents.mean():.4f}, std: {latents.std():.4f}")
-        
-        # Clamp latents before final decode to prevent extreme values
-        latents = torch.clamp(latents, -3, 3)
-        print(f"[NAG Pipeline] Latents clamped. Min: {latents.min():.4f}, Max: {latents.max():.4f}, Mean: {latents.mean():.4f}, Std: {latents.std():.4f}")
-        
-        # Normalize latents to the expected VAE input range
-        latents = latents / latents.std() * 0.18215
-        print(f"[NAG Pipeline] Latents normalized. Min: {latents.min():.4f}, Max: {latents.max():.4f}, Mean: {latents.mean():.4f}, Std: {latents.std():.4f}")
+        # Standard decoding logic (bypassing safe_decode for testing)
+        if output_type == "latent":
+            image = latents
+        else:
+            needs_upcasting = self.vae.dtype == torch.float16 and self.vae.config.force_upcast
+            if needs_upcasting:
+                self.upcast_vae()
+                latents = latents.to(next(iter(self.vae.post_quant_conv.parameters())).dtype)
 
-        # Ensure VAE is in evaluation mode and on the correct device
-        self.vae.eval()
-        self.vae.to(latents.device)
+            # Standard scaling (remove the custom normalization)
+            scaling_factor = self.vae.config.scaling_factor if hasattr(self.vae.config, 'scaling_factor') else 0.18215
+            latents = latents / scaling_factor
 
-        final_image = safe_decode(latents, self.vae, width=width, height=height)
+            image = self.vae.decode(latents, return_dict=False)[0]
+
+            if needs_upcasting:
+                self.vae.to(dtype=torch.float16)
+
+            # Postprocessing (watermark, image_processor)
+            image = self.image_processor.postprocess(image, output_type=output_type)
+        
         self.maybe_free_model_hooks()
-
-        print("Returning:", type(final_image), final_image.size if hasattr(final_image, 'size') else "-")
-        return StableDiffusionXLPipelineOutput(images=[final_image])
+        return StableDiffusionXLPipelineOutput(images=[image])
 
