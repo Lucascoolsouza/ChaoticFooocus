@@ -215,6 +215,8 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
     @torch.no_grad()
     def __call__(
             self,
+            # Add torch import here to ensure it's always available in this scope
+            torch=torch,
             prompt: Union[str, List[str]] = None,
             prompt_2: Optional[Union[str, List[str]]] = None,
             height: Optional[int] = None,
