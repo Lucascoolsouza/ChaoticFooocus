@@ -1145,16 +1145,16 @@ with shared.gradio_root:
         ctrls += inpaint_ctrls
         ctrls += nag_ctrls
         ctrls += tpg_ctrls
-        
+
+        ctrls += [detail_daemon_enabled, detail_daemon_amount, detail_daemon_start, detail_daemon_end,
+                  detail_daemon_bias, detail_daemon_base_multiplier, detail_daemon_start_offset, detail_daemon_end_offset,
+                  detail_daemon_exponent, detail_daemon_fade, detail_daemon_mode, detail_daemon_smooth]
+
         if not args_manager.args.disable_image_log:
             ctrls += [save_final_enhanced_image_only]
-            
+
         if not args_manager.args.disable_metadata:
             ctrls += [save_metadata_to_images, metadata_scheme]
-            
-        ctrls += [detail_daemon_enabled, detail_daemon_amount, detail_daemon_start, detail_daemon_end, 
-                  detail_daemon_bias, detail_daemon_base_multiplier, detail_daemon_start_offset, detail_daemon_end_offset, 
-                  detail_daemon_exponent, detail_daemon_fade, detail_daemon_mode, detail_daemon_smooth]
 
         ctrls += ip_ctrls
         ctrls += [debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox,
