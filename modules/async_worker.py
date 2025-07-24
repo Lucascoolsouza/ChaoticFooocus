@@ -180,6 +180,7 @@ class AsyncTask:
         self.dd_end_offset = args.pop()
         self.dd_fade = args.pop()
         self.dd_smooth = args.pop()
+        self.dd_cfg_scale_override = args.pop()
         # --- End Detail Daemon Integration ---
 
 async_tasks = []
@@ -1172,7 +1173,8 @@ def worker():
                 async_task.dd_start_offset,
                 async_task.dd_end_offset,
                 async_task.dd_fade,
-                async_task.dd_smooth
+                async_task.dd_smooth,
+                async_task.dd_cfg_scale_override
             )
         # --- End Detail Daemon Integration ---
 

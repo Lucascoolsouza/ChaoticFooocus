@@ -1,334 +1,555 @@
+# Based on the concept from https://github.com/muerrilla/sd-webui-detail-daemon
+
+from __future__ import annotations
+
+import io
+
+# Trying matplotlib NSWindow warning workaround on macOS
+import platform
+
+if platform.system() == 'Darwin':  # Check if running on macOS
+    import matplotlib
+    matplotlib.use('Agg')  # Set non-GUI backend to avoid crashes
+
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from comfy.samplers import KSAMPLER
+from PIL import Image
+import folder_paths
+import random
 import os
 import gradio as gr
-import numpy as np
-from tqdm import tqdm
-
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-
-import modules.scripts as scripts
-from modules.script_callbacks import on_cfg_denoiser, remove_callbacks_for_function, on_infotext_pasted
-from modules.ui_components import InputAccordion
 
 
-def parse_infotext(infotext, params):
-    try:
-        d = {}
-        for s in params['Detail Daemon'].split(','):
-            k, _, v = s.partition(':')
-            d[k.strip()] = v.strip()
-        params['Detail Daemon'] = d
-    except Exception:
+# Schedule creation function from https://github.com/muerrilla/sd-webui-detail-daemon
+def make_detail_daemon_schedule(
+    steps,
+    start,
+    end,
+    bias,
+    amount,
+    exponent,
+    start_offset,
+    end_offset,
+    fade,
+    smooth,
+):
+    start = min(start, end)
+    mid = start + bias * (end - start)
+    multipliers = np.zeros(steps)
+
+    start_idx, mid_idx, end_idx = [
+        int(round(x * (steps - 1))) for x in [start, mid, end]
+    ]
+
+    start_values = np.linspace(0, 1, mid_idx - start_idx + 1)
+    if smooth:
+        start_values = 0.5 * (1 - np.cos(start_values * np.pi))
+    start_values = start_values**exponent
+    if start_values.any():
+        start_values *= amount - start_offset
+        start_values += start_offset
+
+    end_values = np.linspace(1, 0, end_idx - mid_idx + 1)
+    if smooth:
+        end_values = 0.5 * (1 - np.cos(end_values * np.pi))
+    end_values = end_values**exponent
+    if end_values.any():
+        end_values *= amount - end_offset
+        end_values += end_offset
+
+    multipliers[start_idx : mid_idx + 1] = start_values
+    multipliers[mid_idx : end_idx + 1] = end_values
+    multipliers[:start_idx] = start_offset
+    multipliers[end_idx + 1 :] = end_offset
+    multipliers *= 1 - fade
+
+    return multipliers
+
+
+class DetailDaemonGraphSigmasNode:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "sigmas": ("SIGMAS", {"forceInput": True}),
+                "detail_amount": (
+                    "FLOAT",
+                    {"default": 0.1, "min": -5.0, "max": 5.0, "step": 0.01},
+                ),
+                "start": (
+                    "FLOAT",
+                    {"default": 0.2, "min": 0.0, "max": 1.0, "step": 0.01},
+                ),
+                "end": (
+                    "FLOAT",
+                    {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.01},
+                ),
+                "bias": (
+                    "FLOAT",
+                    {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01},
+                ),
+                "exponent": (
+                    "FLOAT",
+                    {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.05},
+                ),
+                "start_offset": (
+                    "FLOAT",
+                    {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01},
+                ),
+                "end_offset": (
+                    "FLOAT",
+                    {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01},
+                ),
+                "fade": (
+                    "FLOAT",
+                    {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05},
+                ),
+                "smooth": ("BOOLEAN", {"default": True}),
+                "cfg_scale": (
+                    "FLOAT",
+                    {
+                        "default": 1.0,
+                        "min": 0.0,
+                        "max": 100.0,
+                        "step": 0.5,
+                        "round": 0.01,
+                    },
+                ),
+            },
+        }
+
+    RETURN_TYPES = ()
+    OUTPUT_NODE = True
+    CATEGORY = "sampling/custom_sampling/sigmas"
+    FUNCTION = "make_graph"
+
+    def make_graph(
+        self,
+        sigmas,
+        detail_amount,
+        start,
+        end,
+        bias,
+        exponent,
+        start_offset,
+        end_offset,
+        fade,
+        smooth,
+        cfg_scale,
+    ):
+        # Create a copy of the input sigmas using clone() for tensors to avoid modifying the original
+        sigmas = sigmas.clone()
+
+        # Derive the number of steps from the length of sigmas minus 1 (ignore the final sigma)
+        steps = len(sigmas) - 1  # 21 sigmas, 20 steps
+        actual_steps = steps
+
+        # Create the schedule using the number of steps
+        schedule = make_detail_daemon_schedule(
+            actual_steps,
+            start,
+            end,
+            bias,
+            detail_amount,
+            exponent,
+            start_offset,
+            end_offset,
+            fade,
+            smooth,
+        )
+
+        # Debugging: print schedule and sigmas lengths to verify alignment
+        print(
+            f"Number of sigmas: {len(sigmas)}, Number of schedule steps: {len(schedule)}",
+        )
+
+        # Iterate over the sigmas, except for the last one (which we assume is 0 and leave untouched)
+        for idx in range(steps):
+            multiplier = schedule[idx] * 0.1
+
+            # Debugging: print each index and sigma to track what's being adjusted
+            print(f"Adjusting sigma at index {idx} with multiplier {multiplier}")
+
+            sigmas[idx] *= (
+                1 - multiplier * cfg_scale
+            )  # Adjust each sigma in "both" mode
+
+        # Create the plot for visualization
+        image = self.plot_schedule(schedule)
+        
+        # Save temp image
+        output_dir = folder_paths.get_temp_directory()
+        prefix_append = "_temp_" + ''.join(random.choice("abcdefghijklmnopqrstupvxyz") for x in range(5))
+        
+        full_output_folder, filename, counter, subfolder, _ = (
+        folder_paths.get_save_image_path(prefix_append, output_dir)
+        )
+        filename = f"{filename}_{counter:05}_.png"
+        file_path = os.path.join(full_output_folder, filename)
+        image.save(file_path, compress_level=1)
+
+        return {
+            "ui": {
+                "images": [
+                    {"filename": filename, "subfolder": subfolder, "type": "temp"},
+                ],
+            }
+        }
+
+
+    @staticmethod
+    def plot_schedule(schedule) -> Image:
+        plt.figure(figsize=(6, 4))  # Adjusted width
+        plt.plot(schedule, label="Sigma Adjustment Curve")
+        plt.xlabel("Steps")
+        plt.ylabel("Multiplier (*10)")
+        plt.title("Detail Adjustment Schedule")
+        plt.legend()
+        plt.grid(True)
+        plt.xticks(range(len(schedule)))
+        plt.ylim(-1, 1)
+
+        # Use tight_layout or subplots_adjust
+        plt.tight_layout()
+        # Or manually adjust if needed:
+        # plt.subplots_adjust(left=0.2)
+
+        buf = io.BytesIO()
+        plt.savefig(buf, format="PNG")
+        plt.close()
+        buf.seek(0)
+        image = Image.open(buf)
+        return image
+
+
+def get_dd_schedule(
+    sigma: float,
+    sigmas: torch.Tensor,
+    dd_schedule: torch.Tensor,
+) -> float:
+    sched_len = len(dd_schedule)
+    if (
+        sched_len < 2
+        or len(sigmas) < 2
+        or sigma <= 0
+        or not (sigmas[-1] <= sigma <= sigmas[0])
+    ):
+        return 0.0
+    # First, we find the index of the closest sigma in the list to what the model was
+    # called with.
+    deltas = (sigmas[:-1] - sigma).abs()
+    idx = int(deltas.argmin())
+    if (
+        (idx == 0 and sigma >= sigmas[0])
+        or (idx == sched_len - 1 and sigma <= sigmas[-2])
+        or deltas[idx] == 0
+    ):
+        # Either exact match or closest to head/tail of the DD schedule so we
+        # can't interpolate to another schedule item.
+        return dd_schedule[idx].item()
+    # If we're here, that means the sigma is in between two sigmas in the
+    # list.
+    idxlow, idxhigh = (idx, idx - 1) if sigma > sigmas[idx] else (idx + 1, idx)
+    # We find the low/high neighbor sigmas - our sigma is somewhere between them.
+    nlow, nhigh = sigmas[idxlow], sigmas[idxhigh]
+    if nhigh - nlow == 0:
+        # Shouldn't be possible, but just in case... Avoid divide by zero.
+        return dd_schedule[idxlow]
+    # Ratio of how close we are to the high neighbor.
+    ratio = ((sigma - nlow) / (nhigh - nlow)).clamp(0, 1)
+    # Mix the DD schedule high/low items according to the ratio.
+    return torch.lerp(dd_schedule[idxlow], dd_schedule[idxhigh], ratio).item()
+
+
+class Script:
+    def __init__(self):
         pass
 
+    def ui(self, is_img2img=False):
+        with gr.Accordion("Detail Daemon", open=False):
+            dd_enabled = gr.Checkbox(label='Enable Detail Daemon', value=False)
+            dd_mode = gr.Radio(label='Mode', choices=['Sampler', 'Graph'], value='Sampler')
+            dd_amount = gr.Slider(label='Detail Amount', minimum=-5.0, maximum=5.0, step=0.01, value=0.1)
+            dd_start = gr.Slider(label='Start', minimum=0.0, maximum=1.0, step=0.01, value=0.2)
+            dd_end = gr.Slider(label='End', minimum=0.0, maximum=1.0, step=0.01, value=0.8)
+            dd_bias = gr.Slider(label='Bias', minimum=0.0, maximum=1.0, step=0.01, value=0.5)
+            dd_exponent = gr.Slider(label='Exponent', minimum=0.0, maximum=10.0, step=0.05, value=1.0)
+            dd_start_offset = gr.Slider(label='Start Offset', minimum=-1.0, maximum=1.0, step=0.01, value=0.0)
+            dd_end_offset = gr.Slider(label='End Offset', minimum=-1.0, maximum=1.0, step=0.01, value=0.0)
+            dd_fade = gr.Slider(label='Fade', minimum=0.0, maximum=1.0, step=0.05, value=0.0)
+            dd_smooth = gr.Checkbox(label='Smooth', value=True)
+            dd_cfg_scale_override = gr.Slider(label='CFG Scale Override (0 to disable)', minimum=0.0, maximum=100.0, step=0.5, value=0.0)
 
-on_infotext_pasted(parse_infotext)
+        return [dd_enabled, dd_mode, dd_amount, dd_start, dd_end, dd_bias, dd_exponent, dd_start_offset, dd_end_offset, dd_fade, dd_smooth, dd_cfg_scale_override]
 
-
-class Script(scripts.Script):
-
-    def __init__(self):
-        super().__init__()
-        self.schedule_params: dict[str, float] = None
-        self.schedule = None
-
-    def title(self):
-        return "Detail Daemon"
-
-    def show(self, is_img2img):
-        return scripts.AlwaysVisible
-
-    def ui(self, is_img2img):
-        with InputAccordion(False, label="Detail Daemon", elem_id=self.elem_id('detail-daemon')) as gr_enabled:
-            with gr.Row():
-                with gr.Column(scale=2):                    
-                    gr_amount_slider = gr.Slider(minimum=-1.00, maximum=1.00, step=.01, value=0.10, label="Detail Amount")
-                    gr_start = gr.Slider(minimum=0.0, maximum=1.0, step=.01, value=0.2, label="Start")
-                    gr_end = gr.Slider(minimum=0.0, maximum=1.0, step=.01, value=0.8, label="End") 
-                    gr_bias = gr.Slider(minimum=0.0, maximum=1.0, step=.01, value=0.5, label="Bias")                                                                                                                          
-                with gr.Column(scale=1, min_width=275):  
-                    preview = self.visualize(False, 0.2, 0.8, 0.5, 0.1, 1, 0, 0, 0, True)                                 
-                    gr_vis = gr.Plot(value=preview, elem_classes=['detail-daemon-vis'], show_label=False)
-            with gr.Accordion("More Knobs:", elem_classes=['detail-daemon-more-accordion'], open=False):
-                with gr.Row():
-                    with gr.Column(scale=2):   
-                        with gr.Row():                                              
-                            gr_start_offset_slider = gr.Slider(minimum=-1.00, maximum=1.00, step=.01, value=0.00, label="Start Offset", min_width=60) 
-                            gr_end_offset_slider = gr.Slider(minimum=-1.00, maximum=1.00, step=.01, value=0.00, label="End Offset", min_width=60) 
-                        with gr.Row():
-                            gr_exponent = gr.Slider(minimum=0.0, maximum=10.0, step=.05, value=1.0, label="Exponent", min_width=60) 
-                            gr_fade = gr.Slider(minimum=0.0, maximum=1.0, step=.05, value=0.0, label="Fade", min_width=60) 
-                        # Because the slider max and min are sometimes too limiting:
-                        with gr.Row():
-                            gr_amount = gr.Number(value=0.10, precision=4, step=.01, label="Amount", min_width=60)  
-                            gr_start_offset = gr.Number(value=0.0, precision=4, step=.01, label="Start Offset", min_width=60)  
-                            gr_end_offset = gr.Number(value=0.0, precision=4, step=.01, label="End Offset", min_width=60) 
-                    with gr.Column(scale=1, min_width=275): 
-                        gr_mode = gr.Dropdown(["both", "cond", "uncond"], value="uncond", label="Mode", show_label=True, min_width=60, elem_classes=['detail-daemon-mode']) 
-                        gr_smooth = gr.Checkbox(label="Smooth", value=True, min_width=60, elem_classes=['detail-daemon-smooth'])
-                        gr.Markdown("## [Ⓗ Help](https://github.com/muerrilla/sd-webui-detail-daemon)", elem_classes=['detail-daemon-help'])
-
-        gr_amount_slider.release(None, gr_amount_slider, gr_amount, _js="(x) => x")
-        gr_amount.change(None, gr_amount, gr_amount_slider, _js="(x) => x")
-
-        gr_start_offset_slider.release(None, gr_start_offset_slider, gr_start_offset, _js="(x) => x")
-        gr_start_offset.change(None, gr_start_offset, gr_start_offset_slider, _js="(x) => x")
-
-        gr_end_offset_slider.release(None, gr_end_offset_slider, gr_end_offset, _js="(x) => x")
-        gr_end_offset.change(None, gr_end_offset, gr_end_offset_slider, _js="(x) => x")
-
-        vis_args = [gr_enabled, gr_start, gr_end, gr_bias, gr_amount, gr_exponent, gr_start_offset, gr_end_offset, gr_fade, gr_smooth]
-        for vis_arg in vis_args:
-            if isinstance(vis_arg, gr.components.Slider):
-                vis_arg.release(fn=self.visualize, show_progress=False, inputs=vis_args, outputs=[gr_vis])
-            else:
-                vis_arg.change(fn=self.visualize, show_progress=False, inputs=vis_args, outputs=[gr_vis])
-
-        def extract_infotext(d: dict, key, old_key):
-            if 'Detail Daemon' in d:
-                return d['Detail Daemon'].get(key)
-            return d.get(old_key)
-
-        self.infotext_fields = [
-            (gr_enabled, lambda d: True if ('Detail Daemon' in d or 'DD_enabled' in d) else False),
-            (gr_mode, lambda d: extract_infotext(d, 'mode', 'DD_mode')),
-            (gr_amount, lambda d: extract_infotext(d, 'amount', 'DD_amount')),
-            (gr_start, lambda d: extract_infotext(d, 'st', 'DD_start')),
-            (gr_end, lambda d: extract_infotext(d, 'ed', 'DD_end')),
-            (gr_bias, lambda d: extract_infotext(d, 'bias', 'DD_bias')),
-            (gr_exponent, lambda d: extract_infotext(d, 'exp', 'DD_exponent')),
-            (gr_start_offset, lambda d: extract_infotext(d, 'st_offset', 'DD_start_offset')),
-            (gr_end_offset, lambda d: extract_infotext(d, 'ed_offset', 'DD_end_offset')),
-            (gr_fade, lambda d: extract_infotext(d, 'fade', 'DD_fade')),
-            (gr_smooth, lambda d: extract_infotext(d, 'smooth', 'DD_smooth')),
-        ]
-        return [gr_enabled, gr_mode, gr_start, gr_end, gr_bias, gr_amount, gr_exponent, gr_start_offset, gr_end_offset, gr_fade, gr_smooth]
-    
-    def process(self, p, enabled, mode, start, end, bias, amount, exponent, start_offset, end_offset, fade, smooth):    
-
-        enabled = getattr(p, "DD_enabled", enabled)
-        mode = getattr(p, "DD_mode", mode)
-        amount = getattr(p, "DD_amount", amount)
-        start = getattr(p, "DD_start", start)
-        end = getattr(p, "DD_end", end)
-        bias = getattr(p, "DD_bias", bias)
-        exponent = getattr(p, "DD_exponent", exponent)
-        start_offset = getattr(p, "DD_start_offset", start_offset)
-        end_offset = getattr(p, "DD_end_offset", end_offset)
-        fade = getattr(p, "DD_fade", fade)
-        smooth = getattr(p, "DD_smooth", smooth)
-
-        if enabled:
-            if p.sampler_name in ["DPM adaptive", "HeunPP2"]:
-                tqdm.write(f'\033[33mWARNING:\033[0m Detail Daemon does not work with {p.sampler_name}')
-                return
-            
-            self.schedule_params = {
-                "start": start,
-                "end": end,
-                "bias": bias,
-                "amount": amount,
-                "exponent": exponent,
-                "start_offset": start_offset,
-                "end_offset": end_offset,
-                "fade": fade,
-                "smooth": smooth
-            }
-            self.mode = mode
-            self.cfg_scale = p.cfg_scale
-            self.batch_size = p.batch_size
-            on_cfg_denoiser(self.denoiser_callback)              
-            self.callback_added = True 
-            p.extra_generation_params['Detail Daemon'] = f'mode:{mode},amount:{amount},st:{start},ed:{end},bias:{bias},exp:{exponent},st_offset:{start_offset},ed_offset:{end_offset},fade:{fade},smooth:{1 if smooth else 0}'
-            tqdm.write('\033[32mINFO:\033[0m Detail Daemon is enabled')
-        else:
-            if hasattr(self, 'callback_added'):
-                remove_callbacks_for_function(self.denoiser_callback)
-                delattr(self, 'callback_added')
-                self.schedule = None
-                # tqdm.write('\033[90mINFO: Detail Daemon callback removed\033[0m')  
-
-    def before_process_batch(self, p, *args, **kwargs):
-        self.is_hires = False
-
-    def postprocess(self, p, processed, *args):
-        if hasattr(self, 'callback_added'):
-            remove_callbacks_for_function(self.denoiser_callback)
-            delattr(self, 'callback_added')
-            self.schedule = None
-            # tqdm.write('\033[90mINFO: Detail Daemon callback removed\033[0m')
-
-    def before_hr(self, p, *args):
-        self.is_hires = True
-        enabled = args[0]
-        if enabled:
-            tqdm.write(f'\033[33mINFO:\033[0m Detail Daemon does not work during Hires Fix')
-        
-    def denoiser_callback(self, params): 
-        if self.is_hires:
+    def process(self, p, dd_enabled, dd_mode, dd_amount, dd_start, dd_end, dd_bias, dd_exponent, dd_start_offset, dd_end_offset, dd_fade, dd_smooth, dd_cfg_scale_override):
+        if not dd_enabled:
             return
-        step = max(params.sampling_step, params.denoiser.step)
-        total_steps = max(params.total_sampling_steps, params.denoiser.total_steps)
-        corrected_step_count = total_steps - max(total_steps // params.denoiser.steps - 1, 0)
-        if self.schedule is None:
-            self.schedule = self.make_schedule(corrected_step_count, **self.schedule_params)
 
-        idx = min(step, corrected_step_count - 1)
-        multiplier = self.schedule[idx] * .1
-        mode = self.mode 
-        if params.sigma.size(0) == 1 and mode != "both":
-            mode = "both"
-            if idx == 0:
-                tqdm.write(f'\033[33mWARNING:\033[0m Forge does not support `cond` and `uncond` modes, using `both` instead')
-        if mode == "cond":
-            for i in range(self.batch_size):
-                params.sigma[i] *= 1 - multiplier
-        elif mode == "uncond":
-            for i in range(self.batch_size):
-                params.sigma[self.batch_size + i] *= 1 + multiplier
+        if dd_mode == 'Sampler':
+            # This part will be handled by the custom sampler
+            pass
+        elif dd_mode == 'Graph':
+            # This part will be handled by the custom sigma node
+            pass
         else:
-            params.sigma *= 1 - multiplier * self.cfg_scale
-    
-    def make_schedule(self, steps, start, end, bias, amount, exponent, start_offset, end_offset, fade, smooth):
-        start = min(start, end)
-        mid = start + bias * (end - start)
-        multipliers = np.zeros(steps)
-
-        start_idx, mid_idx, end_idx = [int(round(x * (steps - 1))) for x in [start, mid, end]]            
-
-        start_values = np.linspace(0, 1, mid_idx - start_idx + 1)
-        if smooth:  
-            start_values = 0.5 * (1 - np.cos(start_values * np.pi))
-        start_values = start_values ** exponent
-        if start_values.any():
-            start_values *= (amount - start_offset)  
-            start_values += start_offset  
-
-        end_values = np.linspace(1, 0, end_idx - mid_idx + 1)
-        if smooth:
-            end_values = 0.5 * (1 - np.cos(end_values * np.pi))
-        end_values = end_values ** exponent
-        if end_values.any():
-            end_values *= (amount - end_offset)  
-            end_values += end_offset  
-
-        multipliers[start_idx:mid_idx+1] = start_values
-        multipliers[mid_idx:end_idx+1] = end_values        
-        multipliers[:start_idx] = start_offset
-        multipliers[end_idx+1:] = end_offset    
-        multipliers *= 1 - fade
-
-        return multipliers
-
-    def visualize(self, enabled, start, end, bias, amount, exponent, start_offset, end_offset, fade, smooth):
-        try:
-            steps = 50
-            values = self.make_schedule(steps, start, end, bias, amount, exponent, start_offset, end_offset, fade, smooth)
-            mean = sum(values)/steps
-            peak = np.clip(max(abs(values)), -1, 1)
-            if start > end:
-                start = end
-            mid = start + bias * (end - start)
-            opacity = .1 + (1 - fade) * 0.7
-            plot_color = (0.5, 0.5, 0.5, opacity) if not enabled else ((1 - peak)**2, 1, 0, opacity) if mean >= 0 else (1, (1 - peak)**2, 0, opacity) 
-            plt.rcParams.update({
-                "text.color":  plot_color, 
-                "axes.labelcolor":  plot_color, 
-                "axes.edgecolor":  plot_color, 
-                "figure.facecolor":  (0.0, 0.0, 0.0, 0.0),  
-                "axes.facecolor":    (0.0, 0.0, 0.0, 0.0),  
-                "ytick.labelsize": 6,
-                "ytick.labelcolor": plot_color,
-                "ytick.color": plot_color,
-            })            
-            fig, ax = plt.subplots(figsize=(2.15, 2.00), layout="constrained")
-            ax.plot(range(steps), values, color=plot_color)
-            ax.axhline(y=0, color=plot_color, linestyle='dotted')
-            ax.axvline(x=mid * (steps - 1), color=plot_color, linestyle='dotted')
-            ax.tick_params(right=False, color=plot_color)
-            ax.set_xticks([i * (steps - 1) / 10 for i in range(10)][1:])
-            ax.set_xticklabels([])
-            ax.set_ylim([-1, 1])
-            ax.set_xlim([0, steps-1])
-            plt.close()
-            self.last_vis = fig
-            return fig
-        except Exception:
-            if self.last_vis is not None:
-                return self.last_vis
-            return   
+            raise ValueError(f"Unknown Detail Daemon mode: {dd_mode}")
 
 
-def xyz_support():
-    for scriptDataTuple in scripts.scripts_data:
-        if os.path.basename(scriptDataTuple.path) == 'xyz_grid.py':
-            xy_grid = scriptDataTuple.module
+def detail_daemon_sampler(
+    model: object,
+    x: torch.Tensor,
+    sigmas: torch.Tensor,
+    *,
+    dds_wrapped_sampler: object,
+    dds_make_schedule: callable,
+    dds_cfg_scale_override: float,
+    **kwargs: dict,
+) -> torch.Tensor:
+    if dds_cfg_scale_override > 0:
+        cfg_scale = dds_cfg_scale_override
+    else:
+        maybe_cfg_scale = getattr(model.inner_model, "cfg", None)
+        cfg_scale = (
+            float(maybe_cfg_scale) if isinstance(maybe_cfg_scale, (int, float)) else 1.0
+        )
+    dd_schedule = torch.tensor(
+        dds_make_schedule(len(sigmas) - 1),
+        dtype=torch.float32,
+        device="cpu",
+    )
+    sigmas_cpu = sigmas.detach().clone().cpu()
+    sigma_max, sigma_min = float(sigmas_cpu[0]), float(sigmas_cpu[-1]) + 1e-05
 
-            def confirm_mode(p, xs):
-                for x in xs:
-                    if x not in ['both', 'cond', 'uncond']:
-                        raise RuntimeError(f'Invalid Detail Daemon Mode: {x}')
-            mode = xy_grid.AxisOption(
-                '[Detail Daemon] Mode',
-                str,
-                xy_grid.apply_field('DD_mode'),
-                confirm=confirm_mode
-            )
-            amount = xy_grid.AxisOption(
-                '[Detail Daemon] Amount',
-                float,
-                xy_grid.apply_field('DD_amount')
-            )
-            start = xy_grid.AxisOption(
-                '[Detail Daemon] Start',
-                float,
-                xy_grid.apply_field('DD_start')
-            )
-            end = xy_grid.AxisOption(
-                '[Detail Daemon] End',
-                float,
-                xy_grid.apply_field('DD_end')
-            )
-            bias = xy_grid.AxisOption(
-                '[Detail Daemon] Bias',
-                float,
-                xy_grid.apply_field('DD_bias')
-            )
-            exponent = xy_grid.AxisOption(
-                '[Detail Daemon] Exponent',
-                float,
-                xy_grid.apply_field('DD_exponent')
-            )
-            start_offset = xy_grid.AxisOption(
-                '[Detail Daemon] Start Offset',
-                float,
-                xy_grid.apply_field('DD_start_offset')
-            )
-            end_offset = xy_grid.AxisOption(
-                '[Detail Daemon] End Offset',
-                float,
-                xy_grid.apply_field('DD_end_offset')
-            )
-            fade = xy_grid.AxisOption(
-                '[Detail Daemon] Fade',
-                float,
-                xy_grid.apply_field('DD_fade')
-            )                                      
-            xy_grid.axis_options.extend([
-                mode,
-                amount,
-                start, 
-                end, 
-                bias, 
+    def model_wrapper(x: torch.Tensor, sigma: torch.Tensor, **extra_args: dict):
+        sigma_float = float(sigma.max().detach().cpu())
+        if not (sigma_min <= sigma_float <= sigma_max):
+            return model(x, sigma, **extra_args)
+        dd_adjustment = get_dd_schedule(sigma_float, sigmas_cpu, dd_schedule) * 0.1
+        adjusted_sigma = sigma * max(1e-06, 1.0 - dd_adjustment * cfg_scale)
+        return model(x, adjusted_sigma, **extra_args)
+
+    for k in (
+        "inner_model",
+        "sigmas",
+    ):
+        if hasattr(model, k):
+            setattr(model_wrapper, k, getattr(model, k))
+    return dds_wrapped_sampler.sampler_function(
+        model_wrapper,
+        x,
+        sigmas,
+        **kwargs,
+        **dds_wrapped_sampler.extra_options,
+    )
+
+
+class DetailDaemonSamplerNode:
+    DESCRIPTION = "This sampler wrapper works by adjusting the sigma passed to the model, while the rest of sampling stays the same."
+    CATEGORY = "sampling/custom_sampling/samplers"
+    RETURN_TYPES = ("SAMPLER",)
+    FUNCTION = "go"
+
+    @classmethod
+    def INPUT_TYPES(cls) -> dict:
+        return {
+            "required": {
+                "sampler": ("SAMPLER",),
+                "detail_amount": (
+                    "FLOAT",
+                    {"default": 0.1, "min": -5.0, "max": 5.0, "step": 0.01},
+                ),
+                "start": (
+                    "FLOAT",
+                    {"default": 0.2, "min": 0.0, "max": 1.0, "step": 0.01},
+                ),
+                "end": (
+                    "FLOAT",
+                    {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.01},
+                ),
+                "bias": (
+                    "FLOAT",
+                    {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01},
+                ),
+                "exponent": (
+                    "FLOAT",
+                    {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.05},
+                ),
+                "start_offset": (
+                    "FLOAT",
+                    {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01},
+                ),
+                "end_offset": (
+                    "FLOAT",
+                    {"default": 0.0, "min": -1.0, "max": 1.0, "step": 0.01},
+                ),
+                "fade": (
+                    "FLOAT",
+                    {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.05},
+                ),
+                "smooth": ("BOOLEAN", {"default": True}),
+                "cfg_scale_override": (
+                    "FLOAT",
+                    {
+                        "default": 0,
+                        "min": 0.0,
+                        "max": 100.0,
+                        "step": 0.5,
+                        "round": 0.01,
+                        "tooltip": "If set to 0, the sampler will automatically determine the CFG scale (if possible). Set to some other value to override.",
+                    },
+                ),
+            },
+        }
+
+    @classmethod
+    def go(
+        cls,
+        sampler: object,
+        *,
+        detail_amount,
+        start,
+        end,
+        bias,
+        exponent,
+        start_offset,
+        end_offset,
+        fade,
+        smooth,
+        cfg_scale_override,
+    ) -> tuple:
+        def dds_make_schedule(steps):
+            return make_detail_daemon_schedule(
+                steps,
+                start,
+                end,
+                bias,
+                detail_amount,
                 exponent,
                 start_offset,
                 end_offset,
                 fade,
-            ])
+                smooth,
+            )
+
+        return (
+            KSAMPLER(
+                detail_daemon_sampler,
+                extra_options={
+                    "dds_wrapped_sampler": sampler,
+                    "dds_make_schedule": dds_make_schedule,
+                    "dds_cfg_scale_override": cfg_scale_override,
+                },
+            ),
+        )
+
+#MultiplySigmas Node
+class MultiplySigmas:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "sigmas": ("SIGMAS", {"forceInput": True}),
+                "factor": ("FLOAT", {"default": 1, "min": 0, "max": 100, "step": 0.001}),
+                "start": ("FLOAT", {"default": 0, "min": 0, "max": 1, "step": 0.001}),
+                "end": ("FLOAT", {"default": 1, "min": 0, "max": 1, "step": 0.001})
+            }
+        }
+
+    FUNCTION = "simple_output"
+    RETURN_TYPES = ("SIGMAS",)
+    CATEGORY = "sampling/custom_sampling/sigmas"
+
+    def simple_output(self, sigmas, factor, start, end):
+        # Clone the sigmas to ensure the input is not modified (stateless)
+        sigmas = sigmas.clone()
+        
+        total_sigmas = len(sigmas)
+        start_idx = int(start * total_sigmas)
+        end_idx = int(end * total_sigmas)
+
+        for i in range(start_idx, end_idx):
+            sigmas[i] *= factor
+
+        return (sigmas,)
+
+#LyingSigmaSampler
+def lying_sigma_sampler(
+    model,
+    x,
+    sigmas,
+    *,
+    lss_wrapped_sampler,
+    lss_dishonesty_factor,
+    lss_startend_percent,
+    **kwargs,
+):
+    start_percent, end_percent = lss_startend_percent
+    ms = model.inner_model.inner_model.model_sampling
+    start_sigma, end_sigma = (
+        round(ms.percent_to_sigma(start_percent), 4),
+        round(ms.percent_to_sigma(end_percent), 4),
+    )
+    del ms
+
+    def model_wrapper(x, sigma, **extra_args):
+        sigma_float = float(sigma.max().detach().cpu())
+        if end_sigma <= sigma_float <= start_sigma:
+            sigma = sigma * (1.0 + lss_dishonesty_factor)
+        return model(x, sigma, **extra_args)
+
+    for k in (
+        "inner_model",
+        "sigmas",
+    ):
+        if hasattr(model, k):
+            setattr(model_wrapper, k, getattr(model, k))
+    return lss_wrapped_sampler.sampler_function(
+        model_wrapper,
+        x,
+        sigmas,
+        **kwargs,
+        **lss_wrapped_sampler.extra_options,
+    )
 
 
-try:
-    xyz_support()
-except Exception as e:
-    print(f'Error trying to add XYZ plot options for Detail Daemon', e)
+class LyingSigmaSamplerNode:
+    CATEGORY = "sampling/custom_sampling"
+    RETURN_TYPES = ("SAMPLER",)
+    FUNCTION = "go"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "sampler": ("SAMPLER",),
+                "dishonesty_factor": (
+                    "FLOAT",
+                    {
+                        "default": -0.05,
+                        "min": -0.999,
+                        "step": 0.01,
+                        "tooltip": "Multiplier for sigmas passed to the model. -0.05 means we reduce the sigma by 5%.",
+                    },
+                ),
+            },
+            "optional": {
+                "start_percent": ("FLOAT", {"default": 0.1, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "end_percent": ("FLOAT", {"default": 0.9, "min": 0.0, "max": 1.0, "step": 0.01}),
+            },
+        }
+
+    @classmethod
+    def go(cls, sampler, dishonesty_factor, *, start_percent=0.0, end_percent=1.0):
+        return (
+            KSAMPLER(
+                lying_sigma_sampler,
+                extra_options={
+                    "lss_wrapped_sampler": sampler,
+                    "lss_dishonesty_factor": dishonesty_factor,
+                    "lss_startend_percent": (start_percent, end_percent),
+                },
+            ),
+        )

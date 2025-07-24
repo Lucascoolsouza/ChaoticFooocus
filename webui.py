@@ -212,31 +212,7 @@ with shared.gradio_root:
                                 uov_input_image = grh.Image(label='Image', source='upload', type='numpy', show_label=False)
                             with gr.Column():
                                 uov_method = gr.Radio(label='Upscale or Variation:', choices=flags.uov_list, value=modules.config.default_uov_method)
-                                # Latent Upscale options
-                                latent_upscale_method = gr.Dropdown([
-                                    "bilinear", "bilinear-antialiased",
-                                    "bicubic", "bicubic-antialiased",
-                                    "linear", "trilinear",
-                                    "area", "nearest",  "nearest-exact"
-                                ], label="Latent Upscale Method", visible=False, value="bilinear")
-                                latent_upscale_scheduler = gr.Dropdown([
-                                    "simple", "normal", "karras", "exponential",
-                                    "polyexponential", "automatic"
-                                ], label="Latent Upscale Scheduler", visible=False, value="normal")
-                                latent_upscale_size = gr.Dropdown([
-                                    "1x", "1.5x", "2x", "4x"
-                                ], label="Latent Upscale Size", visible=False, value="2x")
-                                latent_upscale_denoise = gr.Slider(minimum=0.0, maximum=1.0, step=0.01, value=0.5, label="Latent Upscale Denoise Strength", visible=False)
-                                def show_latent_upscale_options(selected):
-                                    visible = selected==flags.latent_upscale
-                                    return {
-                                        latent_upscale_method: gr.update(visible=visible),
-                                        latent_upscale_scheduler: gr.update(visible=visible),
-                                        latent_upscale_size: gr.update(visible=visible),
-                                        latent_upscale_denoise: gr.update(visible=visible)
-                                    }
-                                uov_method.change(show_latent_upscale_options, inputs=uov_method, outputs=[latent_upscale_method, latent_upscale_scheduler, latent_upscale_size, latent_upscale_denoise], queue=False, show_progress=False)
-                                gr.HTML('<a href="https://github.com/lllyasviel/Fooocus/discussions/390" target="_blank">\U0001F4D4 Documentation</a>')
+                                # Latent Upscale options (Removed due to dependency on modules.scripts)
                     with gr.Tab(label='Image Prompt', id='ip_tab') as ip_tab:
                         with gr.Row():
                             ip_images = []
@@ -1048,7 +1024,7 @@ with shared.gradio_root:
 
         ctrls += [base_model, refiner_model, refiner_switch] + lora_ctrls
         ctrls += [input_image_checkbox, current_tab]
-        ctrls += [uov_method, uov_input_image, latent_upscale_method, latent_upscale_scheduler, latent_upscale_size, latent_upscale_denoise]
+        ctrls += [uov_method, uov_input_image]
         ctrls += [outpaint_selections, inpaint_input_image, inpaint_additional_prompt, inpaint_mask_image]
         ctrls += [disable_preview, disable_intermediate_results, disable_seed_increment, black_out_nsfw]
         ctrls += [adm_scaler_positive, adm_scaler_negative, adm_scaler_end, adaptive_cfg, clip_skip]
@@ -1062,10 +1038,7 @@ with shared.gradio_root:
         ctrls += nag_ctrls
 
         # --- Detail Daemon Integration ---
-        if isinstance(detail_daemon_ui, list):
-            ctrls += detail_daemon_ui
-        else:
-            ctrls.append(detail_daemon_ui)
+        ctrls += detail_daemon_ui
         # --- End Detail Daemon Integration ---
 
         if not args_manager.args.disable_image_log:
