@@ -1080,12 +1080,6 @@ with shared.gradio_root:
             
         ctrls += [detail_daemon_enabled, detail_daemon_strength]
 
-        if not args_manager.args.disable_image_log:
-            ctrls += [save_final_enhanced_image_only]
-
-        if not args_manager.args.disable_metadata:
-            ctrls += [save_metadata_to_images, metadata_scheme]
-
         ctrls += ip_ctrls
         ctrls += [debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox,
                   enhance_input_image, enhance_checkbox, enhance_uov_method, enhance_bg_removal_model, 
