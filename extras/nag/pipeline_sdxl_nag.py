@@ -505,53 +505,71 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             clip_skip=self.clip_skip,
         )
         if self.do_normalized_attention_guidance:
+            nag_negative_pooled_prompt_embeds = None # Initialize pooled embeds for NAG
             if nag_negative_prompt_embeds is None:
                 # First priority: use existing negative prompt embeddings if available
                 if self.do_classifier_free_guidance and negative_prompt_embeds is not None:
                     nag_negative_prompt_embeds = negative_prompt_embeds
+                    nag_negative_pooled_prompt_embeds = negative_pooled_prompt_embeds
                     print("[NAG] Using existing CFG negative prompt embeddings for NAG")
                 # Second priority: try to encode the NAG negative prompt if provided
                 elif nag_negative_prompt is not None and nag_negative_prompt.strip() != "":
                     print(f"[NAG] Encoding NAG negative prompt: '{nag_negative_prompt}'")
                     try:
-                        nag_negative_prompt_embeds = self.encode_prompt(
+                        nag_negative_prompt_embeds, _, nag_negative_pooled_prompt_embeds, _ = self.encode_prompt(
                             prompt=nag_negative_prompt,
                             device=device,
                             num_images_per_prompt=num_images_per_prompt,
                             do_classifier_free_guidance=False,
                             lora_scale=lora_scale,
                             clip_skip=self.clip_skip,
-                        )[0]
+                        )
                     except Exception as e:
                         print(f"[NAG] Failed to encode NAG negative prompt: {e}")
-                        print("[NAG] Using existing negative prompt embeddings as fallback")
-                        if negative_prompt_embeds is not None:
-                            nag_negative_prompt_embeds = negative_prompt_embeds
-                        else:
-                            print("[NAG] No negative embeddings available, NAG will be less effective")
-                            nag_negative_prompt_embeds = None
+                        print("[NAG] Falling back to zero embeddings for NAG negative prompt")
+                        # Fall back to zero embeddings if encoding fails
+                        import torch
+                        batch_size = num_images_per_prompt
+                        
+                        # Try to get sequence length from stored shape
+                        seq_len = 77  # Default CLIP sequence length
+                        embed_dim = 2048  # Default SDXL embedding dimension
+                        
+                        if hasattr(self, '_current_prompt_embeds_shape') and self._current_prompt_embeds_shape is not None:
+                            seq_len = self._current_prompt_embeds_shape[1]
+                            embed_dim = self._current_prompt_embeds_shape[2]
+                        
+                        embed_dim = 2048  # Standard SDXL embedding dimension
+                        pooled_dim = 1280  # Standard SDXL pooled dimension
+                        
+                        # Create zero embeddings (neutral)
+                        nag_negative_prompt_embeds = torch.zeros((batch_size, seq_len, embed_dim), device=device, dtype=torch.float16 if device.type == 'cuda' else torch.float32)
+                        nag_negative_pooled_prompt_embeds = torch.zeros((batch_size, pooled_dim), device=device, dtype=torch.float16 if device.type == 'cuda' else torch.float32)
                 # Third priority: try to encode the regular negative prompt
                 elif negative_prompt is not None and negative_prompt.strip() != "":
                     print(f"[NAG] Using regular negative prompt for NAG: '{negative_prompt}'")
                     if negative_prompt_embeds is not None:
                         nag_negative_prompt_embeds = negative_prompt_embeds
+                        nag_negative_pooled_prompt_embeds = negative_pooled_prompt_embeds # Also assign pooled if available
                     else:
                         nag_negative_prompt = negative_prompt
                         try:
-                            nag_negative_prompt_embeds = self.encode_prompt(
+                            nag_negative_prompt_embeds, _, nag_negative_pooled_prompt_embeds, _ = self.encode_prompt(
                                 prompt=nag_negative_prompt,
                                 device=device,
                                 num_images_per_prompt=num_images_per_prompt,
                                 do_classifier_free_guidance=False,
                                 lora_scale=lora_scale,
                                 clip_skip=self.clip_skip,
-                            )[0]
+                            )
                         except Exception as e:
                             print(f"[NAG] Failed to encode regular negative prompt: {e}")
                             nag_negative_prompt_embeds = None
+                            nag_negative_pooled_prompt_embeds = None
                 else:
                     print("[NAG] No negative prompt available, NAG will be less effective")
                     nag_negative_prompt_embeds = None
+                    nag_negative_pooled_prompt_embeds = None # Ensure this is also None
 
         # 4. Prepare timesteps
         timesteps, num_inference_steps = retrieve_timesteps(
@@ -619,7 +637,12 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             num_nag_batches = nag_negative_prompt_embeds.shape[0]
             
             # Replicate existing add_text_embeds and add_time_ids for NAG
-            replicated_add_text_embeds = add_text_embeds[:num_nag_batches] if num_existing_batches >= num_nag_batches else add_text_embeds.repeat(math.ceil(num_nag_batches / num_existing_batches), 1, 1)[:num_nag_batches]
+            # Use nag_negative_pooled_prompt_embeds if available, otherwise replicate existing add_text_embeds
+            if nag_negative_pooled_prompt_embeds is not None:
+                replicated_add_text_embeds = nag_negative_pooled_prompt_embeds
+            else:
+                replicated_add_text_embeds = add_text_embeds[:num_nag_batches] if num_existing_batches >= num_nag_batches else add_text_embeds.repeat(math.ceil(num_nag_batches / num_existing_batches), 1, 1)[:num_nag_batches]
+            
             replicated_add_time_ids = add_time_ids[:num_nag_batches] if num_existing_batches >= num_nag_batches else add_time_ids.repeat(math.ceil(num_nag_batches / num_existing_batches), 1)[:num_nag_batches]
 
             add_text_embeds = torch.cat([add_text_embeds, replicated_add_text_embeds], dim=0)
