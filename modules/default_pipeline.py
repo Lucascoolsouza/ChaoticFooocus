@@ -414,8 +414,17 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                     temp_latent = {'samples': x0}
                     temp_img = core.decode_vae(target_vae, temp_latent)
                     if temp_img is not None and len(temp_img) > 0:
+                        # Convert tensor to numpy array if needed
+                        img_array = temp_img[0]
+                        if hasattr(img_array, 'cpu'):  # It's a tensor
+                            img_array = img_array.cpu().numpy()
+                        
+                        # Ensure the array is in the right format (0-255, uint8)
+                        if img_array.dtype != np.uint8:
+                            img_array = (img_array * 255).astype(np.uint8)
+                        
                         # Apply detail daemon to the decoded image
-                        enhanced_img = detail_daemon.process(temp_img[0])
+                        enhanced_img = detail_daemon.process(img_array)
                         if enhanced_img is not None:
                             # Re-encode back to latent (simplified - in practice this might need more sophisticated handling)
                             pass  # For now, we'll let the original callback handle the display
