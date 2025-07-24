@@ -123,21 +123,22 @@ class AsyncTask:
             print(f"[DEBUG] Error popping parameter {i}: {e}")
             print(f"[DEBUG] Args remaining: {len(args)}")
             # Fill remaining with defaults
-            while len(detail_params) < 11:
+            while len(detail_params) < 12:
                 detail_params.append(None)
         
-        # Assign in correct order based on debug output
-        self.detail_daemon_smooth = detail_params[0]      # True
-        self.detail_daemon_amount = detail_params[1]      # 0.25
-        self.detail_daemon_start = detail_params[2]       # 0.2
-        self.detail_daemon_end = detail_params[3]         # 0.8
-        self.detail_daemon_bias = detail_params[4]        # 0.71
-        self.detail_daemon_start_offset = detail_params[5] # 0
-        self.detail_daemon_end_offset = detail_params[6]  # -0.15
-        self.detail_daemon_exponent = detail_params[7]    # 1
-        self.detail_daemon_fade = detail_params[8]        # 0
-        self.detail_daemon_mode = detail_params[9]        # 'both'
-        self.detail_daemon_enabled = detail_params[10]    # True
+        # Assign in correct order matching webui ctrls order
+        self.detail_daemon_enabled = detail_params[0]           # True
+        self.detail_daemon_amount = detail_params[1]            # 0.25
+        self.detail_daemon_start = detail_params[2]             # 0.2
+        self.detail_daemon_end = detail_params[3]               # 0.8
+        self.detail_daemon_bias = detail_params[4]              # 0.71
+        self.detail_daemon_base_multiplier = detail_params[5]   # 0.85
+        self.detail_daemon_start_offset = detail_params[6]      # 0
+        self.detail_daemon_end_offset = detail_params[7]        # -0.15
+        self.detail_daemon_exponent = detail_params[8]          # 1
+        self.detail_daemon_fade = detail_params[9]              # 0
+        self.detail_daemon_mode = detail_params[10]             # 'both'
+        self.detail_daemon_smooth = detail_params[11]           # True
         
         print(f"[DEBUG] Detail daemon params: enabled={self.detail_daemon_enabled}, amount={self.detail_daemon_amount}, mode={self.detail_daemon_mode}")
 
