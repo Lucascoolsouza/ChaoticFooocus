@@ -1167,8 +1167,6 @@ class StableDiffusionXLTPGPipeline(
         else:
             raise TypeError("Neither self.unet nor self.unet.model is a callable torch.nn.Module.")
 
-        actual_unet_model.to(device)
-
         # 3. Encode input prompt
         lora_scale = (
             self.cross_attention_kwargs.get("scale", None) if self.cross_attention_kwargs is not None else None
@@ -1213,7 +1211,7 @@ class StableDiffusionXLTPGPipeline(
         )
         logger.debug(f"Device of latents: {latents.device}")
         logger.debug(f"Device of prompt_embeds: {prompt_embeds.device}")
-        logger.debug(f"Device of UNet model: {actual_unet_model.device}")
+        logger.debug(f"Device of UNet model: {next(actual_unet_model.parameters()).device}")
 
         # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
