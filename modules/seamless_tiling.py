@@ -53,9 +53,9 @@ def make_seamless_tiling(image, tile_size=None, overlap_ratio=0.1):
     overlap_x = int(width * overlap_ratio)
     overlap_y = int(height * overlap_ratio)
     
-    # Ensure minimum overlap
-    overlap_x = max(overlap_x, 4)
-    overlap_y = max(overlap_y, 4)
+    # Ensure minimum overlap and don't exceed half the image size
+    overlap_x = max(min(overlap_x, width // 2), 4)
+    overlap_y = max(min(overlap_y, height // 2), 4)
     
     # Create seamless version using edge blending
     seamless_img = img_array.copy()
@@ -148,6 +148,10 @@ def make_seamless_tiling_advanced(image, method='blend', tile_size=None, overlap
         
         overlap_x = int(width * overlap_ratio)
         overlap_y = int(height * overlap_ratio)
+        
+        # Calculate overlap sizes with constraints
+        overlap_x = max(min(int(width * overlap_ratio), width // 2), 4)
+        overlap_y = max(min(int(height * overlap_ratio), height // 2), 4)
         
         # Mirror horizontal edges
         if overlap_x > 0:

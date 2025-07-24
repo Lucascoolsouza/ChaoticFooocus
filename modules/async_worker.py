@@ -1048,6 +1048,8 @@ def worker():
                 import os
                 output_path = os.path.join(modules.config.path_outputs, 'debug_bg_removed.png')
                 Image.fromarray(uov_input_image).save(output_path)
+            except Exception as e:
+                print(f"[DEBUG] Failed to save debug image: {e}")
         elif 'seamless tiling' in uov_method.lower():
             goals.append('upscale')  # Use upscale goal for seamless tiling
             skip_prompt_processing = True
