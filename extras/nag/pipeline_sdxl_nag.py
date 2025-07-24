@@ -667,12 +667,18 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                                 "device": latent_model_input.device,
                             })
                     
+                    print(f"[NAG DEBUG] Step {i}, timestep {t}")
+                    print(f"[NAG DEBUG] latent_model_input shape: {latent_model_input.shape}")
+                    print(f"[NAG DEBUG] prompt_embeds shape: {prompt_embeds.shape}")
+                    print(f"[NAG DEBUG] comfy_kwargs keys: {list(comfy_kwargs.keys())}")
+                    
                     noise_pred = self.unet.model.apply_model(
                         latent_model_input,
                         t,
                         c_crossattn=prompt_embeds,
                         **comfy_kwargs,
                     )
+                    print(f"[NAG DEBUG] noise_pred shape: {noise_pred.shape}, mean: {noise_pred.mean().item():.6f}, std: {noise_pred.std().item():.6f}")
                 else:
                     # Standard Diffusers UNet
                     noise_pred = self.unet(
@@ -698,6 +704,8 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 latents_dtype = latents.dtype
                 scheduler_output = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)
                 latents = scheduler_output.prev_sample if hasattr(scheduler_output, 'prev_sample') else scheduler_output[0]
+                
+                print(f"[NAG DEBUG] After scheduler step - latents shape: {latents.shape}, mean: {latents.mean().item():.6f}, std: {latents.std().item():.6f}")
 
                 # --- add these three lines ---
                 if callback is not None:
