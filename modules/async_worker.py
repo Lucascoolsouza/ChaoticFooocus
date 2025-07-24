@@ -1576,7 +1576,11 @@ def worker():
                     from modules.detail_daemon import detail_daemon
                     # Update detail daemon with current task parameters
                     detail_daemon.enabled = task.detail_daemon_enabled
-                    detail_daemon.detail_amount = float(task.detail_daemon_amount) if task.detail_daemon_amount is not None else 0.25
+                    try:
+                        detail_daemon.detail_amount = float(task.detail_daemon_amount) if task.detail_daemon_amount is not None else 0.25
+                    except (ValueError, TypeError) as e:
+                        print(f'[Detail Daemon] Error converting detail_amount: {task.detail_daemon_amount} - {e}')
+                        detail_daemon.detail_amount = 0.25
                     detail_daemon.start = float(task.detail_daemon_start) if task.detail_daemon_start is not None else 0.2
                     detail_daemon.end = float(task.detail_daemon_end) if task.detail_daemon_end is not None else 0.8
                     detail_daemon.bias = float(task.detail_daemon_bias) if task.detail_daemon_bias is not None else 0.71
@@ -1587,6 +1591,8 @@ def worker():
                     detail_daemon.mode = task.detail_daemon_mode if task.detail_daemon_mode is not None else 'both'
                     detail_daemon.smooth = bool(task.detail_daemon_smooth) if task.detail_daemon_smooth is not None else True
                     
+                    print(f'[Detail Daemon] Debug - amount: {task.detail_daemon_amount}, type: {type(task.detail_daemon_amount)}')
+                    print(f'[Detail Daemon] Debug - mode: {task.detail_daemon_mode}, type: {type(task.detail_daemon_mode)}')
                     print(f'[Detail Daemon] Enhancing {len(task.results)} images with amount {task.detail_daemon_amount}')
                     enhanced_results = []
                     for img_path in task.results:
