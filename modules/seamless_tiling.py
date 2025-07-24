@@ -1,7 +1,13 @@
 import torch
 import numpy as np
 from PIL import Image
-import cv2
+
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    print("Warning: cv2 not available, using PIL for image resizing")
 
 
 def make_seamless_tiling(image, tile_size=None, overlap_ratio=0.1):
@@ -34,7 +40,13 @@ def make_seamless_tiling(image, tile_size=None, overlap_ratio=0.1):
             image = image.resize((target_width, target_height), Image.Resampling.LANCZOS)
             img_array = np.array(image)
         else:
-            img_array = cv2.resize(img_array, (target_width, target_height), interpolation=cv2.INTER_LANCZOS4)
+            if CV2_AVAILABLE:
+                img_array = cv2.resize(img_array, (target_width, target_height), interpolation=cv2.INTER_LANCZOS4)
+            else:
+                # Fallback to PIL
+                pil_img = Image.fromarray(img_array)
+                pil_img = pil_img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                img_array = np.array(pil_img)
         height, width = target_height, target_width
     
     # Calculate overlap size
@@ -118,7 +130,13 @@ def make_seamless_tiling_advanced(image, method='blend', tile_size=None, overlap
             image = image.resize((target_width, target_height), Image.Resampling.LANCZOS)
             img_array = np.array(image)
         else:
-            img_array = cv2.resize(img_array, (target_width, target_height), interpolation=cv2.INTER_LANCZOS4)
+            if CV2_AVAILABLE:
+                img_array = cv2.resize(img_array, (target_width, target_height), interpolation=cv2.INTER_LANCZOS4)
+            else:
+                # Fallback to PIL
+                pil_img = Image.fromarray(img_array)
+                pil_img = pil_img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                img_array = np.array(pil_img)
         height, width = target_height, target_width
     
     if method == 'blend':
