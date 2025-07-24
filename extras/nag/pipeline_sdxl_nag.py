@@ -658,7 +658,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents_dtype = latents.dtype
-                latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False).prev_sample
+                latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
 
                 # --- add these three lines ---
                 if callback is not None:
