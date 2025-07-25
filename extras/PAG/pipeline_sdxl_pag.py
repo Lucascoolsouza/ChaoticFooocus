@@ -105,13 +105,19 @@ class StableDiffusionXLPAGPipeline(StableDiffusionXLPipeline):
             should_apply_pag = any(layer_type in name for layer_type in pag_applied_layers)
             
             if should_apply_pag:
-                pag_processors[name] = PAGAttentionProcessor(processor)
+                pag_processors[name] = PAGAttentionProcessor(processor, perturbation_scale=self._pag_scale)
             else:
                 pag_processors[name] = processor
         
         # Set the PAG processors
         self._set_attention_processors(pag_processors)
         
+        print(f"[PAG DEBUG] PAG enabled with scale {pag_scale} on layers: {pag_applied_layers}")
+        for name, processor in pag_processors.items():
+            if isinstance(processor, PAGAttentionProcessor):
+                print(f"[PAG DEBUG]   - Layer '{name}' set with PAGAttentionProcessor (perturbation_scale={processor.perturbation_scale})")
+            else:
+                print(f"[PAG DEBUG]   - Layer '{name}' set with original processor")
         logger.info(f"PAG enabled with scale {pag_scale} on layers: {pag_applied_layers}")
     
     def disable_pag(self):
@@ -168,6 +174,7 @@ class StableDiffusionXLPAGPipeline(StableDiffusionXLPipeline):
         
         # Enable PAG if requested
         if pag_scale > 0:
+            print(f"[PAG DEBUG] Enabling PAG with scale={pag_scale}, layers={pag_applied_layers}")
             self.enable_pag(pag_scale=pag_scale, pag_applied_layers=pag_applied_layers)
         
         try:
@@ -212,6 +219,7 @@ class StableDiffusionXLPAGPipeline(StableDiffusionXLPipeline):
         finally:
             # Always disable PAG after generation to clean up
             if pag_scale > 0:
+                print("[PAG DEBUG] Disabling PAG after generation.")
                 self.disable_pag()
 
 
@@ -223,6 +231,7 @@ class PAGAttentionProcessor:
     def __init__(self, original_processor, perturbation_scale: float = 1.0):
         self.original_processor = original_processor
         self.perturbation_scale = perturbation_scale
+        print(f"[PAG DEBUG] PAGAttentionProcessor initialized with perturbation_scale={self.perturbation_scale}")
     
     def __call__(
         self,
@@ -238,11 +247,13 @@ class PAGAttentionProcessor:
         """
         # Get the batch size and check if we're doing guidance
         batch_size = hidden_states.shape[0]
+        print(f"[PAG DEBUG] PAGAttentionProcessor.__call__ - batch_size={batch_size}")
         
         # For PAG, we expect batch_size to be 2 (unconditional + conditional)
         # or 3 (unconditional + conditional + perturbed) when PAG is active
         
         if batch_size == 3:
+            print("[PAG DEBUG]   Processing with 3 chunks (uncond, cond, perturb)")
             # Split into unconditional, conditional, and perturbed
             hidden_states_uncond, hidden_states_cond, hidden_states_perturb = hidden_states.chunk(3)
             
@@ -270,6 +281,7 @@ class PAGAttentionProcessor:
             return torch.cat([out_uncond, out_cond, out_perturb], dim=0)
         
         else:
+            print("[PAG DEBUG]   Processing without PAG (batch_size != 3)")
             # Standard processing without PAG
             return self.original_processor(
                 attn, hidden_states, encoder_hidden_states, attention_mask, temb, scale
@@ -287,6 +299,7 @@ class PAGAttentionProcessor:
         """
         Process attention with perturbation applied
         """
+        print(f"[PAG DEBUG] _process_with_perturbation called with perturbation_scale={self.perturbation_scale}")
         # Store original forward method
         original_get_attention_scores = attn.get_attention_scores
         
@@ -297,6 +310,7 @@ class PAGAttentionProcessor:
             # Apply perturbation to attention scores
             # Simple perturbation: add noise or modify the attention pattern
             if self.perturbation_scale > 0:
+                print(f"[PAG DEBUG]   Applying perturbation with scale={self.perturbation_scale}")
                 # Method 1: Add noise to attention scores
                 noise = torch.randn_like(attention_scores) * self.perturbation_scale * 0.1
                 attention_scores = attention_scores + noise
