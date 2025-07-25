@@ -1902,9 +1902,10 @@ class StableDiffusionXLTPGPipeline(
                             mid_layers[layer_idx] = mid_layers[layer_idx]._original_layer
 
                     elif drop_layer[0] == "u":
-                        if hasattr(up_layers[int(drop_layer[1:])], '_original_forward'):
-                            up_layers[int(drop_layer[1:])].forward = up_layers[int(drop_layer[1:])]._original_forward
-                            del up_layers[int(drop_layer[1:])]._original_forward
+                        # Restore the original layer
+                        layer_idx = int(drop_layer[1:])
+                        if hasattr(up_layers[layer_idx], '_original_layer'):
+                            up_layers[layer_idx] = up_layers[layer_idx]._original_layer
 
                     else:
                         raise ValueError(f"Invalid layer type: {drop_layer[0]}")
