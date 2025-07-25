@@ -311,9 +311,11 @@ class PAGAttentionProcessor:
             # Simple perturbation: add noise or modify the attention pattern
             if self.perturbation_scale > 0:
                 print(f"[PAG DEBUG]   Applying perturbation with scale={self.perturbation_scale}")
+                print(f"[PAG DEBUG]   Attention scores BEFORE perturbation (mean, std): {attention_scores.mean():.4f}, {attention_scores.std():.4f}")
                 # Method 1: Add noise to attention scores
                 noise = torch.randn_like(attention_scores) * self.perturbation_scale * 0.1
                 attention_scores = attention_scores + noise
+                print(f"[PAG DEBUG]   Attention scores AFTER perturbation (mean, std): {attention_scores.mean():.4f}, {attention_scores.std():.4f}")
                 
                 # Method 2: Alternatively, you could blur or modify the attention pattern
                 # attention_scores = self._blur_attention(attention_scores)

@@ -122,7 +122,7 @@ class TestStableDiffusionXLPAGPipeline(unittest.TestCase):
             # For simplicity, let's assume it calls with hidden_states as query and key
             # This might need adjustment based on the actual AttentionProcessor implementation
             _ = attn_obj.get_attention_scores(hidden_states, hidden_states, attention_mask)
-            return torch.randn(hidden_states.shape[0], hidden_states.shape[1], hidden_states.shape[1]) # Return a dummy tensor
+            return torch.randn_like(hidden_states) # Return a dummy tensor with the correct shape
         original_processor.side_effect = mock_original_processor_call
 
         pag_processor = PAGAttentionProcessor(original_processor, perturbation_scale=0.5)
