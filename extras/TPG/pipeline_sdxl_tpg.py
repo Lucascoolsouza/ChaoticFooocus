@@ -718,16 +718,6 @@ class StableDiffusionXLTPGPipeline(
                     f"Model expects an added time embedding vector of length {expected_add_embed_dim}, but a vector of {passed_add_embed_dim} was created. The model has an incorrect config. Please check `unet.config.time_embedding_type` and `text_encoder_2.config.projection_dim`."
                 )
         else:
-            # User requested to add this block. This attempts to create a dummy add_embedding
-            # if it's missing. The dimensions (2816, 1280) are specific to SDXL's time embedding
-            # and should be verified against the actual model's configuration if issues arise.
-            if not hasattr(self.unet.model, 'add_embedding'):
-                class AddEmbedding:
-                    def __init__(self):
-                        self.linear_1 = torch.nn.Linear(2816, 1280)
-                self.unet.model.add_embedding = AddEmbedding()
-                logger.warning("TPG: Created a dummy 'add_embedding' for UNet model as it was missing. Verify dimensions if issues occur.")
-
             logger.warning("The UNet model does not have an 'add_embedding' attribute or it is None. Skipping time embedding check.")
 
         add_time_ids = torch.tensor([add_time_ids], dtype=dtype)
@@ -1124,7 +1114,6 @@ class StableDiffusionXLTPGPipeline(
 
         self._tpg_scale = tpg_scale
         self._tpg_applied_layers_index = tpg_applied_layers_index
-        logger.debug(f"TPG: self._tpg_applied_layers_index set to: {self._tpg_applied_layers_index}")
 
         # 2. Define call parameters
         if prompt is not None and isinstance(prompt, str):
@@ -1335,23 +1324,17 @@ class StableDiffusionXLTPGPipeline(
                         do_token_perturbation_guidance=current_do_tpg, # Pass as argument
                         shuffle_tokens_func=shuffle_tokens_func, # Pass the static method
                     ) -> torch.Tensor:
-                        logger.debug(f"TPG: Entering _tpg_forward. hidden_states shape: {hidden_states.shape}, encoder_hidden_states shape: {encoder_hidden_states.shape}")
                         batch_size, num_tokens, channels = hidden_states.shape
 
                         if do_classifier_free_guidance and do_token_perturbation_guidance:
-                            logger.debug("TPG: CFG and TPG enabled. Chunking into 3.")
                             hidden_states_uncond, hidden_states_org, hidden_states_tpg = hidden_states.chunk(3)
                             encoder_hidden_states_uncond, encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(3)
                             hidden_states_org = torch.cat([hidden_states_uncond, hidden_states_org])
                             encoder_hidden_states_org = torch.cat([encoder_hidden_states_uncond, encoder_hidden_states_org])
-                            logger.debug(f"TPG: After chunking/cat (CFG+TPG). hidden_states_org shape: {hidden_states_org.shape}, hidden_states_tpg shape: {hidden_states_tpg.shape}")
                         elif do_token_perturbation_guidance: # Only TPG
-                            logger.debug("TPG: Only TPG enabled. Chunking into 2.")
                             hidden_states_org, hidden_states_tpg = hidden_states.chunk(2)
                             encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(2)
-                            logger.debug(f"TPG: After chunking (TPG only). hidden_states_org shape: {hidden_states_org.shape}, hidden_states_tpg shape: {hidden_states_tpg.shape}")
                         else: # This case should not be reached if do_token_perturbation_guidance is True
-                            logger.debug("TPG: Neither CFG nor TPG enabled. Falling back to original forward.")
                             # Fallback to original behavior if TPG is somehow off but this function is called
                             return self_block._original_forward(
                                 hidden_states,
@@ -1363,15 +1346,11 @@ class StableDiffusionXLTPGPipeline(
                                 class_labels,
                             )
 
-                        logger.debug(f"TPG: Shuffling hidden_states_tpg (shape: {hidden_states_tpg.shape}).")
                         hidden_states_tpg = shuffle_tokens_func(hidden_states_tpg)
-                        logger.debug(f"TPG: After shuffling hidden_states_tpg (shape: {hidden_states_tpg.shape}).")
                         hidden_states = torch.cat((hidden_states_org, hidden_states_tpg), dim=0)
-                        logger.debug(f"TPG: After final concatenation. hidden_states shape: {hidden_states.shape}.")
 
                         # Call the original forward method of the block
-                        logger.debug("TPG: Calling original_forward.")
-                        result = self_block._original_forward(
+                        return self_block._original_forward(
                             hidden_states,
                             attention_mask,
                             encoder_hidden_states,
@@ -1380,8 +1359,6 @@ class StableDiffusionXLTPGPipeline(
                             cross_attention_kwargs,
                             class_labels,
                         )
-                        logger.debug(f"TPG: Original_forward returned. Result shape: {result.shape}.")
-                        return result
 
                     # Bind the new forward method to the instance
                     target_block.forward = _tpg_forward.__get__(target_block, target_block.__class__)
