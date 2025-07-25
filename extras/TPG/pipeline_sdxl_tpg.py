@@ -64,8 +64,9 @@ logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 def make_tpg_block(block_class: Type[torch.nn.Module], do_cfg=True) -> Type[torch.nn.Module]:
     
-    # Check if this is a ComfyUI CrossAttention or Diffusers BasicTransformerBlock
+    # Check if this is a ComfyUI CrossAttention, ldm_patched BasicTransformerBlock, or Diffusers BasicTransformerBlock
     is_cross_attention = COMFYUI_AVAILABLE and issubclass(block_class, CrossAttention)
+    is_ldm_patched_block = 'ldm_patched' in str(block_class) and 'BasicTransformerBlock' in str(block_class)
     
     if is_cross_attention:
         # For ComfyUI CrossAttention modules, we need a different approach
@@ -104,6 +105,47 @@ def make_tpg_block(block_class: Type[torch.nn.Module], do_cfg=True) -> Type[torc
                     return x
         
         return ModifiedCrossAttention
+    
+    elif is_ldm_patched_block:
+        # For ldm_patched BasicTransformerBlock with signature (x, context=None, transformer_options={})
+        class ModifiedLDMTransformerBlock(block_class):
+            
+            def forward(self, x, context=None, transformer_options={}):
+                
+                if do_cfg and context is not None:
+                    try:
+                        # Handle CFG + TPG case
+                        if context.shape[0] == 3:  # uncond, cond, tpg
+                            context_uncond, context_org, context_tpg = context.chunk(3)
+                            context_org = torch.cat([context_uncond, context_org])
+                            
+                            # Shuffle tokens in TPG context
+                            context_tpg = self.shuffle_tokens(context_tpg)
+                            context = torch.cat([context_org, context_tpg], dim=0)
+                        elif context.shape[0] == 2:  # TPG only
+                            context_org, context_tpg = context.chunk(2)
+                            context_tpg = self.shuffle_tokens(context_tpg)
+                            context = torch.cat([context_org, context_tpg], dim=0)
+                    except Exception as e:
+                        logger.warning(f"TPG context processing failed: {e}")
+                        # Fall back to original behavior
+                        pass
+                
+                return super().forward(x, context=context, transformer_options=transformer_options)
+            
+            def shuffle_tokens(self, x):
+                """Shuffle tokens for TPG"""
+                try:
+                    if len(x.shape) >= 2:
+                        b, n = x.shape[:2]
+                        permutation = torch.randperm(n, device=x.device)
+                        return x[:, permutation]
+                    return x
+                except Exception as e:
+                    logger.warning(f"Token shuffling failed: {e}")
+                    return x
+        
+        return ModifiedLDMTransformerBlock
     
     else:
         # Original BasicTransformerBlock approach
@@ -1408,7 +1450,7 @@ class StableDiffusionXLTPGPipeline(
                 # Try different UNet access patterns for ldm_patched models
                 unet_to_search = None
                 if hasattr(self.unet, 'model') and self.unet.model is not None:
-                    # For ldm_patched ModelPatcher, we need to go deeper
+                    # For ldm_patched ModelPatcher, we need to go deeper to diffusion_model
                     if hasattr(self.unet.model, 'diffusion_model'):
                         unet_to_search = self.unet.model.diffusion_model
                         logger.debug("Using self.unet.model.diffusion_model for layer search")
@@ -1439,10 +1481,18 @@ class StableDiffusionXLTPGPipeline(
                         is_transformer_block = False
                         if isinstance(module, BasicTransformerBlock):
                             is_transformer_block = True
-                            logger.debug(f"Found BasicTransformerBlock: {name}")
+                            logger.debug(f"Found Diffusers BasicTransformerBlock: {name}")
                         elif COMFYUI_AVAILABLE and isinstance(module, CrossAttention):
                             is_transformer_block = True
                             logger.debug(f"Found CrossAttention: {name}")
+                        elif hasattr(module, '__class__') and 'BasicTransformerBlock' in str(module.__class__):
+                            # Catch ldm_patched BasicTransformerBlock
+                            is_transformer_block = True
+                            logger.debug(f"Found ldm_patched BasicTransformerBlock: {name}")
+                        elif 'transformer_blocks' in name and hasattr(module, 'forward') and hasattr(module, 'attn1'):
+                            # This looks like an ldm_patched transformer block
+                            is_transformer_block = True
+                            logger.debug(f"Found ldm_patched transformer block: {name}")
                         
                         if is_transformer_block:
                             all_transformer_blocks.append((name, module))
