@@ -112,7 +112,7 @@ class AsyncTask:
         self.pag_enabled = args.pop()
         self.pag_scale = args.pop()
         self.pag_applied_layers = args.pop()
-        if self.pag_applied_layers is None:
+        if not self.pag_applied_layers:
             self.pag_applied_layers = "mid,up"
         print(f"[ASYNC_WORKER DEBUG] PAG Enabled: {self.pag_enabled}, PAG Scale: {self.pag_scale}, PAG Applied Layers: {self.pag_applied_layers}")
         
