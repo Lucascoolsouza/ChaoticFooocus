@@ -1607,11 +1607,16 @@ class StableDiffusionXLTPGPipeline(
                         elif drop_layer[0] == "u":
                             layer_idx = int(drop_layer[1:])
                             if layer_idx < len(up_layers):
-                                if not hasattr(up_layers[layer_idx], '_original_forward'):
-                                    up_layers[layer_idx]._original_forward = up_layers[layer_idx].forward
-                                modified_block_class = make_tpg_block(up_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
-                                up_layers[layer_idx].__class__ = modified_block_class
-                                up_layers[layer_idx].shuffle_tokens = self._create_shuffle_tokens_method()
+                                # Store original layer for later restoration
+                                if not hasattr(up_layers[layer_idx], '_original_layer'):
+                                    up_layers[layer_idx]._original_layer = up_layers[layer_idx]
+                                # Create modified layer class and replace the layer
+                                modified_class = make_tpg_block(up_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
+                                # Create new instance with same parameters
+                                modified_layer = modified_class.__new__(modified_class)
+                                modified_layer.__dict__.update(up_layers[layer_idx].__dict__)
+                                modified_layer.shuffle_tokens = self._create_shuffle_tokens_method()
+                                up_layers[layer_idx] = modified_layer
                             else:
                                 logger.warning(f"Skipping invalid up layer index: {layer_idx} (available: 0-{len(up_layers)-1})")
 
