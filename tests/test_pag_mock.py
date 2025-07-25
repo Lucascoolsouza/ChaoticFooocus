@@ -50,6 +50,8 @@ class TestStableDiffusionXLPAGPipeline(unittest.TestCase):
         self.mock_tokenizer = MagicMock()
         self.mock_tokenizer_2 = MagicMock()
         self.mock_scheduler = MagicMock()
+        self.mock_attn = MagicMock() # Define mock_attn here
+        self.mock_attn.get_attention_scores.return_value = torch.ones(1, 1, 10, 10) # Mock attention scores
 
         self.pipeline = StableDiffusionXLPAGPipeline(
             vae=self.mock_vae,
@@ -112,19 +114,8 @@ class TestStableDiffusionXLPAGPipeline(unittest.TestCase):
         print(f"[MOCK DEBUG] disable_pag was called: {self.pipeline.disable_pag.called}")
 
     def test_pag_attention_processor_perturbation(self):
-        original_processor = MagicMock()
-        # Configure original_processor to mimic a diffusers attention processor's __call__
-        # It should accept attn, hidden_states, encoder_hidden_states, attention_mask, temb, scale
-        def mock_original_processor_call(attn_module, hidden_states, encoder_hidden_states=None, attention_mask=None, temb=None, scale=1.0):
-            # Simulate the internal call to get_attention_scores
-            # The actual attention processor would call attn_module.get_attention_scores internally
-            # We need to ensure this mock call is recorded.
-            # The arguments to get_attention_scores are typically query and key, derived from hidden_states.
-            # For simplicity in mock, we can just call it with dummy args.
-            attn_module.get_attention_scores(torch.randn_like(hidden_states), torch.randn_like(hidden_states))
-            return torch.randn_like(hidden_states) # Return a tensor of the same shape
+        original_processor = MagicMock(return_value=torch.randn(1, 10, 10)) # Mock output tensor
 
-        original_processor.side_effect = mock_original_processor_call
         pag_processor = PAGAttentionProcessor(original_processor, perturbation_scale=0.5)
 
         hidden_states = torch.randn(1, 10, 10)
@@ -132,7 +123,7 @@ class TestStableDiffusionXLPAGPipeline(unittest.TestCase):
 
         # Test with batch size 1 (no PAG)
         print("[MOCK DEBUG] Calling PAGAttentionProcessor with batch_size=1")
-        pag_processor(mock_attn, hidden_states, encoder_hidden_states)
+        pag_processor(self.mock_attn, hidden_states, encoder_hidden_states)
         original_processor.assert_called_once()
         print(f"[MOCK DEBUG] original_processor called once: {original_processor.called}")
         original_processor.reset_mock()
@@ -141,15 +132,15 @@ class TestStableDiffusionXLPAGPipeline(unittest.TestCase):
         hidden_states_pag = torch.randn(3, 10, 10)
         encoder_hidden_states_pag = torch.randn(3, 10, 10)
         print("[MOCK DEBUG] Calling PAGAttentionProcessor with batch_size=3")
-        pag_processor(mock_attn, hidden_states_pag, encoder_hidden_states_pag)
+        pag_processor(self.mock_attn, hidden_states_pag, encoder_hidden_states_pag)
 
         # Assert original_processor was called three times (uncond, cond, perturb)
         print(f"[MOCK DEBUG] original_processor call count: {original_processor.call_count}")
         self.assertEqual(original_processor.call_count, 3)
 
         # Assert that get_attention_scores was temporarily replaced and called
-        print(f"[MOCK DEBUG] mock_attn.get_attention_scores call count: {mock_attn.get_attention_scores.call_count}")
-        self.assertGreater(mock_attn.get_attention_scores.call_count, 0)
+        print(f"[MOCK DEBUG] mock_attn.get_attention_scores call count: {self.mock_attn.get_attention_scores.call_count}")
+        self.assertGreater(self.mock_attn.get_attention_scores.call_count, 0)
 
 if __name__ == '__main__':
     unittest.main()
