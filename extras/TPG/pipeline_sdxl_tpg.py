@@ -118,7 +118,7 @@ def make_tpg_block(block_class: Type[torch.nn.Module], do_cfg=True) -> Type[torc
                 timestep=None,
                 cross_attention_kwargs=None,
                 class_labels=None,
-        ) -> torch.Tensor:
+            ) -> torch.Tensor:
 
             batch_size, num_tokens, channels = hidden_states.shape
 
