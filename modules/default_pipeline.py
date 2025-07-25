@@ -756,6 +756,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         tokenizer_g_on_device = add_tokenizer_compatibility(tokenizer_g_on_device)
 
         # Select pipeline based on TPG/NAG/PAG enabled
+        print(f"[DEFAULT_PIPELINE DEBUG] pag_enabled: {pag_enabled}, tpg_enabled: {tpg_enabled}, nag_scale: {nag_scale}")
         if tpg_enabled:
             pipe_class = StableDiffusionXLTPGPipeline
             print("[TPG] Using StableDiffusionXLTPGPipeline")
