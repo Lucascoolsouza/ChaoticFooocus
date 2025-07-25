@@ -1342,9 +1342,43 @@ class StableDiffusionXLTPGPipeline(
             down_layers = []
             mid_layers = []
             up_layers = []
-            for name, module in self.unet.model.named_modules():
+            
+            # Try different UNet access patterns
+            unet_to_search = None
+            if hasattr(self.unet, 'model') and self.unet.model is not None:
+                unet_to_search = self.unet.model
+                logger.debug("Using self.unet.model for layer search")
+            elif hasattr(self.unet, 'diffusion_model') and self.unet.diffusion_model is not None:
+                unet_to_search = self.unet.diffusion_model
+                logger.debug("Using self.unet.diffusion_model for layer search")
+            else:
+                unet_to_search = self.unet
+                logger.debug("Using self.unet directly for layer search")
+            
+            # Debug: Print all module names and types
+            logger.debug("Searching for BasicTransformerBlock modules...")
+            all_transformer_blocks = []
+            
+            for name, module in unet_to_search.named_modules():
                 if isinstance(module, BasicTransformerBlock):
-                    layer_type = name.split(".")[0].split("_")[0]
+                    all_transformer_blocks.append((name, module))
+                    logger.debug(f"Found BasicTransformerBlock: {name}")
+                    
+                    # More flexible layer type detection
+                    name_parts = name.split(".")
+                    layer_type = None
+                    
+                    # Try different naming patterns
+                    if "down_blocks" in name or "down" in name_parts[0]:
+                        layer_type = "down"
+                    elif "mid_block" in name or "mid" in name_parts[0]:
+                        layer_type = "mid"
+                    elif "up_blocks" in name or "up" in name_parts[0]:
+                        layer_type = "up"
+                    else:
+                        # Fallback: try original logic
+                        layer_type = name_parts[0].split("_")[0]
+                    
                     if layer_type == "down":
                         down_layers.append(module)
                     elif layer_type == "mid":
@@ -1352,7 +1386,16 @@ class StableDiffusionXLTPGPipeline(
                     elif layer_type == "up":
                         up_layers.append(module)
                     else:
-                        raise ValueError(f"Invalid layer type: {layer_type}")
+                        logger.warning(f"Unknown layer type for {name}: {layer_type}")
+            
+            logger.debug(f"Found {len(all_transformer_blocks)} total BasicTransformerBlock modules")
+            logger.debug(f"Categorized as: {len(down_layers)} down, {len(mid_layers)} mid, {len(up_layers)} up")
+            
+            # If no layers found, disable TPG
+            if len(down_layers) == 0 and len(mid_layers) == 0 and len(up_layers) == 0:
+                logger.warning("No BasicTransformerBlock modules found! Disabling TPG.")
+                self._tpg_scale = 0.0
+                # Continue without TPG
                     
         # change attention layer in UNet if use tpg
         if self.do_token_perturbation_guidance:

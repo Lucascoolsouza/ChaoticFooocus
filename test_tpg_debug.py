@@ -1,41 +1,53 @@
 #!/usr/bin/env python3
+"""
+Debug script to identify TPG pipeline freezing issues
+"""
 
-import sys
-import os
-import logging
 import torch
+import logging
+import sys
+import traceback
+from extras.TPG.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
 
-# Add the current directory to the path so we can import the TPG pipeline
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Set up detailed logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('tpg_debug.log')
+    ]
+)
 
-# Set up logging to see debug messages
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-try:
-    from extras.TPG.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
-    print("Successfully imported StableDiffusionXLTPGPipeline")
+def debug_tpg_pipeline():
+    """Debug the TPG pipeline to identify freezing issues"""
     
-    # Test basic functionality
-    print("Testing basic TPG pipeline functionality...")
-    
-    # Check if CUDA is available
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device}")
-    
-    # Try to create a simple test
-    print("Creating a minimal test case...")
-    
-    # Test the make_tpg_block function
-    from extras.TPG.pipeline_sdxl_tpg import make_tpg_block
-    from diffusers.models.attention import BasicTransformerBlock
-    
-    print("Testing make_tpg_block function...")
-    modified_class = make_tpg_block(BasicTransformerBlock, do_cfg=True)
-    print("make_tpg_block function works correctly")
-    
-    print("All basic tests passed!")
-    
-except Exception as e:
-    print(f"Error during testing: {e}")
-    import traceback
-    traceback.print_exc()
+    try:
+        logger.info("Starting TPG pipeline debug")
+        
+        # Test with minimal settings first
+        logger.info("Testing with TPG disabled first...")
+        
+        # You'll need to adapt this to your actual model loading code
+        # This is just a template showing the debugging approach
+        
+        # Test 1: Basic pipeline without TPG
+        logger.info("=== Test 1: Basic pipeline (no TPG) ===")
+        
+        # Test 2: TPG enabled with minimal layers
+        logger.info("=== Test 2: TPG with minimal layers ===")
+        
+        # Test 3: Check layer indices
+        logger.info("=== Test 3: Checking layer indices ===")
+        
+        logger.info("Debug completed successfully")
+        
+    except Exception as e:
+        logger.error(f"Debug failed with error: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise
+
+if __name__ == "__main__":
+    debug_tpg_pipeline()
