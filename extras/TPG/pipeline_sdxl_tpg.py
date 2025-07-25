@@ -1630,8 +1630,13 @@ class StableDiffusionXLTPGPipeline(
                                 
                                 logger.info(f"    Ensuring correct device placement...")
                                 sys.stdout.flush()
-                                # Ensure the modified layer is on the same device as the original
+                                # Ensure the modified layer and all its submodules are on the same device as the original
                                 modified_layer.to(original_device)
+                                # Also ensure all parameters and buffers are on the correct device
+                                for param in modified_layer.parameters():
+                                    param.data = param.data.to(original_device)
+                                for buffer in modified_layer.buffers():
+                                    buffer.data = buffer.data.to(original_device)
                                 
                                 logger.info(f"    Replacing layer...")
                                 sys.stdout.flush()
@@ -1659,8 +1664,13 @@ class StableDiffusionXLTPGPipeline(
                                 modified_layer.__dict__.update(mid_layers[layer_idx].__dict__)
                                 modified_layer.shuffle_tokens = self._create_shuffle_tokens_method()
                                 
-                                # Ensure the modified layer is on the same device as the original
+                                # Ensure the modified layer and all its submodules are on the same device as the original
                                 modified_layer.to(original_device)
+                                # Also ensure all parameters and buffers are on the correct device
+                                for param in modified_layer.parameters():
+                                    param.data = param.data.to(original_device)
+                                for buffer in modified_layer.buffers():
+                                    buffer.data = buffer.data.to(original_device)
                                 
                                 mid_layers[layer_idx] = modified_layer
                             else:
