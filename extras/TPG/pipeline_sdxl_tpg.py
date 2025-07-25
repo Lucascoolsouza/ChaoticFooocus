@@ -1034,6 +1034,21 @@ class StableDiffusionXLTPGPipeline(
     def tpg_applied_layers_index(self):
         return self._tpg_applied_layers_index
 
+    def _create_shuffle_tokens_method(self):
+        """Create a shuffle_tokens method that can be bound to transformer blocks"""
+        def shuffle_tokens(x):
+            """Shuffle tokens for TPG"""
+            try:
+                if len(x.shape) >= 2:
+                    b, n = x.shape[:2]
+                    permutation = torch.randperm(n, device=x.device)
+                    return x[:, permutation]
+                return x
+            except Exception as e:
+                logger.warning(f"Token shuffling failed: {e}")
+                return x
+        return shuffle_tokens
+
     @torch.no_grad()
     @replace_example_docstring(EXAMPLE_DOC_STRING)
     def __call__(
@@ -1561,8 +1576,11 @@ class StableDiffusionXLTPGPipeline(
                                 if not hasattr(down_layers[layer_idx], '_original_forward'):
                                     down_layers[layer_idx]._original_forward = down_layers[layer_idx].forward
                                 # Replace the forward method directly
-                                modified_block = make_tpg_block(down_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)()
-                                down_layers[layer_idx].forward = modified_block.forward
+                                modified_block_class = make_tpg_block(down_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
+                                # Create a bound method using the existing block instance
+                                down_layers[layer_idx].__class__ = modified_block_class
+                                # Add shuffle_tokens method to the existing instance
+                                down_layers[layer_idx].shuffle_tokens = self._create_shuffle_tokens_method()
                             else:
                                 logger.warning(f"Skipping invalid down layer index: {layer_idx} (available: 0-{len(down_layers)-1})")
 
@@ -1571,8 +1589,9 @@ class StableDiffusionXLTPGPipeline(
                             if layer_idx < len(mid_layers):
                                 if not hasattr(mid_layers[layer_idx], '_original_forward'):
                                     mid_layers[layer_idx]._original_forward = mid_layers[layer_idx].forward
-                                modified_block = make_tpg_block(mid_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)()
-                                mid_layers[layer_idx].forward = modified_block.forward
+                                modified_block_class = make_tpg_block(mid_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
+                                mid_layers[layer_idx].__class__ = modified_block_class
+                                mid_layers[layer_idx].shuffle_tokens = self._create_shuffle_tokens_method()
                             else:
                                 logger.warning(f"Skipping invalid mid layer index: {layer_idx} (available: 0-{len(mid_layers)-1})")
 
@@ -1581,8 +1600,9 @@ class StableDiffusionXLTPGPipeline(
                             if layer_idx < len(up_layers):
                                 if not hasattr(up_layers[layer_idx], '_original_forward'):
                                     up_layers[layer_idx]._original_forward = up_layers[layer_idx].forward
-                                modified_block = make_tpg_block(up_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)()
-                                up_layers[layer_idx].forward = modified_block.forward
+                                modified_block_class = make_tpg_block(up_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
+                                up_layers[layer_idx].__class__ = modified_block_class
+                                up_layers[layer_idx].shuffle_tokens = self._create_shuffle_tokens_method()
                             else:
                                 logger.warning(f"Skipping invalid up layer index: {layer_idx} (available: 0-{len(up_layers)-1})")
 
