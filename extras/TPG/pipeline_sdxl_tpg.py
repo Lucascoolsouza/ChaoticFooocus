@@ -1291,6 +1291,11 @@ class StableDiffusionXLTPGPipeline(
         # change attention layer in UNet if use tpg
         if self.do_token_perturbation_guidance:
             drop_layers = self.tpg_applied_layers_index
+            # Capture the current guidance settings and the static shuffle method
+            current_do_cfg = self.do_classifier_free_guidance
+            current_do_tpg = self.do_token_perturbation_guidance
+            shuffle_tokens_func = self._shuffle_tokens # Get a reference to the static method
+
             for drop_layer in drop_layers:
                 try:
                     if drop_layer[0] == "d":
@@ -1315,19 +1320,33 @@ class StableDiffusionXLTPGPipeline(
                         timestep=None,
                         cross_attention_kwargs=None,
                         class_labels=None,
+                        do_classifier_free_guidance=current_do_cfg, # Pass as argument
+                        do_token_perturbation_guidance=current_do_tpg, # Pass as argument
+                        shuffle_tokens_func=shuffle_tokens_func, # Pass the static method
                     ) -> torch.Tensor:
                         batch_size, num_tokens, channels = hidden_states.shape
 
-                        if self.do_classifier_free_guidance:
+                        if do_classifier_free_guidance and do_token_perturbation_guidance:
                             hidden_states_uncond, hidden_states_org, hidden_states_tpg = hidden_states.chunk(3)
-                            hidden_states_org = torch.cat([hidden_states_uncond, hidden_states_org])
                             encoder_hidden_states_uncond, encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(3)
+                            hidden_states_org = torch.cat([hidden_states_uncond, hidden_states_org])
                             encoder_hidden_states_org = torch.cat([encoder_hidden_states_uncond, encoder_hidden_states_org])
-                        else:
+                        elif do_token_perturbation_guidance: # Only TPG
                             hidden_states_org, hidden_states_tpg = hidden_states.chunk(2)
                             encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(2)
+                        else: # This case should not be reached if do_token_perturbation_guidance is True
+                            # Fallback to original behavior if TPG is somehow off but this function is called
+                            return self_block._original_forward(
+                                hidden_states,
+                                attention_mask,
+                                encoder_hidden_states,
+                                encoder_attention_mask,
+                                timestep,
+                                cross_attention_kwargs,
+                                class_labels,
+                            )
 
-                        hidden_states_tpg = self._shuffle_tokens(hidden_states_tpg)
+                        hidden_states_tpg = shuffle_tokens_func(hidden_states_tpg)
                         hidden_states = torch.cat((hidden_states_org, hidden_states_tpg), dim=0)
 
                         # Call the original forward method of the block
