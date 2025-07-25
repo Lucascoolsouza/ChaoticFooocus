@@ -62,9 +62,10 @@ class ModelSamplingDiscrete(torch.nn.Module):
         if not isinstance(betas, torch.Tensor):
             betas = torch.tensor(betas, dtype=torch.float32)
         
-        alphas = 1. - betas
+        # Ensure the subtraction keeps it as a tensor
+        alphas = torch.tensor(1.0, dtype=betas.dtype, device=betas.device) - betas
         
-        # Ensure alphas is a torch tensor before calling cumprod
+        # Double-check alphas is a torch tensor before calling cumprod
         if not isinstance(alphas, torch.Tensor):
             alphas = torch.tensor(alphas, dtype=torch.float32)
         
@@ -80,7 +81,8 @@ class ModelSamplingDiscrete(torch.nn.Module):
         # self.register_buffer('alphas_cumprod_prev', torch.tensor(alphas_cumprod_prev, dtype=torch.float32))
 
         sigmas = ((1 - alphas_cumprod) / alphas_cumprod) ** 0.5
-        alphas_cumprod = torch.tensor(np.cumprod(alphas, axis=0), dtype=torch.float32)
+        # Remove the numpy cumprod line that was overriding our torch version
+        # alphas_cumprod = torch.tensor(np.cumprod(alphas, axis=0), dtype=torch.float32)
         self.set_sigmas(sigmas)
         self.set_alphas_cumprod(alphas_cumprod.float())
 
