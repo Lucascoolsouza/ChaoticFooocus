@@ -1359,10 +1359,20 @@ class StableDiffusionXLTPGPipeline(
             logger.debug("Searching for BasicTransformerBlock modules...")
             all_transformer_blocks = []
             
+            # First, let's see what modules we have
+            logger.debug("All modules in UNet:")
+            module_count = 0
             for name, module in unet_to_search.named_modules():
+                if module_count < 20:  # Limit output
+                    logger.debug(f"  {name}: {type(module).__name__}")
+                module_count += 1
+                
                 if isinstance(module, BasicTransformerBlock):
                     all_transformer_blocks.append((name, module))
                     logger.debug(f"Found BasicTransformerBlock: {name}")
+            
+            if module_count >= 20:
+                logger.debug(f"  ... and {module_count - 20} more modules")
                     
                     # More flexible layer type detection
                     name_parts = name.split(".")
