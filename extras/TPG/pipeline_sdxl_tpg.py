@@ -171,7 +171,7 @@ def make_tpg_block(block_class: Type[torch.nn.Module], do_cfg=True) -> Type[torc
                     logger.error(f"Input tensor shape: {x.shape}")
                     raise
 
-    return ModifiedBasicTransformerBlock
+        return ModifiedBasicTransformerBlock
 
 EXAMPLE_DOC_STRING = """
     Examples:
