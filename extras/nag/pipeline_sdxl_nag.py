@@ -122,13 +122,26 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
     def _set_nag_attn_processor(self, nag_scale, nag_tau=2.5, nag_alpha=0.5):
         if self.do_normalized_attention_guidance:
-            attn_procs = {}
-            for name, origin_attn_processor in getattr(self.unet, 'attn_processors', {}).items():
-                if "attn2" in name:
-                    attn_procs[name] = NAGAttnProcessor2_0(nag_scale=nag_scale, nag_tau=nag_tau, nag_alpha=nag_alpha)
-                else:
-                    attn_procs[name] = origin_attn_processor
-            self.unet.set_attn_processor(attn_procs)
+            # Handle different UNet structures (Diffusers vs ldm_patched)
+            unet_to_modify = None
+            if hasattr(self.unet, 'set_attn_processor'):
+                unet_to_modify = self.unet
+            elif hasattr(self.unet, 'model') and hasattr(self.unet.model, 'set_attn_processor'):
+                unet_to_modify = self.unet.model
+            
+            if unet_to_modify is not None:
+                attn_procs = {}
+                existing_processors = getattr(unet_to_modify, 'attn_processors', {})
+                
+                for name, origin_attn_processor in existing_processors.items():
+                    if "attn2" in name:
+                        attn_procs[name] = NAGAttnProcessor2_0(nag_scale=nag_scale, nag_tau=nag_tau, nag_alpha=nag_alpha)
+                    else:
+                        attn_procs[name] = origin_attn_processor
+                
+                unet_to_modify.set_attn_processor(attn_procs)
+            else:
+                print("[NAG] Warning: Could not set attention processors - UNet structure not recognized")
 
     def maybe_convert_prompt(self, prompt, tokenizer):
         # Override to bypass textual inversion logic that requires tokenizer.tokenize()
@@ -501,7 +514,13 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         else:
             batch_size = prompt_embeds.shape[0]
 
-        device = next(iter(self.unet.model.parameters())).device
+        # Handle device detection for different UNet structures
+        if hasattr(self.unet, 'model') and hasattr(self.unet.model, 'parameters'):
+            device = next(iter(self.unet.model.parameters())).device
+        elif hasattr(self.unet, 'parameters'):
+            device = next(iter(self.unet.parameters())).device
+        else:
+            device = self._execution_device
 
         # 3. Encode input prompt
         lora_scale = (
