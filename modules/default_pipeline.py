@@ -339,14 +339,13 @@ def get_candidate_vae(steps, switch, denoise=1.0, refiner_swap_method='joint'):
 @torch.no_grad()
 @torch.inference_mode()
 def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, nag_scale=1.0, nag_tau=2.5, nag_alpha=0.5, nag_negative_prompt=None, nag_end=1.0, original_prompt=None, original_negative_prompt=None, detail_daemon_enabled=False, detail_daemon_amount=0.25, detail_daemon_start=0.2, detail_daemon_end=0.8, detail_daemon_bias=0.71, detail_daemon_base_multiplier=0.85, detail_daemon_start_offset=0, detail_daemon_end_offset=-0.15, detail_daemon_exponent=1, detail_daemon_fade=0, detail_daemon_mode='both', detail_daemon_smooth=True, tpg_enabled=False, tpg_scale=3.0, tpg_applied_layers_index=None, pag_enabled=False, pag_scale=0.0, pag_applied_layers=None):
+    imgs = [] # Initialize imgs to an empty list
     if steps == 0:
         # If steps is 0, no diffusion is performed. Return the initial latent or an empty list.
         if latent is not None:
             # Decode the latent if it's provided and return the image
-            return core.pytorch_to_numpy(core.decode_vae(final_vae, latent))
-        else:
-            # If no latent, return an empty list of images
-            return []
+            imgs = core.pytorch_to_numpy(core.decode_vae(final_vae, latent))
+        return imgs
     target_unet, target_vae, target_refiner_unet, target_refiner_vae, target_clip         = final_unet, final_vae, final_refiner_unet, final_refiner_vae, final_clip
 
 
@@ -873,7 +872,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         
         # Skip the regular ksampler since we used NAG/TPG/PAG pipeline
     elif not (nag_scale > 1.0 or tpg_enabled or pag_enabled):
-        imgs = core.ksampler(
+        ksampler_imgs = core.ksampler(
             model=final_unet,
             positive=positive_cond,
             negative=negative_cond,
@@ -892,15 +891,15 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         )['samples']
         
         # Convert latents to images
-        if imgs is not None:
-            latent_dict = {'samples': imgs}
+        if ksampler_imgs is not None:
+            latent_dict = {'samples': ksampler_imgs}
             imgs = core.decode_vae(target_vae, latent_dict)
             
             # Detail daemon is now applied via sigma manipulation during sampling
             
             # Convert to numpy arrays for saving
-            return core.pytorch_to_numpy(imgs)
-        
-        return []
+            imgs = core.pytorch_to_numpy(imgs)
+        else:
+            imgs = []
     
     return imgs
