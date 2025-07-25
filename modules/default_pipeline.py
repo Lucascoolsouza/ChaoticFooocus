@@ -17,6 +17,7 @@ from modules.sample_hijack import clip_separate
 from modules.util import get_file_from_folder_list, get_enabled_loras
 from extras.nag.pipeline_sdxl_nag import NAGStableDiffusionXLPipeline, safe_decode
 from extras.TPG.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
+from extras.PAG.pipeline_sdxl_pag import StableDiffusionXLPAGPipeline
 
 
 model_base = core.StableDiffusionModel()
@@ -337,7 +338,7 @@ def get_candidate_vae(steps, switch, denoise=1.0, refiner_swap_method='joint'):
 
 @torch.no_grad()
 @torch.inference_mode()
-def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, nag_scale=1.0, nag_tau=2.5, nag_alpha=0.5, nag_negative_prompt=None, nag_end=1.0, original_prompt=None, original_negative_prompt=None, detail_daemon_enabled=False, detail_daemon_amount=0.25, detail_daemon_start=0.2, detail_daemon_end=0.8, detail_daemon_bias=0.71, detail_daemon_base_multiplier=0.85, detail_daemon_start_offset=0, detail_daemon_end_offset=-0.15, detail_daemon_exponent=1, detail_daemon_fade=0, detail_daemon_mode='both', detail_daemon_smooth=True, tpg_enabled=False, tpg_scale=3.0, tpg_applied_layers_index=None):
+def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, nag_scale=1.0, nag_tau=2.5, nag_alpha=0.5, nag_negative_prompt=None, nag_end=1.0, original_prompt=None, original_negative_prompt=None, detail_daemon_enabled=False, detail_daemon_amount=0.25, detail_daemon_start=0.2, detail_daemon_end=0.8, detail_daemon_bias=0.71, detail_daemon_base_multiplier=0.85, detail_daemon_start_offset=0, detail_daemon_end_offset=-0.15, detail_daemon_exponent=1, detail_daemon_fade=0, detail_daemon_mode='both', detail_daemon_smooth=True, tpg_enabled=False, tpg_scale=3.0, tpg_applied_layers_index=None, pag_enabled=False, pag_scale=0.0, pag_applied_layers=None):
     if steps == 0:
         # If steps is 0, no diffusion is performed. Return the initial latent or an empty list.
         if latent is not None:
@@ -755,10 +756,13 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         tokenizer_l_on_device = add_tokenizer_compatibility(tokenizer_l_on_device)
         tokenizer_g_on_device = add_tokenizer_compatibility(tokenizer_g_on_device)
 
-        # Select pipeline based on TPG enabled
+        # Select pipeline based on TPG/NAG/PAG enabled
         if tpg_enabled:
             pipe_class = StableDiffusionXLTPGPipeline
             print("[TPG] Using StableDiffusionXLTPGPipeline")
+        elif pag_enabled:
+            pipe_class = StableDiffusionXLPAGPipeline
+            print("[PAG] Using StableDiffusionXLPAGPipeline")
         else:
             pipe_class = NAGStableDiffusionXLPipeline
             print("[NAG] Using NAGStableDiffusionXLPipeline")
@@ -834,11 +838,18 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 "tpg_scale": tpg_scale,
                 "tpg_applied_layers_index": tpg_applied_layers_index,
             })
+        
+        # Add PAG specific arguments if PAG is enabled
+        if pag_enabled:
+            pipeline_args.update({
+                "pag_scale": pag_scale,
+                "pag_applied_layers": pag_applied_layers,
+            })
 
         # Call the selected pipeline
         output = pipe(**pipeline_args)
         
-        print(f"Using {'TPG' if tpg_enabled else 'NAG'} pipeline for generation")
+        print(f"Using {'TPG' if tpg_enabled else ('PAG' if pag_enabled else 'NAG')} pipeline for generation")
         
         # ---------- after pipeline call ----------
         # Pipeline returns a tuple with latents when return_dict=False
@@ -860,8 +871,8 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         
         print("Final deliverable:", type(imgs[0]), getattr(imgs[0], 'size', '-'))
         
-        # Skip the regular ksampler since we used NAG/TPG pipeline
-    elif not (nag_scale > 1.0 or tpg_enabled):
+        # Skip the regular ksampler since we used NAG/TPG/PAG pipeline
+    elif not (nag_scale > 1.0 or tpg_enabled or pag_enabled):
         imgs = core.ksampler(
             model=final_unet,
             positive=positive_cond,

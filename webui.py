@@ -19,6 +19,7 @@ import launch
 from extras.inpaint_mask import SAMOptions
 from extras.nag import NAGStableDiffusionXLPipeline
 from extras.TPG.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
+from extras.PAG.pipeline_sdxl_pag import StableDiffusionXLPAGPipeline
 
 from modules.sdxl_styles import legal_style_names
 from modules.private_logger import get_current_html_path
@@ -1003,6 +1004,15 @@ with shared.gradio_root:
                                                               placeholder="e.g., d6,d7,d8,d9,d10,d11,d12,d13,d14,d15,d16,d17,d18,d19,d20,d21,d22,d23", lines=1,
                                                               info='Comma-separated list of layers to apply TPG. d=down, m=mid, u=up. e.g., d6,d7,m0,u0')
                         tpg_ctrls = [tpg_enabled, tpg_scale, tpg_applied_layers_index]
+                    with gr.Tab(label='PAG'):
+                        pag_enabled = gr.Checkbox(label='Enable Perturbed Attention Guidance', value=False,
+                                                  info='Enables Perturbed Attention Guidance.')
+                        pag_scale = gr.Slider(label='PAG Scale', minimum=0.0, maximum=10.0, step=0.1, value=3.0,
+                                              info='Controls the strength of Perturbed Attention Guidance.')
+                        pag_applied_layers = gr.Textbox(label='PAG Applied Layers', show_label=True,
+                                                        placeholder="e.g., mid,up", lines=1,
+                                                        info='Comma-separated list of layer types to apply PAG. e.g., mid,up')
+                        pag_ctrls = [pag_enabled, pag_scale, pag_applied_layers]
 
                 def dev_mode_checked(r):
                     return gr.update(visible=r)
@@ -1138,6 +1148,8 @@ with shared.gradio_root:
         ctrls += inpaint_ctrls
         ctrls += nag_ctrls
         ctrls += tpg_ctrls
+        ctrls += pag_ctrls
+        ctrls += pag_ctrls
         
         if not args_manager.args.disable_image_log:
             ctrls += [save_final_enhanced_image_only]

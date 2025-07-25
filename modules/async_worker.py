@@ -108,6 +108,10 @@ class AsyncTask:
         self.tpg_enabled = args.pop()
         self.tpg_scale = args.pop()
         self.tpg_applied_layers_index = args.pop()
+
+        self.pag_enabled = args.pop()
+        self.pag_scale = args.pop()
+        self.pag_applied_layers = args.pop()
         
         self.save_final_enhanced_image_only = args.pop() if not args_manager.args.disable_image_log else False
         self.save_metadata_to_images = args.pop() if not args_manager.args.disable_metadata else False
@@ -372,6 +376,9 @@ def worker():
             tpg_enabled=async_task.tpg_enabled,
             tpg_scale=async_task.tpg_scale,
             tpg_applied_layers_index=async_task.tpg_applied_layers_index,
+            pag_enabled=async_task.pag_enabled,
+            pag_scale=async_task.pag_scale,
+            pag_applied_layers=async_task.pag_applied_layers,
             detail_daemon_enabled=async_task.detail_daemon_enabled,
             detail_daemon_amount=async_task.detail_daemon_amount,
             detail_daemon_start=async_task.detail_daemon_start,
