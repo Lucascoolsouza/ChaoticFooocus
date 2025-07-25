@@ -1576,11 +1576,9 @@ class StableDiffusionXLTPGPipeline(
                                 if not hasattr(down_layers[layer_idx], '_original_forward'):
                                     down_layers[layer_idx]._original_forward = down_layers[layer_idx].forward
                                 # Replace the forward method directly
-                                modified_block_class = make_tpg_block(down_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
-                                # Create a bound method using the existing block instance
-                                down_layers[layer_idx].__class__ = modified_block_class
-                                # Add shuffle_tokens method to the existing instance
                                 down_layers[layer_idx].shuffle_tokens = self._create_shuffle_tokens_method()
+                                modified_forward = make_tpg_block(down_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
+                                down_layers[layer_idx].forward = modified_forward.__get__(down_layers[layer_idx], down_layers[layer_idx].__class__)
                             else:
                                 logger.warning(f"Skipping invalid down layer index: {layer_idx} (available: 0-{len(down_layers)-1})")
 
@@ -1589,9 +1587,9 @@ class StableDiffusionXLTPGPipeline(
                             if layer_idx < len(mid_layers):
                                 if not hasattr(mid_layers[layer_idx], '_original_forward'):
                                     mid_layers[layer_idx]._original_forward = mid_layers[layer_idx].forward
-                                modified_block_class = make_tpg_block(mid_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
-                                mid_layers[layer_idx].__class__ = modified_block_class
                                 mid_layers[layer_idx].shuffle_tokens = self._create_shuffle_tokens_method()
+                                modified_forward = make_tpg_block(mid_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
+                                mid_layers[layer_idx].forward = modified_forward.__get__(mid_layers[layer_idx], mid_layers[layer_idx].__class__)
                             else:
                                 logger.warning(f"Skipping invalid mid layer index: {layer_idx} (available: 0-{len(mid_layers)-1})")
 
