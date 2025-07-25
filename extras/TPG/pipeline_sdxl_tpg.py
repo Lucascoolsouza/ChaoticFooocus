@@ -1114,6 +1114,7 @@ class StableDiffusionXLTPGPipeline(
 
         self._tpg_scale = tpg_scale
         self._tpg_applied_layers_index = tpg_applied_layers_index
+        logger.debug(f"TPG: self._tpg_applied_layers_index set to: {self._tpg_applied_layers_index}")
 
         # 2. Define call parameters
         if prompt is not None and isinstance(prompt, str):
