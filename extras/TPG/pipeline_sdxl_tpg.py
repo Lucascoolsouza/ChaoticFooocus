@@ -36,6 +36,13 @@ from diffusers.models.attention_processor import (
     XFormersAttnProcessor,
 )
 from diffusers.models.attention import BasicTransformerBlock
+# Import ComfyUI/LDM attention modules
+try:
+    from ldm_patched.ldm.modules.attention import CrossAttention
+    COMFYUI_AVAILABLE = True
+except ImportError:
+    CrossAttention = None
+    COMFYUI_AVAILABLE = False
 from diffusers.models.lora import adjust_lora_scale_text_encoder
 from diffusers.schedulers import KarrasDiffusionSchedulers
 from diffusers.utils import (
@@ -56,8 +63,51 @@ from diffusers.pipelines.stable_diffusion_xl.pipeline_output import StableDiffus
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 def make_tpg_block(block_class: Type[torch.nn.Module], do_cfg=True) -> Type[torch.nn.Module]:
-
-    class ModifiedBasicTransformerBlock(block_class):
+    
+    # Check if this is a ComfyUI CrossAttention or Diffusers BasicTransformerBlock
+    is_cross_attention = COMFYUI_AVAILABLE and issubclass(block_class, CrossAttention)
+    
+    if is_cross_attention:
+        # For ComfyUI CrossAttention modules, we need a different approach
+        class ModifiedCrossAttention(block_class):
+            def forward(self, x, context=None, mask=None, **kwargs):
+                # For CrossAttention, we need to handle the token shuffling differently
+                # This is a simplified version - you may need to adjust based on the exact interface
+                
+                if do_cfg and context is not None:
+                    try:
+                        # Split context for CFG + TPG
+                        if context.shape[0] == 3:  # uncond, cond, tpg
+                            context_uncond, context_org, context_tpg = context.chunk(3)
+                            context_org = torch.cat([context_uncond, context_org])
+                            
+                            # Shuffle tokens in TPG context
+                            context_tpg = self.shuffle_tokens(context_tpg)
+                            context = torch.cat([context_org, context_tpg], dim=0)
+                    except Exception as e:
+                        logger.warning(f"TPG context processing failed: {e}")
+                        # Fall back to original behavior
+                        pass
+                
+                return super().forward(x, context=context, mask=mask, **kwargs)
+            
+            def shuffle_tokens(self, x):
+                """Shuffle tokens for TPG"""
+                try:
+                    if len(x.shape) >= 2:
+                        b, n = x.shape[:2]
+                        permutation = torch.randperm(n, device=x.device)
+                        return x[:, permutation]
+                    return x
+                except Exception as e:
+                    logger.warning(f"Token shuffling failed: {e}")
+                    return x
+        
+        return ModifiedCrossAttention
+    
+    else:
+        # Original BasicTransformerBlock approach
+        class ModifiedBasicTransformerBlock(block_class):
 
         def forward(
             self,
@@ -1380,20 +1430,28 @@ class StableDiffusionXLTPGPipeline(
                             logger.debug(f"  {name}: {type(module).__name__}")
                         module_count += 1
                         
+                        # Check for both Diffusers and ComfyUI/LDM attention modules
+                        is_transformer_block = False
                         if isinstance(module, BasicTransformerBlock):
-                            all_transformer_blocks.append((name, module))
+                            is_transformer_block = True
                             logger.debug(f"Found BasicTransformerBlock: {name}")
+                        elif COMFYUI_AVAILABLE and isinstance(module, CrossAttention):
+                            is_transformer_block = True
+                            logger.debug(f"Found CrossAttention: {name}")
+                        
+                        if is_transformer_block:
+                            all_transformer_blocks.append((name, module))
                             
-                            # More flexible layer type detection
+                            # More flexible layer type detection for both Diffusers and ComfyUI
                             name_parts = name.split(".")
                             layer_type = None
                             
                             # Try different naming patterns
-                            if "down_blocks" in name or "down" in name_parts[0]:
+                            if "down_blocks" in name or "input_blocks" in name or "down" in name_parts[0]:
                                 layer_type = "down"
-                            elif "mid_block" in name or "mid" in name_parts[0]:
+                            elif "mid_block" in name or "middle_block" in name or "mid" in name_parts[0]:
                                 layer_type = "mid"
-                            elif "up_blocks" in name or "up" in name_parts[0]:
+                            elif "up_blocks" in name or "output_blocks" in name or "up" in name_parts[0]:
                                 layer_type = "up"
                             else:
                                 # Fallback: try original logic
@@ -1416,7 +1474,8 @@ class StableDiffusionXLTPGPipeline(
                     
                     # If no layers found, disable TPG
                     if len(down_layers) == 0 and len(mid_layers) == 0 and len(up_layers) == 0:
-                        logger.warning("No BasicTransformerBlock modules found! Disabling TPG.")
+                        logger.warning("No compatible attention modules (BasicTransformerBlock or CrossAttention) found! Disabling TPG.")
+                        logger.info("Your model uses a different attention architecture. TPG requires transformer-based attention layers.")
                         self._tpg_scale = 0.0
                         # Continue without TPG
                         

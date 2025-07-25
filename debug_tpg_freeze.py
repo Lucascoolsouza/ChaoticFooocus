@@ -29,6 +29,14 @@ def debug_unet_structure():
         import modules.default_pipeline as pipeline
         from diffusers.models.attention import BasicTransformerBlock
         
+        # Also try to import ComfyUI attention modules
+        try:
+            from ldm_patched.ldm.modules.attention import CrossAttention
+            COMFYUI_AVAILABLE = True
+        except ImportError:
+            CrossAttention = None
+            COMFYUI_AVAILABLE = False
+        
         logger.info("Accessing already loaded UNet model...")
         
         # The models should already be loaded by default_pipeline
