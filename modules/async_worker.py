@@ -112,6 +112,8 @@ class AsyncTask:
         self.pag_enabled = args.pop()
         self.pag_scale = args.pop()
         self.pag_applied_layers = args.pop()
+        if self.pag_applied_layers is None:
+            self.pag_applied_layers = "mid,up"
         
         self.save_final_enhanced_image_only = args.pop() if not args_manager.args.disable_image_log else False
         self.save_metadata_to_images = args.pop() if not args_manager.args.disable_metadata else False

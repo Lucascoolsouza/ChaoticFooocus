@@ -1149,7 +1149,6 @@ with shared.gradio_root:
         ctrls += nag_ctrls
         ctrls += tpg_ctrls
         ctrls += pag_ctrls
-        ctrls += pag_ctrls
         
         if not args_manager.args.disable_image_log:
             ctrls += [save_final_enhanced_image_only]
