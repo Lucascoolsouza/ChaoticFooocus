@@ -1032,6 +1032,9 @@ class StableDiffusionXLTPGPipeline(
     
     @property
     def tpg_applied_layers_index(self):
+        # Provide default fallback if None
+        if self._tpg_applied_layers_index is None:
+            return ["d6", "d7", "d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15", "d16", "d17", "d18", "d19", "d20", "d21", "d22", "d23"]
         return self._tpg_applied_layers_index
 
     def _create_shuffle_tokens_method(self):
@@ -1572,13 +1575,16 @@ class StableDiffusionXLTPGPipeline(
                         if drop_layer[0] == "d":
                             layer_idx = int(drop_layer[1:])
                             if layer_idx < len(down_layers):
-                                # Store original forward for later restoration
-                                if not hasattr(down_layers[layer_idx], '_original_forward'):
-                                    down_layers[layer_idx]._original_forward = down_layers[layer_idx].forward
-                                # Replace the forward method directly
-                                down_layers[layer_idx].shuffle_tokens = self._create_shuffle_tokens_method()
-                                modified_forward = make_tpg_block(down_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
-                                down_layers[layer_idx].forward = modified_forward.__get__(down_layers[layer_idx], down_layers[layer_idx].__class__)
+                                # Store original layer for later restoration
+                                if not hasattr(down_layers[layer_idx], '_original_layer'):
+                                    down_layers[layer_idx]._original_layer = down_layers[layer_idx]
+                                # Create modified layer class and replace the layer
+                                modified_class = make_tpg_block(down_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
+                                # Create new instance with same parameters
+                                modified_layer = modified_class.__new__(modified_class)
+                                modified_layer.__dict__.update(down_layers[layer_idx].__dict__)
+                                modified_layer.shuffle_tokens = self._create_shuffle_tokens_method()
+                                down_layers[layer_idx] = modified_layer
                             else:
                                 logger.warning(f"Skipping invalid down layer index: {layer_idx} (available: 0-{len(down_layers)-1})")
 
