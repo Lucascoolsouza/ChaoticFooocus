@@ -114,6 +114,7 @@ class AsyncTask:
         self.pag_applied_layers = args.pop()
         if self.pag_applied_layers is None:
             self.pag_applied_layers = "mid,up"
+        print(f"[ASYNC_WORKER DEBUG] PAG Enabled: {self.pag_enabled}, PAG Scale: {self.pag_scale}, PAG Applied Layers: {self.pag_applied_layers}")
         
         self.save_final_enhanced_image_only = args.pop() if not args_manager.args.disable_image_log else False
         self.save_metadata_to_images = args.pop() if not args_manager.args.disable_metadata else False
