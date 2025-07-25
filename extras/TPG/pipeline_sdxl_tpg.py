@@ -108,7 +108,6 @@ def make_tpg_block(block_class: Type[torch.nn.Module], do_cfg=True) -> Type[torc
     else:
         # Original BasicTransformerBlock approach
         class ModifiedBasicTransformerBlock(block_class):
-
             def forward(
                 self,
                 hidden_states,
