@@ -1614,6 +1614,9 @@ class StableDiffusionXLTPGPipeline(
                                 
                                 logger.info(f"    Creating modified instance...")
                                 sys.stdout.flush()
+                                # Store original device before modification
+                                original_device = next(down_layers[layer_idx].parameters()).device
+                                
                                 # Create new instance with same parameters
                                 modified_layer = modified_class.__new__(modified_class)
                                 
@@ -1624,6 +1627,11 @@ class StableDiffusionXLTPGPipeline(
                                 logger.info(f"    Adding shuffle_tokens method...")
                                 sys.stdout.flush()
                                 modified_layer.shuffle_tokens = self._create_shuffle_tokens_method()
+                                
+                                logger.info(f"    Ensuring correct device placement...")
+                                sys.stdout.flush()
+                                # Ensure the modified layer is on the same device as the original
+                                modified_layer.to(original_device)
                                 
                                 logger.info(f"    Replacing layer...")
                                 sys.stdout.flush()
@@ -1640,12 +1648,20 @@ class StableDiffusionXLTPGPipeline(
                                 # Store original layer for later restoration
                                 if not hasattr(mid_layers[layer_idx], '_original_layer'):
                                     mid_layers[layer_idx]._original_layer = mid_layers[layer_idx]
+                                
+                                # Store original device before modification
+                                original_device = next(mid_layers[layer_idx].parameters()).device
+                                
                                 # Create modified layer class and replace the layer
                                 modified_class = make_tpg_block(mid_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
                                 # Create new instance with same parameters
                                 modified_layer = modified_class.__new__(modified_class)
                                 modified_layer.__dict__.update(mid_layers[layer_idx].__dict__)
                                 modified_layer.shuffle_tokens = self._create_shuffle_tokens_method()
+                                
+                                # Ensure the modified layer is on the same device as the original
+                                modified_layer.to(original_device)
+                                
                                 mid_layers[layer_idx] = modified_layer
                             else:
                                 logger.warning(f"Skipping invalid mid layer index: {layer_idx} (available: 0-{len(mid_layers)-1})")
@@ -1656,12 +1672,20 @@ class StableDiffusionXLTPGPipeline(
                                 # Store original layer for later restoration
                                 if not hasattr(up_layers[layer_idx], '_original_layer'):
                                     up_layers[layer_idx]._original_layer = up_layers[layer_idx]
+                                
+                                # Store original device before modification
+                                original_device = next(up_layers[layer_idx].parameters()).device
+                                
                                 # Create modified layer class and replace the layer
                                 modified_class = make_tpg_block(up_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
                                 # Create new instance with same parameters
                                 modified_layer = modified_class.__new__(modified_class)
                                 modified_layer.__dict__.update(up_layers[layer_idx].__dict__)
                                 modified_layer.shuffle_tokens = self._create_shuffle_tokens_method()
+                                
+                                # Ensure the modified layer is on the same device as the original
+                                modified_layer.to(original_device)
+                                
                                 up_layers[layer_idx] = modified_layer
                             else:
                                 logger.warning(f"Skipping invalid up layer index: {layer_idx} (available: 0-{len(up_layers)-1})")
