@@ -26,9 +26,6 @@ def test_real_tpg_generation():
         # Import required modules
         logger.info("Importing modules...")
         import torch
-        from modules import config
-        from modules.model_loader import load_model
-        from modules.default_pipeline import process_diffusion
         from extras.TPG.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
         
         logger.info("Modules imported successfully")
@@ -122,7 +119,7 @@ def test_tpg_layer_application():
         import torch
         import torch.nn as nn
         
-        # Create a realistic transformer block
+        # Create a realistic transformer block that matches ldm_patched pattern
         class RealisticTransformerBlock(nn.Module):
             def __init__(self):
                 super().__init__()
@@ -140,6 +137,10 @@ def test_tpg_layer_application():
             def forward(self, x, context=None, transformer_options={}):
                 # Simulate ldm_patched transformer block
                 return x + torch.randn_like(x) * 0.01
+        
+        # Make it look like an ldm_patched block
+        RealisticTransformerBlock.__module__ = 'ldm_patched.modules.attention'
+        RealisticTransformerBlock.__name__ = 'BasicTransformerBlock'
         
         # Test the layer modification process
         logger.info("Creating original transformer block...")
@@ -165,12 +166,15 @@ def test_tpg_layer_application():
         modified_instance.shuffle_tokens = shuffle_tokens
         
         logger.info("Testing forward pass...")
-        test_input = torch.randn(2, 77, 1024)
-        test_context = torch.randn(2, 77, 1024)
+        test_hidden_states = torch.randn(2, 77, 1024)
+        test_encoder_hidden_states = torch.randn(2, 77, 1024)
         
         # This is where freezing might occur
         with torch.no_grad():
-            output = modified_instance.forward(test_input, context=test_context)
+            output = modified_instance.forward(
+                hidden_states=test_hidden_states,
+                encoder_hidden_states=test_encoder_hidden_states
+            )
         
         logger.info(f"✓ Forward pass successful, output shape: {output.shape}")
         return True
