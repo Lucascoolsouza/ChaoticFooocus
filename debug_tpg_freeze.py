@@ -26,15 +26,20 @@ def debug_unet_structure():
     
     try:
         # Import your modules
-        import modules.config as config
-        import modules.model_loader as model_loader
+        import modules.default_pipeline as pipeline
         from diffusers.models.attention import BasicTransformerBlock
         
         logger.info("Loading UNet model...")
         
-        # Load the model using your existing infrastructure
-        # This might need adjustment based on your exact setup
-        unet = model_loader.load_model()  # Adjust this call as needed
+        # Initialize the pipeline to load models
+        # This should load the default models
+        pipeline.refresh_everything(
+            refiner_model_name='None',
+            base_model_name='sd_xl_base_1.0_0.9vae.safetensors',  # Adjust as needed
+            loras=[]
+        )
+        
+        unet = pipeline.final_unet
         
         logger.info(f"UNet type: {type(unet)}")
         logger.info(f"UNet attributes: {dir(unet)}")
@@ -140,17 +145,28 @@ def test_basic_pipeline():
         logger.info("\n=== Testing Basic Pipeline (No TPG) ===")
         
         # Import your pipeline
-        from modules.default_pipeline import StableDiffusionPipeline
+        import modules.default_pipeline as pipeline
         
-        # Create a minimal test
-        logger.info("Creating pipeline...")
-        # You'll need to adjust this based on your actual pipeline setup
+        # Test basic pipeline initialization
+        logger.info("Testing pipeline initialization...")
         
-        logger.info("Basic pipeline test would go here")
-        logger.info("This should help identify if the freeze is TPG-specific or general")
+        # This should initialize the models
+        pipeline.refresh_everything(
+            refiner_model_name='None',
+            base_model_name='sd_xl_base_1.0_0.9vae.safetensors',
+            loras=[]
+        )
+        
+        logger.info(f"Pipeline final_unet: {type(pipeline.final_unet)}")
+        logger.info(f"Pipeline final_vae: {type(pipeline.final_vae)}")
+        logger.info(f"Pipeline final_clip: {type(pipeline.final_clip)}")
+        
+        logger.info("Basic pipeline test completed successfully")
         
     except Exception as e:
         logger.error(f"Error testing basic pipeline: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 if __name__ == "__main__":
     logger.info("Starting ChaoticFooocus TPG Debug")

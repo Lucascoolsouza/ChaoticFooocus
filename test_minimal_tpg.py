@@ -6,53 +6,133 @@ Minimal test to isolate TPG freezing issue
 import torch
 import logging
 import sys
+import time
+import signal
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
-def test_tpg_bypass():
-    """Test TPG pipeline with TPG completely disabled"""
+class TimeoutError(Exception):
+    pass
+
+def timeout_handler(signum, frame):
+    raise TimeoutError("Operation timed out")
+
+def test_with_timeout(func, timeout_seconds=30):
+    """Run a function with a timeout"""
+    
+    # Set up signal handler for timeout
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.alarm(timeout_seconds)
     
     try:
-        logger.info("Testing TPG pipeline with TPG disabled...")
-        
-        # Import the pipeline
+        result = func()
+        signal.alarm(0)  # Cancel the alarm
+        return result
+    except TimeoutError:
+        logger.error(f"Function timed out after {timeout_seconds} seconds")
+        return None
+    except Exception as e:
+        signal.alarm(0)  # Cancel the alarm
+        raise e
+
+def test_import():
+    """Test importing the TPG pipeline"""
+    logger.info("Testing TPG pipeline import...")
+    
+    try:
+        from extras.TPG.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
+        logger.info("✓ Pipeline imported successfully")
+        return True
+    except Exception as e:
+        logger.error(f"✗ Import failed: {e}")
+        return False
+
+def test_basic_properties():
+    """Test basic pipeline properties"""
+    logger.info("Testing basic pipeline properties...")
+    
+    try:
         from extras.TPG.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
         
-        logger.info("Pipeline imported successfully")
+        # Test class properties
+        logger.info(f"✓ Pipeline class: {StableDiffusionXLTPGPipeline}")
+        logger.info(f"✓ Pipeline MRO: {[cls.__name__ for cls in StableDiffusionXLTPGPipeline.__mro__]}")
         
-        # Test basic properties
-        logger.info("Testing basic pipeline properties...")
-        
-        # You would load your actual pipeline here
-        # pipe = StableDiffusionXLTPGPipeline.from_pretrained(...)
-        
-        logger.info("Basic test completed")
-        
+        return True
     except Exception as e:
-        logger.error(f"Test failed: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"✗ Properties test failed: {e}")
+        return False
 
-def test_layer_detection():
-    """Test just the layer detection part"""
+def test_make_tpg_block():
+    """Test the make_tpg_block function"""
+    logger.info("Testing make_tpg_block function...")
     
     try:
-        logger.info("Testing layer detection...")
+        from extras.TPG.pipeline_sdxl_tpg import make_tpg_block
+        from diffusers.models.attention import BasicTransformerBlock
         
-        # This would test the layer detection logic in isolation
-        # You'd need to pass your actual UNet model here
+        # Test creating a TPG block
+        modified_class = make_tpg_block(BasicTransformerBlock, do_cfg=True)
+        logger.info(f"✓ make_tpg_block created class: {modified_class}")
         
-        logger.info("Layer detection test completed")
+        # Test instantiation
+        instance = modified_class()
+        logger.info(f"✓ TPG block instance created: {type(instance)}")
         
+        return True
     except Exception as e:
-        logger.error(f"Layer detection test failed: {e}")
+        logger.error(f"✗ make_tpg_block test failed: {e}")
         import traceback
         traceback.print_exc()
+        return False
+
+def run_all_tests():
+    """Run all tests with timeouts"""
+    
+    tests = [
+        ("Import Test", test_import),
+        ("Basic Properties Test", test_basic_properties),
+        ("make_tpg_block Test", test_make_tpg_block),
+    ]
+    
+    results = {}
+    
+    for test_name, test_func in tests:
+        logger.info(f"\n=== {test_name} ===")
+        
+        try:
+            result = test_with_timeout(test_func, timeout_seconds=10)
+            results[test_name] = result is not False
+        except Exception as e:
+            logger.error(f"✗ {test_name} failed with exception: {e}")
+            results[test_name] = False
+    
+    # Summary
+    logger.info("\n=== TEST SUMMARY ===")
+    for test_name, passed in results.items():
+        status = "✓ PASS" if passed else "✗ FAIL"
+        logger.info(f"{status}: {test_name}")
+    
+    return results
 
 if __name__ == "__main__":
-    logger.info("Starting minimal TPG tests...")
-    test_tpg_bypass()
-    test_layer_detection()
+    logger.info("Starting minimal TPG tests with timeout protection...")
+    
+    try:
+        results = run_all_tests()
+        
+        if all(results.values()):
+            logger.info("\n🎉 All tests passed!")
+        else:
+            logger.info("\n⚠️  Some tests failed. Check the logs above.")
+            
+    except KeyboardInterrupt:
+        logger.info("\n⚠️  Tests interrupted by user")
+    except Exception as e:
+        logger.error(f"\n💥 Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+    
     logger.info("Tests completed")

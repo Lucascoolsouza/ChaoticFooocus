@@ -859,7 +859,11 @@ class StableDiffusionXLTPGPipeline(
         return x_shuffled
 
     def pred_z0(self, sample, model_output, timestep):
-        alpha_prod_t = self.scheduler.alphas_cumprod[timestep].to(sample.device)
+        alpha_prod_t = self.scheduler.alphas_cumprod[timestep]
+        if not isinstance(alpha_prod_t, torch.Tensor):
+            alpha_prod_t = torch.tensor(alpha_prod_t, device=sample.device, dtype=sample.dtype)
+        else:
+            alpha_prod_t = alpha_prod_t.to(sample.device)
 
         beta_prod_t = 1 - alpha_prod_t
         if self.scheduler.config.prediction_type == "epsilon":
@@ -1522,11 +1526,10 @@ class StableDiffusionXLTPGPipeline(
                 logger.info(f"UNet model type: {type(actual_unet_model)}")
                 
                 import time
+                import sys
                 start_time = time.time()
-                logger.info(f"UNet model type: {type(actual_unet_model)}")
                 
                 # Add a flush to ensure logs are written immediately
-                import sys
                 sys.stdout.flush()
                 
                 try:
@@ -1585,6 +1588,9 @@ class StableDiffusionXLTPGPipeline(
                             else:
                                 prompt_embeds = prompt_embeds[:target_batch_size]
                         
+                        logger.info("Calling ComfyUI UNet (apply_model)...")
+                        sys.stdout.flush()
+                        
                         noise_pred = actual_unet_model.apply_model(
                             latent_model_input,
                             t,
@@ -1592,6 +1598,9 @@ class StableDiffusionXLTPGPipeline(
                             **comfy_kwargs,
                         )
                     else:
+                        logger.info("Calling standard Diffusers UNet...")
+                        sys.stdout.flush()
+                        
                         # Standard Diffusers UNet
                         noise_pred = actual_unet_model(
                             latent_model_input,
@@ -1603,7 +1612,8 @@ class StableDiffusionXLTPGPipeline(
                             return_dict=False,
                         )[0]
                     
-                    logger.info(f"UNet call completed successfully at step {i+1}")
+                    end_time = time.time()
+                    logger.info(f"UNet call completed successfully at step {i+1} (took {end_time - start_time:.2f}s)")
                     sys.stdout.flush()
                     
                 except Exception as e:
