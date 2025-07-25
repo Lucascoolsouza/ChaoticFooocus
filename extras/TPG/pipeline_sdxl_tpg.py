@@ -108,6 +108,7 @@ def make_tpg_block(block_class: Type[torch.nn.Module], do_cfg=True) -> Type[torc
     else:
         # Original BasicTransformerBlock approach
         class ModifiedBasicTransformerBlock(block_class):
+            
             def forward(
                 self,
                 hidden_states,
@@ -119,34 +120,34 @@ def make_tpg_block(block_class: Type[torch.nn.Module], do_cfg=True) -> Type[torc
                 class_labels=None,
             ) -> torch.Tensor:
 
-            batch_size, num_tokens, channels = hidden_states.shape
+                batch_size, num_tokens, channels = hidden_states.shape
 
-            try:
-                if do_cfg:
-                    hidden_states_uncond, hidden_states_org, hidden_states_tpg = hidden_states.chunk(3)
-                    hidden_states_org = torch.cat([hidden_states_uncond, hidden_states_org])
-                    encoder_hidden_states_uncond, encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(3)
-                    encoder_hidden_states_org = torch.cat([encoder_hidden_states_uncond, encoder_hidden_states_org])
-                else:
-                    hidden_states_org, hidden_states_tpg = hidden_states.chunk(2)
-                    encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(2)
-            except Exception as e:
-                logger.error(f"Error in TPG block chunking: {e}")
-                logger.error(f"Hidden states shape: {hidden_states.shape}")
-                logger.error(f"Encoder hidden states shape: {encoder_hidden_states.shape}")
-                logger.error(f"do_cfg: {do_cfg}")
-                raise
+                try:
+                    if do_cfg:
+                        hidden_states_uncond, hidden_states_org, hidden_states_tpg = hidden_states.chunk(3)
+                        hidden_states_org = torch.cat([hidden_states_uncond, hidden_states_org])
+                        encoder_hidden_states_uncond, encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(3)
+                        encoder_hidden_states_org = torch.cat([encoder_hidden_states_uncond, encoder_hidden_states_org])
+                    else:
+                        hidden_states_org, hidden_states_tpg = hidden_states.chunk(2)
+                        encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(2)
+                except Exception as e:
+                    logger.error(f"Error in TPG block chunking: {e}")
+                    logger.error(f"Hidden states shape: {hidden_states.shape}")
+                    logger.error(f"Encoder hidden states shape: {encoder_hidden_states.shape}")
+                    logger.error(f"do_cfg: {do_cfg}")
+                    raise
 
-            hidden_states_tpg = self.shuffle_tokens(hidden_states_tpg)
-            hidden_states = torch.cat((hidden_states_org, hidden_states_tpg), dim=0)
-            
-            # Reconstruct encoder_hidden_states for the combined batch
-            encoder_hidden_states = torch.cat([encoder_hidden_states_org, encoder_hidden_states_tpg], dim=0)
-            
-            hidden_states = super().forward(hidden_states, attention_mask, encoder_hidden_states,
-                             encoder_attention_mask, timestep, cross_attention_kwargs, class_labels)
+                hidden_states_tpg = self.shuffle_tokens(hidden_states_tpg)
+                hidden_states = torch.cat((hidden_states_org, hidden_states_tpg), dim=0)
+                
+                # Reconstruct encoder_hidden_states for the combined batch
+                encoder_hidden_states = torch.cat([encoder_hidden_states_org, encoder_hidden_states_tpg], dim=0)
+                
+                hidden_states = super().forward(hidden_states, attention_mask, encoder_hidden_states,
+                                 encoder_attention_mask, timestep, cross_attention_kwargs, class_labels)
 
-            return hidden_states
+                return hidden_states
 
         def shuffle_tokens(self, x):
             """
