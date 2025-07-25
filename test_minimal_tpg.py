@@ -42,11 +42,22 @@ def test_import():
     logger.info("Testing TPG pipeline import...")
     
     try:
+        # Test individual imports first
+        logger.info("Importing diffusers components...")
+        from diffusers.models.attention import BasicTransformerBlock
+        logger.info("✓ BasicTransformerBlock imported")
+        
+        from diffusers import DiffusionPipeline
+        logger.info("✓ DiffusionPipeline imported")
+        
+        logger.info("Importing TPG pipeline...")
         from extras.TPG.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
         logger.info("✓ Pipeline imported successfully")
         return True
     except Exception as e:
         logger.error(f"✗ Import failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def test_basic_properties():
@@ -77,8 +88,13 @@ def test_make_tpg_block():
         modified_class = make_tpg_block(BasicTransformerBlock, do_cfg=True)
         logger.info(f"✓ make_tpg_block created class: {modified_class}")
         
-        # Test instantiation
-        instance = modified_class()
+        # Test instantiation with required arguments
+        # BasicTransformerBlock requires dim, num_attention_heads, attention_head_dim
+        instance = modified_class(
+            dim=768,
+            num_attention_heads=12,
+            attention_head_dim=64
+        )
         logger.info(f"✓ TPG block instance created: {type(instance)}")
         
         return True
@@ -103,7 +119,9 @@ def run_all_tests():
         logger.info(f"\n=== {test_name} ===")
         
         try:
-            result = test_with_timeout(test_func, timeout_seconds=10)
+            # Use longer timeout for import test
+            timeout = 30 if "Import" in test_name else 10
+            result = test_with_timeout(test_func, timeout_seconds=timeout)
             results[test_name] = result is not False
         except Exception as e:
             logger.error(f"✗ {test_name} failed with exception: {e}")

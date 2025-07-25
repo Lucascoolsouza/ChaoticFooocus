@@ -72,9 +72,6 @@ class ModelSamplingDiscrete(torch.nn.Module):
             # Even if it's already a tensor, ensure it's the right type
             alphas = alphas.float()
         
-        # Debug info
-        print(f"DEBUG: alphas type: {type(alphas)}, dtype: {alphas.dtype if hasattr(alphas, 'dtype') else 'N/A'}")
-        
         alphas_cumprod = torch.cumprod(alphas, dim=0)
 
         timesteps, = betas.shape
