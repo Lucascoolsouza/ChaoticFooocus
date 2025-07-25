@@ -65,9 +65,15 @@ class ModelSamplingDiscrete(torch.nn.Module):
         # Ensure the subtraction keeps it as a tensor
         alphas = torch.tensor(1.0, dtype=betas.dtype, device=betas.device) - betas
         
-        # Double-check alphas is a torch tensor before calling cumprod
+        # Force alphas to be a torch tensor (robust fix)
         if not isinstance(alphas, torch.Tensor):
             alphas = torch.tensor(alphas, dtype=torch.float32)
+        else:
+            # Even if it's already a tensor, ensure it's the right type
+            alphas = alphas.float()
+        
+        # Debug info
+        print(f"DEBUG: alphas type: {type(alphas)}, dtype: {alphas.dtype if hasattr(alphas, 'dtype') else 'N/A'}")
         
         alphas_cumprod = torch.cumprod(alphas, dim=0)
 
