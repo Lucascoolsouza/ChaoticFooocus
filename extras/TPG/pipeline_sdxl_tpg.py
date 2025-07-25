@@ -1890,15 +1890,16 @@ class StableDiffusionXLTPGPipeline(
             for drop_layer in drop_layers:
                 try:
                     if drop_layer[0] == "d":
-                        # Restore the original forward method
-                        if hasattr(down_layers[int(drop_layer[1:])], '_original_forward'):
-                            down_layers[int(drop_layer[1:])].forward = down_layers[int(drop_layer[1:])]._original_forward
-                            del down_layers[int(drop_layer[1:])]._original_forward
+                        # Restore the original layer
+                        layer_idx = int(drop_layer[1:])
+                        if hasattr(down_layers[layer_idx], '_original_layer'):
+                            down_layers[layer_idx] = down_layers[layer_idx]._original_layer
 
                     elif drop_layer[0] == "m":
-                        if hasattr(mid_layers[int(drop_layer[1:])], '_original_forward'):
-                            mid_layers[int(drop_layer[1:])].forward = mid_layers[int(drop_layer[1:])]._original_forward
-                            del mid_layers[int(drop_layer[1:])]._original_forward
+                        # Restore the original layer
+                        layer_idx = int(drop_layer[1:])
+                        if hasattr(mid_layers[layer_idx], '_original_layer'):
+                            mid_layers[layer_idx] = mid_layers[layer_idx]._original_layer
 
                     elif drop_layer[0] == "u":
                         if hasattr(up_layers[int(drop_layer[1:])], '_original_forward'):
