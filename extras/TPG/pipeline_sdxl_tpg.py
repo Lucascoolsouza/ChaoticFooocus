@@ -110,14 +110,14 @@ def make_tpg_block(block_class: Type[torch.nn.Module], do_cfg=True) -> Type[torc
         class ModifiedBasicTransformerBlock(block_class):
 
             def forward(
-            self,
-            hidden_states,
-            attention_mask=None,
-            encoder_hidden_states=None,
-            encoder_attention_mask=None,
-            timestep=None,
-            cross_attention_kwargs=None,
-            class_labels=None,
+                self,
+                hidden_states,
+                attention_mask=None,
+                encoder_hidden_states=None,
+                encoder_attention_mask=None,
+                timestep=None,
+                cross_attention_kwargs=None,
+                class_labels=None,
         ) -> torch.Tensor:
 
             batch_size, num_tokens, channels = hidden_states.shape
