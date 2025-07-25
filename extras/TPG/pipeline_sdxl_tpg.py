@@ -109,7 +109,7 @@ def make_tpg_block(block_class: Type[torch.nn.Module], do_cfg=True) -> Type[torc
         # Original BasicTransformerBlock approach
         class ModifiedBasicTransformerBlock(block_class):
 
-        def forward(
+            def forward(
             self,
             hidden_states,
             attention_mask=None,
@@ -1405,11 +1405,16 @@ class StableDiffusionXLTPGPipeline(
                 logger.warning("TPG disabled by DISABLE_TPG environment variable")
                 self._tpg_scale = 0.0
             else:
-                # Try different UNet access patterns
+                # Try different UNet access patterns for ldm_patched models
                 unet_to_search = None
                 if hasattr(self.unet, 'model') and self.unet.model is not None:
-                    unet_to_search = self.unet.model
-                    logger.debug("Using self.unet.model for layer search")
+                    # For ldm_patched ModelPatcher, we need to go deeper
+                    if hasattr(self.unet.model, 'diffusion_model'):
+                        unet_to_search = self.unet.model.diffusion_model
+                        logger.debug("Using self.unet.model.diffusion_model for layer search")
+                    else:
+                        unet_to_search = self.unet.model
+                        logger.debug("Using self.unet.model for layer search")
                 elif hasattr(self.unet, 'diffusion_model') and self.unet.diffusion_model is not None:
                     unet_to_search = self.unet.diffusion_model
                     logger.debug("Using self.unet.diffusion_model for layer search")
