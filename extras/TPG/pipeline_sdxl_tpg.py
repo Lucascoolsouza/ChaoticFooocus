@@ -1518,6 +1518,11 @@ class StableDiffusionXLTPGPipeline(
                 logger.info(f"About to call UNet model at step {i+1}/{len(timesteps)}")
                 logger.info(f"UNet input shapes - latent: {latent_model_input.shape}, prompt_embeds: {prompt_embeds.shape}")
                 logger.info(f"TPG enabled: {self.do_token_perturbation_guidance}, CFG enabled: {self.do_classifier_free_guidance}")
+                logger.info(f"Added cond kwargs: {list(added_cond_kwargs.keys())}")
+                logger.info(f"UNet model type: {type(actual_unet_model)}")
+                
+                import time
+                start_time = time.time()
                 logger.info(f"UNet model type: {type(actual_unet_model)}")
                 
                 # Add a flush to ensure logs are written immediately
