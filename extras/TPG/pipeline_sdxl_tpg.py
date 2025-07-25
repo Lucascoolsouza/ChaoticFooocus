@@ -55,6 +55,74 @@ from diffusers.pipelines.stable_diffusion_xl.pipeline_output import StableDiffus
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
+def make_tpg_block(block_class: Type[torch.nn.Module], do_cfg=True) -> Type[torch.nn.Module]:
+
+    class ModifiedBasicTransformerBlock(block_class):
+
+        def forward(
+            self,
+            hidden_states,
+            attention_mask=None,
+            encoder_hidden_states=None,
+            encoder_attention_mask=None,
+            timestep=None,
+            cross_attention_kwargs=None,
+            class_labels=None,
+        ) -> torch.Tensor:
+
+            batch_size, num_tokens, channels = hidden_states.shape
+
+            try:
+                if do_cfg:
+                    hidden_states_uncond, hidden_states_org, hidden_states_tpg = hidden_states.chunk(3)
+                    hidden_states_org = torch.cat([hidden_states_uncond, hidden_states_org])
+                    encoder_hidden_states_uncond, encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(3)
+                    encoder_hidden_states_org = torch.cat([encoder_hidden_states_uncond, encoder_hidden_states_org])
+                else:
+                    hidden_states_org, hidden_states_tpg = hidden_states.chunk(2)
+                    encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(2)
+            except Exception as e:
+                logger.error(f"Error in TPG block chunking: {e}")
+                logger.error(f"Hidden states shape: {hidden_states.shape}")
+                logger.error(f"Encoder hidden states shape: {encoder_hidden_states.shape}")
+                logger.error(f"do_cfg: {do_cfg}")
+                raise
+
+            hidden_states_tpg = self.shuffle_tokens(hidden_states_tpg)
+            hidden_states = torch.cat((hidden_states_org, hidden_states_tpg), dim=0)
+            
+            # Reconstruct encoder_hidden_states for the combined batch
+            encoder_hidden_states = torch.cat([encoder_hidden_states_org, encoder_hidden_states_tpg], dim=0)
+            
+            hidden_states = super().forward(hidden_states, attention_mask, encoder_hidden_states,
+                             encoder_attention_mask, timestep, cross_attention_kwargs, class_labels)
+
+            return hidden_states
+
+        def shuffle_tokens(self, x):
+            """
+            Randomly shuffle the order of input tokens.
+
+            Args:
+                x (torch.Tensor): Input tensor with shape (batch_size, num_tokens, channels) (b, n, c)
+
+            Returns:
+                torch.Tensor: Shuffled tensor with the same shape (b, n, c)
+            """
+            try:
+                b, n, c = x.shape
+                # Generate a random permutation of indices for the token dimension
+                permutation = torch.randperm(n, device=x.device)
+                # Shuffle tokens across the token dimension using the same permutation for all batches
+                x_shuffled = x[:, permutation]
+                return x_shuffled
+            except Exception as e:
+                logger.error(f"Error in shuffle_tokens: {e}")
+                logger.error(f"Input tensor shape: {x.shape}")
+                raise
+
+    return ModifiedBasicTransformerBlock
+
 EXAMPLE_DOC_STRING = """
     Examples:
         ```py
@@ -80,8 +148,6 @@ if is_torch_xla_available():
     XLA_AVAILABLE = True
 else:
     XLA_AVAILABLE = False
-
-logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.rescale_noise_cfg
 def rescale_noise_cfg(noise_cfg, noise_pred_text, guidance_rescale=0.0):
@@ -1290,79 +1356,39 @@ class StableDiffusionXLTPGPipeline(
                     
         # change attention layer in UNet if use tpg
         if self.do_token_perturbation_guidance:
+            logger.debug("Starting TPG layer modification")
             drop_layers = self.tpg_applied_layers_index
-            # Capture the current guidance settings and the static shuffle method
+            # Capture the current guidance settings
             current_do_cfg = self.do_classifier_free_guidance
             current_do_tpg = self.do_token_perturbation_guidance
-            shuffle_tokens_func = self._shuffle_tokens # Get a reference to the static method
 
             for drop_layer in drop_layers:
                 try:
                     if drop_layer[0] == "d":
-                        target_block = down_layers[int(drop_layer[1:])]
+                        # Replace the forward method directly
+                        original_forward = down_layers[int(drop_layer[1:])].forward
+                        modified_block = make_tpg_block(down_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
+                        down_layers[int(drop_layer[1:])].forward = modified_block.forward
+                        # Store original forward for later restoration
+                        if not hasattr(down_layers[int(drop_layer[1:])], '_original_forward'):
+                            down_layers[int(drop_layer[1:])]._original_forward = original_forward
+
                     elif drop_layer[0] == "m":
-                        target_block = mid_layers[int(drop_layer[1:])]
+                        original_forward = mid_layers[int(drop_layer[1:])].forward
+                        modified_block = make_tpg_block(mid_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
+                        mid_layers[int(drop_layer[1:])].forward = modified_block.forward
+                        if not hasattr(mid_layers[int(drop_layer[1:])], '_original_forward'):
+                            mid_layers[int(drop_layer[1:])]._original_forward = original_forward
+
                     elif drop_layer[0] == "u":
-                        target_block = up_layers[int(drop_layer[1:])]
+                        original_forward = up_layers[int(drop_layer[1:])].forward
+                        modified_block = make_tpg_block(up_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
+                        up_layers[int(drop_layer[1:])].forward = modified_block.forward
+                        if not hasattr(up_layers[int(drop_layer[1:])], '_original_forward'):
+                            up_layers[int(drop_layer[1:])]._original_forward = original_forward
+
                     else:
                         raise ValueError(f"Invalid layer type: {drop_layer[0]}")
-
-                    # Store original forward for later restoration
-                    if not hasattr(target_block, '_original_forward'):
-                        target_block._original_forward = target_block.forward
-
-                    def _tpg_forward(
-                        self_block,
-                        hidden_states,
-                        attention_mask=None,
-                        encoder_hidden_states=None,
-                        encoder_attention_mask=None,
-                        timestep=None,
-                        cross_attention_kwargs=None,
-                        class_labels=None,
-                        do_classifier_free_guidance=current_do_cfg, # Pass as argument
-                        do_token_perturbation_guidance=current_do_tpg, # Pass as argument
-                        shuffle_tokens_func=shuffle_tokens_func, # Pass the static method
-                    ) -> torch.Tensor:
-                        batch_size, num_tokens, channels = hidden_states.shape
-
-                        if do_classifier_free_guidance and do_token_perturbation_guidance:
-                            hidden_states_uncond, hidden_states_org, hidden_states_tpg = hidden_states.chunk(3)
-                            encoder_hidden_states_uncond, encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(3)
-                            hidden_states_org = torch.cat([hidden_states_uncond, hidden_states_org])
-                            encoder_hidden_states_org = torch.cat([encoder_hidden_states_uncond, encoder_hidden_states_org])
-                        elif do_token_perturbation_guidance: # Only TPG
-                            hidden_states_org, hidden_states_tpg = hidden_states.chunk(2)
-                            encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(2)
-                        else: # This case should not be reached if do_token_perturbation_guidance is True
-                            # Fallback to original behavior if TPG is somehow off but this function is called
-                            return self_block._original_forward(
-                                hidden_states,
-                                attention_mask,
-                                encoder_hidden_states,
-                                encoder_attention_mask,
-                                timestep,
-                                cross_attention_kwargs,
-                                class_labels,
-                            )
-
-                        hidden_states_tpg = shuffle_tokens_func(hidden_states_tpg)
-                        hidden_states = torch.cat((hidden_states_org, hidden_states_tpg), dim=0)
-
-                        # Call the original forward method of the block
-                        return self_block._original_forward(
-                            hidden_states,
-                            attention_mask,
-                            encoder_hidden_states,
-                            encoder_attention_mask,
-                            timestep,
-                            cross_attention_kwargs,
-                            class_labels,
-                        )
-
-                    # Bind the new forward method to the instance
-                    target_block.forward = _tpg_forward.__get__(target_block, target_block.__class__)
-
                 except IndexError:
                     raise ValueError(
                         f"Invalid layer index: {drop_layer}. Available layers: {len(down_layers)} down layers, {len(mid_layers)} mid layers, {len(up_layers)} up layers."
@@ -1398,94 +1424,109 @@ class StableDiffusionXLTPGPipeline(
                     added_cond_kwargs["image_embeds"] = image_embeds
 
                 logger.debug("Calling UNet model")
-                if hasattr(actual_unet_model, 'apply_model'): # This is for ComfyUI wrapped models
-                    # ComfyUI wrapped model - convert Diffusers conditioning to ComfyUI format
-                    comfy_kwargs = {}
-                    if "text_embeds" in added_cond_kwargs and "time_ids" in added_cond_kwargs:
-                        pooled_output = added_cond_kwargs["text_embeds"]
-                        time_ids = added_cond_kwargs["time_ids"]
+                logger.debug(f"UNet input shapes - latent: {latent_model_input.shape}, prompt_embeds: {prompt_embeds.shape}")
+                logger.debug(f"TPG enabled: {self.do_token_perturbation_guidance}, CFG enabled: {self.do_classifier_free_guidance}")
+                try:
+                    if hasattr(actual_unet_model, 'apply_model'): # This is for ComfyUI wrapped models
+                        # ComfyUI wrapped model - convert Diffusers conditioning to ComfyUI format
+                        comfy_kwargs = {}
+                        if "text_embeds" in added_cond_kwargs and "time_ids" in added_cond_kwargs:
+                            pooled_output = added_cond_kwargs["text_embeds"]
+                            time_ids = added_cond_kwargs["time_ids"]
 
-                        target_batch_size = latent_model_input.shape[0]
-                        if pooled_output.shape[0] != target_batch_size:
-                            if pooled_output.shape[0] < target_batch_size:
-                                repeat_factor = target_batch_size // pooled_output.shape[0]
-                                remainder = target_batch_size % pooled_output.shape[0]
-                                pooled_output = torch.cat([pooled_output.repeat(repeat_factor, 1)] + 
-                                                        ([pooled_output[:remainder]] if remainder > 0 else []), dim=0)
-                            else:
-                                pooled_output = pooled_output[:target_batch_size]
-                        
-                        if time_ids.shape[0] != target_batch_size:
-                            if time_ids.shape[0] < target_batch_size:
-                                repeat_factor = target_batch_size // time_ids.shape[0]
-                                remainder = target_batch_size % time_ids.shape[0]
-                                time_ids = torch.cat([time_ids.repeat(repeat_factor, 1)] + 
-                                                   ([time_ids[:remainder]] if remainder > 0 else []), dim=0)
-                            else:
-                                time_ids = time_ids[:target_batch_size]
-                        
-                        if time_ids.shape[-1] >= 6:
-                            height = int(time_ids[0, 0].item())
-                            width = int(time_ids[0, 1].item())
-                            crop_h = int(time_ids[0, 2].item())
-                            crop_w = int(time_ids[0, 3].item())
-                            target_height = int(time_ids[0, 4].item())
-                            target_width = int(time_ids[0, 5].item())
+                            target_batch_size = latent_model_input.shape[0]
+                            if pooled_output.shape[0] != target_batch_size:
+                                if pooled_output.shape[0] < target_batch_size:
+                                    repeat_factor = target_batch_size // pooled_output.shape[0]
+                                    remainder = target_batch_size % pooled_output.shape[0]
+                                    pooled_output = torch.cat([pooled_output.repeat(repeat_factor, 1)] + 
+                                                            ([pooled_output[:remainder]] if remainder > 0 else []), dim=0)
+                                else:
+                                    pooled_output = pooled_output[:target_batch_size]
                             
-                            comfy_kwargs.update({
-                                "pooled_output": pooled_output,
-                                "width": width,
-                                "height": height,
-                                "crop_w": crop_w,
-                                "crop_h": crop_h,
-                                "target_width": target_width,
-                                "target_height": target_height,
-                                "device": latent_model_input.device,
-                            })
-                    
-                    target_batch_size = latent_model_input.shape[0]
-                    if prompt_embeds.shape[0] != target_batch_size:
-                        if prompt_embeds.shape[0] < target_batch_size:
-                            repeat_factor = target_batch_size // prompt_embeds.shape[0]
-                            remainder = target_batch_size % prompt_embeds.shape[0]
-                            prompt_embeds = torch.cat([prompt_embeds.repeat(repeat_factor, 1, 1)] + 
-                                                    ([prompt_embeds[:remainder]] if remainder > 0 else []), dim=0)
-                        else:
-                            prompt_embeds = prompt_embeds[:target_batch_size]
-                    
-                    noise_pred = actual_unet_model.apply_model(
-                        latent_model_input,
-                        t,
-                        c_crossattn=prompt_embeds,
-                        **comfy_kwargs,
-                    )
-                else:
-                    # Standard Diffusers UNet
-                    noise_pred = actual_unet_model(
-                        latent_model_input,
-                        t,
-                        encoder_hidden_states=prompt_embeds,
-                        timestep_cond=timestep_cond,
-                        cross_attention_kwargs=self.cross_attention_kwargs,
-                        added_cond_kwargs=added_cond_kwargs,
-                        return_dict=False,
-                    )[0]
+                            if time_ids.shape[0] != target_batch_size:
+                                if time_ids.shape[0] < target_batch_size:
+                                    repeat_factor = target_batch_size // time_ids.shape[0]
+                                    remainder = target_batch_size % time_ids.shape[0]
+                                    time_ids = torch.cat([time_ids.repeat(repeat_factor, 1)] + 
+                                                       ([time_ids[:remainder]] if remainder > 0 else []), dim=0)
+                                else:
+                                    time_ids = time_ids[:target_batch_size]
+                            
+                            if time_ids.shape[-1] >= 6:
+                                height = int(time_ids[0, 0].item())
+                                width = int(time_ids[0, 1].item())
+                                crop_h = int(time_ids[0, 2].item())
+                                crop_w = int(time_ids[0, 3].item())
+                                target_height = int(time_ids[0, 4].item())
+                                target_width = int(time_ids[0, 5].item())
+                                
+                                comfy_kwargs.update({
+                                    "pooled_output": pooled_output,
+                                    "width": width,
+                                    "height": height,
+                                    "crop_w": crop_w,
+                                    "crop_h": crop_h,
+                                    "target_width": target_width,
+                                    "target_height": target_height,
+                                    "device": latent_model_input.device,
+                                })
+                        
+                        target_batch_size = latent_model_input.shape[0]
+                        if prompt_embeds.shape[0] != target_batch_size:
+                            if prompt_embeds.shape[0] < target_batch_size:
+                                repeat_factor = target_batch_size // prompt_embeds.shape[0]
+                                remainder = target_batch_size % prompt_embeds.shape[0]
+                                prompt_embeds = torch.cat([prompt_embeds.repeat(repeat_factor, 1, 1)] + 
+                                                        ([prompt_embeds[:remainder]] if remainder > 0 else []), dim=0)
+                            else:
+                                prompt_embeds = prompt_embeds[:target_batch_size]
+                        
+                        noise_pred = actual_unet_model.apply_model(
+                            latent_model_input,
+                            t,
+                            c_crossattn=prompt_embeds,
+                            **comfy_kwargs,
+                        )
+                    else:
+                        # Standard Diffusers UNet
+                        noise_pred = actual_unet_model(
+                            latent_model_input,
+                            t,
+                            encoder_hidden_states=prompt_embeds,
+                            timestep_cond=timestep_cond,
+                            cross_attention_kwargs=self.cross_attention_kwargs,
+                            added_cond_kwargs=added_cond_kwargs,
+                            return_dict=False,
+                        )[0]
+                except Exception as e:
+                    logger.error(f"Error during UNet forward pass: {e}")
+                    logger.error(f"Latent input shape: {latent_model_input.shape}")
+                    logger.error(f"Prompt embeds shape: {prompt_embeds.shape}")
+                    logger.error(f"Timestep: {t}")
+                    raise
                 logger.debug(f"Noise prediction shape: {noise_pred.shape}")
 
                 # perform guidance
+                logger.debug(f"Performing guidance - CFG: {self.do_classifier_free_guidance}, TPG: {self.do_token_perturbation_guidance}")
                 # cfg
-                if self.do_classifier_free_guidance:
+                if self.do_classifier_free_guidance and not self.do_token_perturbation_guidance:
+                    logger.debug("Applying CFG only")
                     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                     noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
                 # TPG guidance
                 elif not self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
+                    logger.debug("Applying TPG only")
                     noise_pred_original, noise_pred_perturb = noise_pred.chunk(2)
                     signal_scale = self.tpg_scale
                     noise_pred = noise_pred_original + signal_scale * (noise_pred_original - noise_pred_perturb)
                 elif self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
+                    logger.debug("Applying both CFG and TPG")
                     noise_pred_uncond, noise_pred_text, noise_pred_text_perturb = noise_pred.chunk(3)
                     signal_scale = self.tpg_scale
                     noise_pred = noise_pred_text + (self.guidance_scale-1.0) * (noise_pred_text - noise_pred_uncond) + signal_scale * (noise_pred_text - noise_pred_text_perturb)
+                else:
+                    logger.debug("No guidance applied")
 
                 if self.do_classifier_free_guidance and self.guidance_rescale > 0.0:
                     # Based on 3.4. in https://arxiv.org/pdf/2305.08891.pdf
@@ -1519,6 +1560,7 @@ class StableDiffusionXLTPGPipeline(
 
                 # call the callback, if provided
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
+                    logger.debug(f"Updating progress bar at step {i}")
                     progress_bar.update()
                     if callback is not None and i % callback_steps == 0:
                         step_idx = i // getattr(self.scheduler, "order", 1)
@@ -1527,11 +1569,13 @@ class StableDiffusionXLTPGPipeline(
                 if XLA_AVAILABLE:
                     xm.mark_step()
 
+        logger.debug("Denoising loop completed, starting VAE decoding")
         if not output_type == "latent":
             # make sure the VAE is in float32 mode, as it overflows in float16
             needs_upcasting = self.vae.dtype == torch.float16 and self.vae.config.force_upcast
 
             if needs_upcasting:
+                logger.debug("Upcasting VAE to float32")
                 self.upcast_vae()
                 latents = latents.to(next(iter(self.vae.post_quant_conv.parameters())).dtype)
             elif latents.dtype != self.vae.dtype:
@@ -1554,7 +1598,9 @@ class StableDiffusionXLTPGPipeline(
             else:
                 latents = latents / self.vae.config.scaling_factor
 
+            logger.debug("Calling VAE decode")
             image = self.vae.decode(latents, return_dict=False)[0]
+            logger.debug("VAE decode completed")
 
             # cast back to fp16 if needed
             if needs_upcasting:
@@ -1573,6 +1619,7 @@ class StableDiffusionXLTPGPipeline(
         self.maybe_free_model_hooks()
 
         if self.do_token_perturbation_guidance:
+            logger.debug("Restoring original layer forward methods")
             drop_layers = self.tpg_applied_layers_index
             for drop_layer in drop_layers:
                 try:
@@ -1598,6 +1645,7 @@ class StableDiffusionXLTPGPipeline(
                     raise ValueError(
                         f"Invalid layer index: {drop_layer}. Available layers: {len(down_layers)} down layers, {len(mid_layers)} mid layers, {len(up_layers)} up layers."
                     )
+            logger.debug("Layer restoration completed")
 
 
         if not return_dict:
