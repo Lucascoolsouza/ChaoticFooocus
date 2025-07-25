@@ -1338,74 +1338,88 @@ class StableDiffusionXLTPGPipeline(
         logger.debug("Guidance scale embedding obtained.")
 
         # 10. Create down mid and up layer lists
+        down_layers = []
+        mid_layers = []
+        up_layers = []
+        
         if self.do_token_perturbation_guidance:
-            down_layers = []
-            mid_layers = []
-            up_layers = []
+            logger.info("TPG is enabled, searching for transformer layers...")
             
-            # Try different UNet access patterns
-            unet_to_search = None
-            if hasattr(self.unet, 'model') and self.unet.model is not None:
-                unet_to_search = self.unet.model
-                logger.debug("Using self.unet.model for layer search")
-            elif hasattr(self.unet, 'diffusion_model') and self.unet.diffusion_model is not None:
-                unet_to_search = self.unet.diffusion_model
-                logger.debug("Using self.unet.diffusion_model for layer search")
-            else:
-                unet_to_search = self.unet
-                logger.debug("Using self.unet directly for layer search")
-            
-            # Debug: Print all module names and types
-            logger.debug("Searching for BasicTransformerBlock modules...")
-            all_transformer_blocks = []
-            
-            # First, let's see what modules we have
-            logger.debug("All modules in UNet:")
-            module_count = 0
-            for name, module in unet_to_search.named_modules():
-                if module_count < 20:  # Limit output
-                    logger.debug(f"  {name}: {type(module).__name__}")
-                module_count += 1
-                
-                if isinstance(module, BasicTransformerBlock):
-                    all_transformer_blocks.append((name, module))
-                    logger.debug(f"Found BasicTransformerBlock: {name}")
-                    
-                    # More flexible layer type detection
-                    name_parts = name.split(".")
-                    layer_type = None
-                    
-                    # Try different naming patterns
-                    if "down_blocks" in name or "down" in name_parts[0]:
-                        layer_type = "down"
-                    elif "mid_block" in name or "mid" in name_parts[0]:
-                        layer_type = "mid"
-                    elif "up_blocks" in name or "up" in name_parts[0]:
-                        layer_type = "up"
-                    else:
-                        # Fallback: try original logic
-                        layer_type = name_parts[0].split("_")[0]
-                    
-                    if layer_type == "down":
-                        down_layers.append(module)
-                    elif layer_type == "mid":
-                        mid_layers.append(module)
-                    elif layer_type == "up":
-                        up_layers.append(module)
-                    else:
-                        logger.warning(f"Unknown layer type for {name}: {layer_type}")
-            
-            if module_count >= 20:
-                logger.debug(f"  ... and {module_count - 20} more modules")
-            
-            logger.debug(f"Found {len(all_transformer_blocks)} total BasicTransformerBlock modules")
-            logger.debug(f"Categorized as: {len(down_layers)} down, {len(mid_layers)} mid, {len(up_layers)} up")
-            
-            # If no layers found, disable TPG
-            if len(down_layers) == 0 and len(mid_layers) == 0 and len(up_layers) == 0:
-                logger.warning("No BasicTransformerBlock modules found! Disabling TPG.")
+            # SAFETY: Add environment variable to completely disable TPG
+            import os
+            if os.environ.get('DISABLE_TPG', '').lower() in ['true', '1', 'yes']:
+                logger.warning("TPG disabled by DISABLE_TPG environment variable")
                 self._tpg_scale = 0.0
-                # Continue without TPG
+            else:
+                # Try different UNet access patterns
+                unet_to_search = None
+                if hasattr(self.unet, 'model') and self.unet.model is not None:
+                    unet_to_search = self.unet.model
+                    logger.debug("Using self.unet.model for layer search")
+                elif hasattr(self.unet, 'diffusion_model') and self.unet.diffusion_model is not None:
+                    unet_to_search = self.unet.diffusion_model
+                    logger.debug("Using self.unet.diffusion_model for layer search")
+                else:
+                    unet_to_search = self.unet
+                    logger.debug("Using self.unet directly for layer search")
+            
+                try:
+                    # Debug: Print all module names and types
+                    logger.debug("Searching for BasicTransformerBlock modules...")
+                    all_transformer_blocks = []
+                    
+                    # First, let's see what modules we have
+                    logger.debug("All modules in UNet:")
+                    module_count = 0
+                    for name, module in unet_to_search.named_modules():
+                        if module_count < 20:  # Limit output
+                            logger.debug(f"  {name}: {type(module).__name__}")
+                        module_count += 1
+                        
+                        if isinstance(module, BasicTransformerBlock):
+                            all_transformer_blocks.append((name, module))
+                            logger.debug(f"Found BasicTransformerBlock: {name}")
+                            
+                            # More flexible layer type detection
+                            name_parts = name.split(".")
+                            layer_type = None
+                            
+                            # Try different naming patterns
+                            if "down_blocks" in name or "down" in name_parts[0]:
+                                layer_type = "down"
+                            elif "mid_block" in name or "mid" in name_parts[0]:
+                                layer_type = "mid"
+                            elif "up_blocks" in name or "up" in name_parts[0]:
+                                layer_type = "up"
+                            else:
+                                # Fallback: try original logic
+                                layer_type = name_parts[0].split("_")[0]
+                            
+                            if layer_type == "down":
+                                down_layers.append(module)
+                            elif layer_type == "mid":
+                                mid_layers.append(module)
+                            elif layer_type == "up":
+                                up_layers.append(module)
+                            else:
+                                logger.warning(f"Unknown layer type for {name}: {layer_type}")
+                    
+                    if module_count >= 20:
+                        logger.debug(f"  ... and {module_count - 20} more modules")
+                    
+                    logger.debug(f"Found {len(all_transformer_blocks)} total BasicTransformerBlock modules")
+                    logger.debug(f"Categorized as: {len(down_layers)} down, {len(mid_layers)} mid, {len(up_layers)} up")
+                    
+                    # If no layers found, disable TPG
+                    if len(down_layers) == 0 and len(mid_layers) == 0 and len(up_layers) == 0:
+                        logger.warning("No BasicTransformerBlock modules found! Disabling TPG.")
+                        self._tpg_scale = 0.0
+                        # Continue without TPG
+                        
+                except Exception as e:
+                    logger.error(f"Error during layer detection: {e}")
+                    logger.warning("Disabling TPG due to layer detection error")
+                    self._tpg_scale = 0.0
                     
         # change attention layer in UNet if use tpg
         if self.do_token_perturbation_guidance and self.tpg_scale > 0:
@@ -1462,26 +1476,35 @@ class StableDiffusionXLTPGPipeline(
         logger.debug("TPG layer lists and attention layer changes (if TPG active) processed.")
 
         self._num_timesteps = len(timesteps)
+        logger.info(f"Starting denoising loop with {num_inference_steps} steps")
+        logger.info(f"CFG enabled: {self.do_classifier_free_guidance}, TPG enabled: {self.do_token_perturbation_guidance}")
+        
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
-                logger.debug(f"Processing timestep {t} ({i}/{len(timesteps)})")
+                logger.info(f"=== STEP {i+1}/{len(timesteps)} - Timestep {t} ===")
                 if self.interrupt:
+                    logger.info("Interrupted, breaking loop")
                     continue
 
                 # expand the latents if we are doing classifier free guidance
+                logger.debug("Preparing latent model input...")
                 
                 # Determine latent input based on guidance types
                 if self.do_classifier_free_guidance and not self.do_token_perturbation_guidance:
                     # CFG only
+                    logger.debug("Using CFG only - duplicating latents")
                     latent_model_input = torch.cat([latents] * 2)
                 elif not self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
                     # TPG only
+                    logger.debug("Using TPG only - duplicating latents")
                     latent_model_input = torch.cat([latents] * 2)
                 elif self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
                     # Both CFG and TPG
+                    logger.debug("Using both CFG and TPG - triplicating latents")
                     latent_model_input = torch.cat([latents] * 3)
                 else:
                     # No guidance
+                    logger.debug("No guidance - using latents as-is")
                     latent_model_input = latents
 
                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
@@ -1492,9 +1515,15 @@ class StableDiffusionXLTPGPipeline(
                 if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
                     added_cond_kwargs["image_embeds"] = image_embeds
 
-                logger.debug("Calling UNet model")
-                logger.debug(f"UNet input shapes - latent: {latent_model_input.shape}, prompt_embeds: {prompt_embeds.shape}")
-                logger.debug(f"TPG enabled: {self.do_token_perturbation_guidance}, CFG enabled: {self.do_classifier_free_guidance}")
+                logger.info(f"About to call UNet model at step {i+1}/{len(timesteps)}")
+                logger.info(f"UNet input shapes - latent: {latent_model_input.shape}, prompt_embeds: {prompt_embeds.shape}")
+                logger.info(f"TPG enabled: {self.do_token_perturbation_guidance}, CFG enabled: {self.do_classifier_free_guidance}")
+                logger.info(f"UNet model type: {type(actual_unet_model)}")
+                
+                # Add a flush to ensure logs are written immediately
+                import sys
+                sys.stdout.flush()
+                
                 try:
                     if hasattr(actual_unet_model, 'apply_model'): # This is for ComfyUI wrapped models
                         # ComfyUI wrapped model - convert Diffusers conditioning to ComfyUI format
@@ -1568,13 +1597,18 @@ class StableDiffusionXLTPGPipeline(
                             added_cond_kwargs=added_cond_kwargs,
                             return_dict=False,
                         )[0]
+                    
+                    logger.info(f"UNet call completed successfully at step {i+1}")
+                    sys.stdout.flush()
+                    
                 except Exception as e:
                     logger.error(f"Error during UNet forward pass: {e}")
                     logger.error(f"Latent input shape: {latent_model_input.shape}")
                     logger.error(f"Prompt embeds shape: {prompt_embeds.shape}")
                     logger.error(f"Timestep: {t}")
                     raise
-                logger.debug(f"Noise prediction shape: {noise_pred.shape}")
+                logger.info(f"Noise prediction shape: {noise_pred.shape}")
+                sys.stdout.flush()
 
                 # perform guidance
                 logger.debug(f"Performing guidance - CFG: {self.do_classifier_free_guidance}, TPG: {self.do_token_perturbation_guidance}")
