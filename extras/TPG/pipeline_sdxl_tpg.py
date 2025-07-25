@@ -71,58 +71,6 @@ EXAMPLE_DOC_STRING = """
         ```
 """
 
-def make_tpg_block(block_class: Type[torch.nn.Module], do_cfg=True) -> Type[torch.nn.Module]:
-
-    class ModifiedBasicTransformerBlock(block_class):
-
-        def forward(
-            self,
-            hidden_states,
-            attention_mask=None,
-            encoder_hidden_states=None,
-            encoder_attention_mask=None,
-            timestep=None,
-            cross_attention_kwargs=None,
-            class_labels=None,
-        ) -> torch.Tensor:
-
-            batch_size, num_tokens, channels = hidden_states.shape
-
-            if do_cfg:
-                hidden_states_uncond, hidden_states_org, hidden_states_tpg = hidden_states.chunk(3)
-                hidden_states_org = torch.cat([hidden_states_uncond, hidden_states_org])
-                encoder_hidden_states_uncond, encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(3)
-                encoder_hidden_states_org = torch.cat([encoder_hidden_states_uncond, encoder_hidden_states_org])
-            else:
-                hidden_states_org, hidden_states_tpg = hidden_states.chunk(2)
-                encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(2)
-
-            hidden_states_tpg = self.shuffle_tokens(hidden_states_tpg)
-            hidden_states = torch.cat((hidden_states_org, hidden_states_tpg), dim=0)
-            hidden_states = super().forward(hidden_states, attention_mask, encoder_hidden_states,
-                             encoder_attention_mask, timestep, cross_attention_kwargs, class_labels)
-
-            return hidden_states
-
-        def shuffle_tokens(self, x):
-            """
-            Randomly shuffle the order of input tokens.
-
-            Args:
-                x (torch.Tensor): Input tensor with shape (batch_size, num_tokens, channels) (b, n, c)
-
-            Returns:
-                torch.Tensor: Shuffled tensor with the same shape (b, n, c)
-            """
-            b, n, c = x.shape
-            # Generate a random permutation of indices for the token dimension
-            permutation = torch.randperm(n, device=x.device)
-            # Shuffle tokens across the token dimension using the same permutation for all batches
-            x_shuffled = x[:, permutation]
-            return x_shuffled
-
-    return ModifiedBasicTransformerBlock
-
 if is_invisible_watermark_available():
     from diffusers.pipelines.stable_diffusion_xl.watermark import StableDiffusionXLWatermarker
 
@@ -826,6 +774,24 @@ class StableDiffusionXLTPGPipeline(
         assert emb.shape == (w.shape[0], embedding_dim)
         return emb
 
+    @staticmethod
+    def _shuffle_tokens(x):
+        """
+        Randomly shuffle the order of input tokens.
+
+        Args:
+            x (torch.Tensor): Input tensor with shape (batch_size, num_tokens, channels) (b, n, c)
+
+        Returns:
+            torch.Tensor: Shuffled tensor with the same shape (b, n, c)
+        """
+        b, n, c = x.shape
+        # Generate a random permutation of indices for the token dimension
+        permutation = torch.randperm(n, device=x.device)
+        # Shuffle tokens across the token dimension using the same permutation for all batches
+        x_shuffled = x[:, permutation]
+        return x_shuffled
+
     def pred_z0(self, sample, model_output, timestep):
         alpha_prod_t = self.scheduler.alphas_cumprod[timestep].to(sample.device)
 
@@ -1328,30 +1294,56 @@ class StableDiffusionXLTPGPipeline(
             for drop_layer in drop_layers:
                 try:
                     if drop_layer[0] == "d":
-                        # Replace the forward method directly
-                        original_forward = down_layers[int(drop_layer[1:])].forward
-                        modified_block = make_tpg_block(down_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
-                        down_layers[int(drop_layer[1:])].forward = modified_block.forward
-                        # Store original forward for later restoration
-                        if not hasattr(down_layers[int(drop_layer[1:])], '_original_forward'):
-                            down_layers[int(drop_layer[1:])]._original_forward = original_forward
-
+                        target_block = down_layers[int(drop_layer[1:])]
                     elif drop_layer[0] == "m":
-                        original_forward = mid_layers[int(drop_layer[1:])].forward
-                        modified_block = make_tpg_block(mid_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
-                        mid_layers[int(drop_layer[1:])].forward = modified_block.forward
-                        if not hasattr(mid_layers[int(drop_layer[1:])], '_original_forward'):
-                            mid_layers[int(drop_layer[1:])]._original_forward = original_forward
-
+                        target_block = mid_layers[int(drop_layer[1:])]
                     elif drop_layer[0] == "u":
-                        original_forward = up_layers[int(drop_layer[1:])].forward
-                        modified_block = make_tpg_block(up_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
-                        up_layers[int(drop_layer[1:])].forward = modified_block.forward
-                        if not hasattr(up_layers[int(drop_layer[1:])], '_original_forward'):
-                            up_layers[int(drop_layer[1:])]._original_forward = original_forward
-
+                        target_block = up_layers[int(drop_layer[1:])]
                     else:
                         raise ValueError(f"Invalid layer type: {drop_layer[0]}")
+
+                    # Store original forward for later restoration
+                    if not hasattr(target_block, '_original_forward'):
+                        target_block._original_forward = target_block.forward
+
+                    def _tpg_forward(
+                        self_block,
+                        hidden_states,
+                        attention_mask=None,
+                        encoder_hidden_states=None,
+                        encoder_attention_mask=None,
+                        timestep=None,
+                        cross_attention_kwargs=None,
+                        class_labels=None,
+                    ) -> torch.Tensor:
+                        batch_size, num_tokens, channels = hidden_states.shape
+
+                        if self.do_classifier_free_guidance:
+                            hidden_states_uncond, hidden_states_org, hidden_states_tpg = hidden_states.chunk(3)
+                            hidden_states_org = torch.cat([hidden_states_uncond, hidden_states_org])
+                            encoder_hidden_states_uncond, encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(3)
+                            encoder_hidden_states_org = torch.cat([encoder_hidden_states_uncond, encoder_hidden_states_org])
+                        else:
+                            hidden_states_org, hidden_states_tpg = hidden_states.chunk(2)
+                            encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(2)
+
+                        hidden_states_tpg = self._shuffle_tokens(hidden_states_tpg)
+                        hidden_states = torch.cat((hidden_states_org, hidden_states_tpg), dim=0)
+
+                        # Call the original forward method of the block
+                        return self_block._original_forward(
+                            hidden_states,
+                            attention_mask,
+                            encoder_hidden_states,
+                            encoder_attention_mask,
+                            timestep,
+                            cross_attention_kwargs,
+                            class_labels,
+                        )
+
+                    # Bind the new forward method to the instance
+                    target_block.forward = _tpg_forward.__get__(target_block, target_block.__class__)
+
                 except IndexError:
                     raise ValueError(
                         f"Invalid layer index: {drop_layer}. Available layers: {len(down_layers)} down layers, {len(mid_layers)} mid layers, {len(up_layers)} up layers."
