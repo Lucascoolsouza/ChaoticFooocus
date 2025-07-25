@@ -1664,16 +1664,6 @@ class StableDiffusionXLTPGPipeline(
                 # Add a flush to ensure logs are written immediately
                 sys.stdout.flush()
                 
-                # Add a timeout mechanism to detect infinite hangs
-                import signal
-                
-                def timeout_handler(signum, frame):
-                    raise TimeoutError(f"UNet call timed out at step {i+1}")
-                
-                # Set a 60-second timeout for the UNet call
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(60)
-                
                 try:
                     if hasattr(actual_unet_model, 'apply_model'): # This is for ComfyUI wrapped models
                         # ComfyUI wrapped model - convert Diffusers conditioning to ComfyUI format
@@ -1754,20 +1744,11 @@ class StableDiffusionXLTPGPipeline(
                             return_dict=False,
                         )[0]
                     
-                    # Cancel the timeout
-                    signal.alarm(0)
-                    
                     end_time = time.time()
                     logger.info(f"UNet call completed successfully at step {i+1} (took {end_time - start_time:.2f}s)")
                     sys.stdout.flush()
                     
-                except TimeoutError as e:
-                    signal.alarm(0)  # Cancel the timeout
-                    logger.error(f"UNet call timed out: {e}")
-                    logger.error("This suggests an infinite loop or deadlock in the UNet forward pass")
-                    raise
                 except Exception as e:
-                    signal.alarm(0)  # Cancel the timeout
                     logger.error(f"Error during UNet forward pass: {e}")
                     logger.error(f"Latent input shape: {latent_model_input.shape}")
                     logger.error(f"Prompt embeds shape: {prompt_embeds.shape}")
