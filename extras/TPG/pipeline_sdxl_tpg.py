@@ -149,27 +149,27 @@ def make_tpg_block(block_class: Type[torch.nn.Module], do_cfg=True) -> Type[torc
 
                 return hidden_states
 
-        def shuffle_tokens(self, x):
-            """
-            Randomly shuffle the order of input tokens.
+            def shuffle_tokens(self, x):
+                """
+                Randomly shuffle the order of input tokens.
 
-            Args:
-                x (torch.Tensor): Input tensor with shape (batch_size, num_tokens, channels) (b, n, c)
+                Args:
+                    x (torch.Tensor): Input tensor with shape (batch_size, num_tokens, channels) (b, n, c)
 
-            Returns:
-                torch.Tensor: Shuffled tensor with the same shape (b, n, c)
-            """
-            try:
-                b, n, c = x.shape
-                # Generate a random permutation of indices for the token dimension
-                permutation = torch.randperm(n, device=x.device)
-                # Shuffle tokens across the token dimension using the same permutation for all batches
-                x_shuffled = x[:, permutation]
-                return x_shuffled
-            except Exception as e:
-                logger.error(f"Error in shuffle_tokens: {e}")
-                logger.error(f"Input tensor shape: {x.shape}")
-                raise
+                Returns:
+                    torch.Tensor: Shuffled tensor with the same shape (b, n, c)
+                """
+                try:
+                    b, n, c = x.shape
+                    # Generate a random permutation of indices for the token dimension
+                    permutation = torch.randperm(n, device=x.device)
+                    # Shuffle tokens across the token dimension using the same permutation for all batches
+                    x_shuffled = x[:, permutation]
+                    return x_shuffled
+                except Exception as e:
+                    logger.error(f"Error in shuffle_tokens: {e}")
+                    logger.error(f"Input tensor shape: {x.shape}")
+                    raise
 
     return ModifiedBasicTransformerBlock
 
