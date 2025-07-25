@@ -201,6 +201,7 @@ input[type='radio'] {
     background-color: var(--transparent-orange);
     border-radius: 8px;
     padding: 10px;
+    position: relative; /* Add this line */
 }
 
 /* Adding some animations to other elements */
@@ -259,8 +260,8 @@ input[type='radio'] {
 }
 
 .modalImageFullscreen img {
-    max-width: 90%;
-    max-height: 90%;
+    max-width: 90vw; /* Use viewport width units */
+    max-height: 90vh; /* Use viewport height units */
     object-fit: contain; /* Maintain aspect ratio */
     border-radius: 10px;
     box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
