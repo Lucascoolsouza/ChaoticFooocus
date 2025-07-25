@@ -222,12 +222,12 @@ onUiLoaded(async() => {
                 input.click();
                 if (!withoutValue) {
                     const maxValue =
-                        parseFloat(input.getAttribute("max")) || 100;
-                    const changeAmount = maxValue * (percentage / 100);
+                        Math.round(parseFloat(input.getAttribute("max"))) || 100;
+                    const changeAmount = Math.round(maxValue * (percentage / 100));
                     const newValue =
                         parseFloat(input.value) +
                         (deltaY > 0 ? -changeAmount : changeAmount);
-                    input.value = Math.min(Math.max(newValue, 0), maxValue);
+                    input.value = Math.round(Math.min(Math.max(newValue, 1), maxValue));
                     input.dispatchEvent(new Event("change"));
                 }
             }

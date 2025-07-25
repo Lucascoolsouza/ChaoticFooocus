@@ -71,9 +71,9 @@ input[type="range"] {
     -webkit-appearance: none;
     appearance: none;
     width: 100%;
-    height: 8px;
+    height: 12px; /* Increased height */
     background: var(--dark-matter-grey);
-    border-radius: 5px;
+    border-radius: 6px; /* Adjusted for new height */
     outline: none;
     transition: opacity 0.2s ease-in-out;
 }
@@ -81,8 +81,8 @@ input[type="range"] {
 input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 20px;
-    height: 20px;
+    width: 24px; /* Increased width */
+    height: 24px; /* Increased height */
     background: var(--supernova-orange);
     cursor: pointer;
     border-radius: 50%;
@@ -90,8 +90,8 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 input[type="range"]::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
+    width: 24px; /* Increased width */
+    height: 24px; /* Increased height */
     background: var(--supernova-orange);
     cursor: pointer;
     border-radius: 50%;
@@ -234,4 +234,34 @@ input[type='radio'] {
     .generate_button {
         width: 100%;
     }
+}
+
+/* Fix for positioning issues */
+#gradio_receiver_style_selections,
+.image_gallery,
+.final_gallery {
+    position: relative;
+}
+
+/* --- Modal Image Fullscreen --- */
+.modalImageFullscreen {
+    display: flex; /* Use flexbox for centering */
+    justify-content: center;
+    align-items: center;
+    position: fixed; /* Position it relative to the viewport */
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8); /* Dark semi-transparent background */
+    z-index: 1000; /* Ensure it's on top */
+    cursor: pointer; /* Indicate it can be clicked to close */
+}
+
+.modalImageFullscreen img {
+    max-width: 90%;
+    max-height: 90%;
+    object-fit: contain; /* Maintain aspect ratio */
+    border-radius: 10px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
 }
