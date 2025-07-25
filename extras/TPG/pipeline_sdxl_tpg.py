@@ -400,7 +400,12 @@ class StableDiffusionXLTPGPipeline(
             feature_extractor=feature_extractor,
         )
         self.register_to_config(force_zeros_for_empty_prompt=force_zeros_for_empty_prompt)
-        self.vae_scale_factor = 2 ** (len(self.vae.config.block_out_channels) - 1)
+        # Calculate VAE scale factor with fallback
+        if hasattr(self.vae.config, 'block_out_channels'):
+            self.vae_scale_factor = 2 ** (len(self.vae.config.block_out_channels) - 1)
+        else:
+            # Default scale factor for SDXL VAE
+            self.vae_scale_factor = 8
         self.image_processor = VaeImageProcessor(vae_scale_factor=self.vae_scale_factor)
 
         self.default_sample_size = self.unet.config.sample_size
