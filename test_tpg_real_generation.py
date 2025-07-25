@@ -166,8 +166,9 @@ def test_tpg_layer_application():
         modified_instance.shuffle_tokens = shuffle_tokens
         
         logger.info("Testing forward pass...")
-        test_hidden_states = torch.randn(2, 77, 1024)
-        test_encoder_hidden_states = torch.randn(2, 77, 1024)
+        # For CFG + TPG, we need 3 chunks: uncond, cond, tpg
+        test_hidden_states = torch.randn(3, 77, 1024)
+        test_encoder_hidden_states = torch.randn(3, 77, 1024)
         
         # This is where freezing might occur
         with torch.no_grad():
