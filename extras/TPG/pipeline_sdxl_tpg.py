@@ -408,7 +408,12 @@ class StableDiffusionXLTPGPipeline(
             self.vae_scale_factor = 8
         self.image_processor = VaeImageProcessor(vae_scale_factor=self.vae_scale_factor)
 
-        self.default_sample_size = self.unet.config.sample_size
+        # Set default sample size with fallback
+        if hasattr(self.unet.config, 'sample_size'):
+            self.default_sample_size = self.unet.config.sample_size
+        else:
+            # Default sample size for SDXL
+            self.default_sample_size = 128
 
         add_watermarker = add_watermarker if add_watermarker is not None else is_invisible_watermark_available()
 
