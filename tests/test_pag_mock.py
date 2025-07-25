@@ -114,7 +114,16 @@ class TestStableDiffusionXLPAGPipeline(unittest.TestCase):
         print(f"[MOCK DEBUG] disable_pag was called: {self.pipeline.disable_pag.called}")
 
     def test_pag_attention_processor_perturbation(self):
-        original_processor = MagicMock(return_value=torch.randn(1, 10, 10)) # Mock output tensor
+        # Mock the original_processor to simulate its behavior
+        original_processor = MagicMock()
+        def mock_original_processor_call(attn_obj, hidden_states, encoder_hidden_states=None, attention_mask=None, temb=None, scale=1.0):
+            # Simulate the internal call to get_attention_scores
+            # The actual arguments to get_attention_scores depend on the internal implementation of the original processor
+            # For simplicity, let's assume it calls with hidden_states as query and key
+            # This might need adjustment based on the actual AttentionProcessor implementation
+            _ = attn_obj.get_attention_scores(hidden_states, hidden_states, attention_mask)
+            return torch.randn(hidden_states.shape[0], hidden_states.shape[1], hidden_states.shape[1]) # Return a dummy tensor
+        original_processor.side_effect = mock_original_processor_call
 
         pag_processor = PAGAttentionProcessor(original_processor, perturbation_scale=0.5)
 
