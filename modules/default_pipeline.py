@@ -849,11 +849,15 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         output = pipe(**pipeline_args)
         
         print(f"Using {'TPG' if tpg_enabled else ('PAG' if pag_enabled else 'NAG')} pipeline for generation")
+        print(f"[DEBUG] Pipeline output type: {type(output)}")
+        print(f"[DEBUG] Pipeline output content (first 100 chars): {str(output)[:100]}")
         
         # ---------- after pipeline call ----------
         # Pipeline returns a tuple with latents when return_dict=False
         if isinstance(output, tuple):
             latents = output[0]  # Extract latents from tuple
+            print(f"[DEBUG] Extracted latents type: {type(latents)}")
+            print(f"[DEBUG] Extracted latents shape: {latents.shape}")
             latent_dict = {'samples': latents}
             imgs = core.pytorch_to_numpy(core.decode_vae(target_vae, latent_dict))
         elif isinstance(output, Image.Image):
@@ -868,6 +872,9 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             # Use tiled VAE decoding for better memory efficiency
             imgs = core.pytorch_to_numpy(core.decode_vae(target_vae, latent_dict, tiled=True))
         
+        print(f"[DEBUG] imgs after processing pipeline output: {type(imgs)}")
+        if len(imgs) > 0:
+            print(f"[DEBUG] First image in imgs: {type(imgs[0])}, shape: {imgs[0].shape}")
         print("Final deliverable:", type(imgs[0]), getattr(imgs[0], 'size', '-'))
         
         # Skip the regular ksampler since we used NAG/TPG/PAG pipeline
