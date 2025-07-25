@@ -1398,44 +1398,57 @@ class StableDiffusionXLTPGPipeline(
                 # Continue without TPG
                     
         # change attention layer in UNet if use tpg
-        if self.do_token_perturbation_guidance:
+        if self.do_token_perturbation_guidance and self.tpg_scale > 0:
             logger.debug("Starting TPG layer modification")
             drop_layers = self.tpg_applied_layers_index
-            # Capture the current guidance settings
-            current_do_cfg = self.do_classifier_free_guidance
-            current_do_tpg = self.do_token_perturbation_guidance
+            
+            # Check if we have any layers to modify
+            total_layers = len(down_layers) + len(mid_layers) + len(up_layers)
+            if total_layers == 0:
+                logger.warning("No transformer layers found for TPG modification. Disabling TPG.")
+                self._tpg_scale = 0.0
+            else:
+                logger.debug(f"Modifying {len(drop_layers)} layers for TPG")
+                
+                for drop_layer in drop_layers:
+                    try:
+                        if drop_layer[0] == "d":
+                            layer_idx = int(drop_layer[1:])
+                            if layer_idx < len(down_layers):
+                                # Store original forward for later restoration
+                                if not hasattr(down_layers[layer_idx], '_original_forward'):
+                                    down_layers[layer_idx]._original_forward = down_layers[layer_idx].forward
+                                # Replace the forward method directly
+                                modified_block = make_tpg_block(down_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)()
+                                down_layers[layer_idx].forward = modified_block.forward
+                            else:
+                                logger.warning(f"Skipping invalid down layer index: {layer_idx} (available: 0-{len(down_layers)-1})")
 
-            for drop_layer in drop_layers:
-                try:
-                    if drop_layer[0] == "d":
-                        # Replace the forward method directly
-                        original_forward = down_layers[int(drop_layer[1:])].forward
-                        modified_block = make_tpg_block(down_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
-                        down_layers[int(drop_layer[1:])].forward = modified_block.forward
-                        # Store original forward for later restoration
-                        if not hasattr(down_layers[int(drop_layer[1:])], '_original_forward'):
-                            down_layers[int(drop_layer[1:])]._original_forward = original_forward
+                        elif drop_layer[0] == "m":
+                            layer_idx = int(drop_layer[1:])
+                            if layer_idx < len(mid_layers):
+                                if not hasattr(mid_layers[layer_idx], '_original_forward'):
+                                    mid_layers[layer_idx]._original_forward = mid_layers[layer_idx].forward
+                                modified_block = make_tpg_block(mid_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)()
+                                mid_layers[layer_idx].forward = modified_block.forward
+                            else:
+                                logger.warning(f"Skipping invalid mid layer index: {layer_idx} (available: 0-{len(mid_layers)-1})")
 
-                    elif drop_layer[0] == "m":
-                        original_forward = mid_layers[int(drop_layer[1:])].forward
-                        modified_block = make_tpg_block(mid_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
-                        mid_layers[int(drop_layer[1:])].forward = modified_block.forward
-                        if not hasattr(mid_layers[int(drop_layer[1:])], '_original_forward'):
-                            mid_layers[int(drop_layer[1:])]._original_forward = original_forward
+                        elif drop_layer[0] == "u":
+                            layer_idx = int(drop_layer[1:])
+                            if layer_idx < len(up_layers):
+                                if not hasattr(up_layers[layer_idx], '_original_forward'):
+                                    up_layers[layer_idx]._original_forward = up_layers[layer_idx].forward
+                                modified_block = make_tpg_block(up_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)()
+                                up_layers[layer_idx].forward = modified_block.forward
+                            else:
+                                logger.warning(f"Skipping invalid up layer index: {layer_idx} (available: 0-{len(up_layers)-1})")
 
-                    elif drop_layer[0] == "u":
-                        original_forward = up_layers[int(drop_layer[1:])].forward
-                        modified_block = make_tpg_block(up_layers[int(drop_layer[1:])].__class__, do_cfg=self.do_classifier_free_guidance)()
-                        up_layers[int(drop_layer[1:])].forward = modified_block.forward
-                        if not hasattr(up_layers[int(drop_layer[1:])], '_original_forward'):
-                            up_layers[int(drop_layer[1:])]._original_forward = original_forward
-
-                    else:
-                        raise ValueError(f"Invalid layer type: {drop_layer[0]}")
-                except IndexError:
-                    raise ValueError(
-                        f"Invalid layer index: {drop_layer}. Available layers: {len(down_layers)} down layers, {len(mid_layers)} mid layers, {len(up_layers)} up layers."
-                    )
+                        else:
+                            logger.warning(f"Invalid layer type: {drop_layer[0]}")
+                    except (IndexError, ValueError) as e:
+                        logger.warning(f"Error processing layer {drop_layer}: {e}")
+                        continue
         logger.debug("TPG layer lists and attention layer changes (if TPG active) processed.")
 
         self._num_timesteps = len(timesteps)
