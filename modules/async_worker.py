@@ -354,6 +354,7 @@ def worker():
                         pipeline.loaded_ControlNets[cn_path], cn_img, cn_weight, 0, cn_stop)
 
         # Use the pipeline.process_diffusion which now supports NAG and Detail Daemon
+        print(f"[PROCESS_TASK DEBUG] pag_enabled: {async_task.pag_enabled}, tpg_enabled: {async_task.tpg_enabled}, nag_scale: {async_task.nag_scale}")
         imgs = pipeline.process_diffusion(
             positive_cond=positive_cond,
             negative_cond=negative_cond,
