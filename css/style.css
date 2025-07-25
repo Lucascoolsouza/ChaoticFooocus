@@ -204,6 +204,18 @@ input[type='radio'] {
     position: relative; /* Add this line */
 }
 
+form.svelte-sfqy0y {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1000;
+    background-color: var(--black-hole-black);
+    border: 1px solid var(--dark-matter-grey);
+    border-radius: 8px;
+    padding: 10px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+}
+
 /* Adding some animations to other elements */
 .gradio-container,
 .gr-panel,
@@ -260,9 +272,11 @@ input[type='radio'] {
 }
 
 .modalImageFullscreen img {
-    max-width: 90vw; /* Use viewport width units */
-    max-height: 90vh; /* Use viewport height units */
-    object-fit: contain; /* Maintain aspect ratio */
+    width: auto;
+    height: auto;
+    max-width: 90vw;
+    max-height: 90vh;
+    object-fit: contain;
     border-radius: 10px;
     box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
 }
