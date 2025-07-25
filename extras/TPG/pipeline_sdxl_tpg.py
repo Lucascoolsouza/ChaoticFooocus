@@ -718,6 +718,16 @@ class StableDiffusionXLTPGPipeline(
                     f"Model expects an added time embedding vector of length {expected_add_embed_dim}, but a vector of {passed_add_embed_dim} was created. The model has an incorrect config. Please check `unet.config.time_embedding_type` and `text_encoder_2.config.projection_dim`."
                 )
         else:
+            # User requested to add this block. This attempts to create a dummy add_embedding
+            # if it's missing. The dimensions (2816, 1280) are specific to SDXL's time embedding
+            # and should be verified against the actual model's configuration if issues arise.
+            if not hasattr(self.unet.model, 'add_embedding'):
+                class AddEmbedding:
+                    def __init__(self):
+                        self.linear_1 = torch.nn.Linear(2816, 1280)
+                self.unet.model.add_embedding = AddEmbedding()
+                logger.warning("TPG: Created a dummy 'add_embedding' for UNet model as it was missing. Verify dimensions if issues occur.")
+
             logger.warning("The UNet model does not have an 'add_embedding' attribute or it is None. Skipping time embedding check.")
 
         add_time_ids = torch.tensor([add_time_ids], dtype=dtype)
