@@ -1054,6 +1054,45 @@ class StableDiffusionXLTPGPipeline(
             return ["d6", "d7", "d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15", "d16", "d17", "d18", "d19", "d20", "d21", "d22", "d23"]
         return self._tpg_applied_layers_index
 
+    def _create_modified_layer(self, original_layer, layer_name):
+        """Helper method to create a modified TPG layer with proper device handling"""
+        logger.info(f"    Creating modified layer for {layer_name}...")
+        sys.stdout.flush()
+        
+        # Store original device and dtype
+        original_device = next(original_layer.parameters()).device
+        original_dtype = next(original_layer.parameters()).dtype
+        
+        # Create modified class
+        modified_class = make_tpg_block(original_layer.__class__, do_cfg=self.do_classifier_free_guidance)
+        
+        logger.info(f"    Initializing modified instance...")
+        sys.stdout.flush()
+        
+        # Try proper initialization first
+        try:
+            modified_layer = modified_class()
+            modified_layer.load_state_dict(original_layer.state_dict())
+            logger.info(f"    ✓ Used proper initialization for {layer_name}")
+        except Exception as e:
+            logger.warning(f"    Proper initialization failed for {layer_name}, using fallback: {e}")
+            # Fallback to __new__ approach
+            modified_layer = modified_class.__new__(modified_class)
+            modified_layer.__dict__.update(original_layer.__dict__)
+        
+        # Add shuffle_tokens method
+        modified_layer.shuffle_tokens = self._create_shuffle_tokens_method()
+        
+        # Ensure correct device placement
+        logger.info(f"    Moving {layer_name} to device {original_device}...")
+        sys.stdout.flush()
+        modified_layer.to(device=original_device, dtype=original_dtype)
+        
+        logger.info(f"    ✓ {layer_name} modification completed")
+        sys.stdout.flush()
+        
+        return modified_layer
+
     def _create_shuffle_tokens_method(self):
         """Create a shuffle_tokens method that can be bound to transformer blocks"""
         def shuffle_tokens(x):
@@ -1601,45 +1640,14 @@ class StableDiffusionXLTPGPipeline(
                             sys.stdout.flush()
                             layer_idx = int(drop_layer[1:])
                             if layer_idx < len(down_layers):
-                                logger.info(f"    Storing original layer...")
-                                sys.stdout.flush()
                                 # Store original layer for later restoration
                                 if not hasattr(down_layers[layer_idx], '_original_layer'):
                                     down_layers[layer_idx]._original_layer = down_layers[layer_idx]
                                 
-                                logger.info(f"    Creating modified class...")
-                                sys.stdout.flush()
-                                # Create modified layer class and replace the layer
-                                modified_class = make_tpg_block(down_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
+                                # Create modified layer using helper method
+                                modified_layer = self._create_modified_layer(down_layers[layer_idx], f"down_layer_{layer_idx}")
                                 
-                                logger.info(f"    Creating modified instance...")
-                                sys.stdout.flush()
-                                # Store original device before modification
-                                original_device = next(down_layers[layer_idx].parameters()).device
-                                
-                                # Create new instance with same parameters
-                                modified_layer = modified_class.__new__(modified_class)
-                                
-                                logger.info(f"    Updating instance dict...")
-                                sys.stdout.flush()
-                                modified_layer.__dict__.update(down_layers[layer_idx].__dict__)
-                                
-                                logger.info(f"    Adding shuffle_tokens method...")
-                                sys.stdout.flush()
-                                modified_layer.shuffle_tokens = self._create_shuffle_tokens_method()
-                                
-                                logger.info(f"    Ensuring correct device placement...")
-                                sys.stdout.flush()
-                                # Ensure the modified layer and all its submodules are on the same device as the original
-                                modified_layer.to(original_device)
-                                # Also ensure all parameters and buffers are on the correct device
-                                for param in modified_layer.parameters():
-                                    param.data = param.data.to(original_device)
-                                for buffer in modified_layer.buffers():
-                                    buffer.data = buffer.data.to(original_device)
-                                
-                                logger.info(f"    Replacing layer...")
-                                sys.stdout.flush()
+                                # Replace the layer
                                 down_layers[layer_idx] = modified_layer
                                 
                                 logger.info(f"    ✓ Down layer {drop_layer} modified successfully")
@@ -1693,8 +1701,13 @@ class StableDiffusionXLTPGPipeline(
                                 modified_layer.__dict__.update(up_layers[layer_idx].__dict__)
                                 modified_layer.shuffle_tokens = self._create_shuffle_tokens_method()
                                 
-                                # Ensure the modified layer is on the same device as the original
+                                # Ensure the modified layer and all its submodules are on the same device as the original
                                 modified_layer.to(original_device)
+                                # Also ensure all parameters and buffers are on the correct device
+                                for param in modified_layer.parameters():
+                                    param.data = param.data.to(original_device)
+                                for buffer in modified_layer.buffers():
+                                    buffer.data = buffer.data.to(original_device)
                                 
                                 up_layers[layer_idx] = modified_layer
                             else:
