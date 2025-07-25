@@ -384,31 +384,16 @@ div:has(> #positive_prompt) {
   height: 100%;
 }
 
-.contain .tabs .tabitem.style_selections_tab .style_selections .wrap[data-testid="checkbox-group"] {
+.style_selections .wrap {
+    position: relative; /* Add this line */
+}
   position: absolute; /* remove this to disable scrolling within the checkbox-group */
   overflow: auto;
   padding-right: 2px;
   max-height: 100%;
 }
 
-.contain .tabs .tabitem.style_selections_tab .style_selections .wrap {
-    background-color: var(--transparent-orange);
-    border-radius: 8px;
-    padding: 10px;
-    position: relative; /* Add this line */
-}
-
-form.svelte-sfqy0y {
-    position: absolute;
-    top: 0;
-    left: 0;
-    z-index: 1000;
-    background-color: var(--black-hole-black);
-    border: 1px solid var(--dark-matter-grey);
-    border-radius: 8px;
-    padding: 10px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
-}
+.contain .tabs .tabitem.style_selections_tab .style_selections .wrap[data-testid="checkbox-group"] label {
   /* max-width: calc(35% - 15px) !important; */ /* add this to enable 3 columns layout */
   flex: calc(50% - 5px) !important;
 }
