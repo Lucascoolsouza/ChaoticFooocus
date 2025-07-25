@@ -387,6 +387,8 @@ div:has(> #positive_prompt) {
 .style_selections .wrap {
     position: relative; /* Add this line */
 }
+
+.contain .tabs .tabitem.style_selections_tab .style_selections .wrap[data-testid="checkbox-group"] {
   position: absolute; /* remove this to disable scrolling within the checkbox-group */
   overflow: auto;
   padding-right: 2px;
@@ -419,4 +421,52 @@ div:has(> #positive_prompt) {
 
 #inpaint_brush_color input[type=color]{
   background: none;
+}
+
+/* Custom fixes */
+.style_selections .wrap {
+    position: relative;
+}
+
+form.svelte-sfqy0y {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1000;
+    background-color: #f3f3f3;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 10px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+}
+
+input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 12px;
+    background: #f3f3f3;
+    border-radius: 6px;
+    outline: none;
+    transition: opacity 0.2s ease-in-out;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 24px;
+    height: 24px;
+    background: #3498db;
+    cursor: pointer;
+    border-radius: 50%;
+    border: 2px solid #f3f3f3;
+}
+
+input[type="range"]::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+    background: #3498db;
+    cursor: pointer;
+    border-radius: 50%;
+    border: 2px solid #f3f3f3;
 }
