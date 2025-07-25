@@ -1370,9 +1370,6 @@ class StableDiffusionXLTPGPipeline(
                 if isinstance(module, BasicTransformerBlock):
                     all_transformer_blocks.append((name, module))
                     logger.debug(f"Found BasicTransformerBlock: {name}")
-            
-            if module_count >= 20:
-                logger.debug(f"  ... and {module_count - 20} more modules")
                     
                     # More flexible layer type detection
                     name_parts = name.split(".")
@@ -1397,6 +1394,9 @@ class StableDiffusionXLTPGPipeline(
                         up_layers.append(module)
                     else:
                         logger.warning(f"Unknown layer type for {name}: {layer_type}")
+            
+            if module_count >= 20:
+                logger.debug(f"  ... and {module_count - 20} more modules")
             
             logger.debug(f"Found {len(all_transformer_blocks)} total BasicTransformerBlock modules")
             logger.debug(f"Categorized as: {len(down_layers)} down, {len(mid_layers)} mid, {len(up_layers)} up")
