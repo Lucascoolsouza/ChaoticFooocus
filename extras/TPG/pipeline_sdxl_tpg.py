@@ -1591,11 +1591,16 @@ class StableDiffusionXLTPGPipeline(
                         elif drop_layer[0] == "m":
                             layer_idx = int(drop_layer[1:])
                             if layer_idx < len(mid_layers):
-                                if not hasattr(mid_layers[layer_idx], '_original_forward'):
-                                    mid_layers[layer_idx]._original_forward = mid_layers[layer_idx].forward
-                                mid_layers[layer_idx].shuffle_tokens = self._create_shuffle_tokens_method()
-                                modified_forward = make_tpg_block(mid_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
-                                mid_layers[layer_idx].forward = modified_forward.__get__(mid_layers[layer_idx], mid_layers[layer_idx].__class__)
+                                # Store original layer for later restoration
+                                if not hasattr(mid_layers[layer_idx], '_original_layer'):
+                                    mid_layers[layer_idx]._original_layer = mid_layers[layer_idx]
+                                # Create modified layer class and replace the layer
+                                modified_class = make_tpg_block(mid_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
+                                # Create new instance with same parameters
+                                modified_layer = modified_class.__new__(modified_class)
+                                modified_layer.__dict__.update(mid_layers[layer_idx].__dict__)
+                                modified_layer.shuffle_tokens = self._create_shuffle_tokens_method()
+                                mid_layers[layer_idx] = modified_layer
                             else:
                                 logger.warning(f"Skipping invalid mid layer index: {layer_idx} (available: 0-{len(mid_layers)-1})")
 
