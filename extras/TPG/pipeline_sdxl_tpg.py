@@ -1576,8 +1576,12 @@ class StableDiffusionXLTPGPipeline(
                     
         # change attention layer in UNet if use tpg
         if self.do_token_perturbation_guidance and self.tpg_scale > 0:
-            logger.debug("Starting TPG layer modification")
+            logger.info("=== STARTING TPG LAYER MODIFICATION ===")
+            import sys
+            sys.stdout.flush()
             drop_layers = self.tpg_applied_layers_index
+            logger.info(f"TPG will modify {len(drop_layers)} layers: {drop_layers}")
+            sys.stdout.flush()
             
             # Check if we have any layers to modify
             total_layers = len(down_layers) + len(mid_layers) + len(up_layers)
@@ -1585,23 +1589,48 @@ class StableDiffusionXLTPGPipeline(
                 logger.warning("No transformer layers found for TPG modification. Disabling TPG.")
                 self._tpg_scale = 0.0
             else:
-                logger.debug(f"Modifying {len(drop_layers)} layers for TPG")
+                logger.info(f"Modifying {len(drop_layers)} layers for TPG")
+                sys.stdout.flush()
                 
-                for drop_layer in drop_layers:
+                for i, drop_layer in enumerate(drop_layers):
+                    logger.info(f"Processing layer {i+1}/{len(drop_layers)}: {drop_layer}")
+                    sys.stdout.flush()
                     try:
                         if drop_layer[0] == "d":
+                            logger.info(f"  Modifying down layer: {drop_layer}")
+                            sys.stdout.flush()
                             layer_idx = int(drop_layer[1:])
                             if layer_idx < len(down_layers):
+                                logger.info(f"    Storing original layer...")
+                                sys.stdout.flush()
                                 # Store original layer for later restoration
                                 if not hasattr(down_layers[layer_idx], '_original_layer'):
                                     down_layers[layer_idx]._original_layer = down_layers[layer_idx]
+                                
+                                logger.info(f"    Creating modified class...")
+                                sys.stdout.flush()
                                 # Create modified layer class and replace the layer
                                 modified_class = make_tpg_block(down_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
+                                
+                                logger.info(f"    Creating modified instance...")
+                                sys.stdout.flush()
                                 # Create new instance with same parameters
                                 modified_layer = modified_class.__new__(modified_class)
+                                
+                                logger.info(f"    Updating instance dict...")
+                                sys.stdout.flush()
                                 modified_layer.__dict__.update(down_layers[layer_idx].__dict__)
+                                
+                                logger.info(f"    Adding shuffle_tokens method...")
+                                sys.stdout.flush()
                                 modified_layer.shuffle_tokens = self._create_shuffle_tokens_method()
+                                
+                                logger.info(f"    Replacing layer...")
+                                sys.stdout.flush()
                                 down_layers[layer_idx] = modified_layer
+                                
+                                logger.info(f"    ✓ Down layer {drop_layer} modified successfully")
+                                sys.stdout.flush()
                             else:
                                 logger.warning(f"Skipping invalid down layer index: {layer_idx} (available: 0-{len(down_layers)-1})")
 
