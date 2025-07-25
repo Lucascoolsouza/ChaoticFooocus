@@ -29,17 +29,14 @@ def debug_unet_structure():
         import modules.default_pipeline as pipeline
         from diffusers.models.attention import BasicTransformerBlock
         
-        logger.info("Loading UNet model...")
+        logger.info("Accessing already loaded UNet model...")
         
-        # Initialize the pipeline to load models
-        # This should load the default models
-        pipeline.refresh_everything(
-            refiner_model_name='None',
-            base_model_name='sd_xl_base_1.0_0.9vae.safetensors',  # Adjust as needed
-            loras=[]
-        )
-        
+        # The models should already be loaded by default_pipeline
         unet = pipeline.final_unet
+        
+        if unet is None:
+            logger.error("UNet is None - models not loaded properly")
+            return
         
         logger.info(f"UNet type: {type(unet)}")
         logger.info(f"UNet attributes: {dir(unet)}")
@@ -147,19 +144,17 @@ def test_basic_pipeline():
         # Import your pipeline
         import modules.default_pipeline as pipeline
         
-        # Test basic pipeline initialization
-        logger.info("Testing pipeline initialization...")
-        
-        # This should initialize the models
-        pipeline.refresh_everything(
-            refiner_model_name='None',
-            base_model_name='sd_xl_base_1.0_0.9vae.safetensors',
-            loras=[]
-        )
+        # Test basic pipeline access
+        logger.info("Testing pipeline access...")
         
         logger.info(f"Pipeline final_unet: {type(pipeline.final_unet)}")
         logger.info(f"Pipeline final_vae: {type(pipeline.final_vae)}")
         logger.info(f"Pipeline final_clip: {type(pipeline.final_clip)}")
+        
+        if pipeline.final_unet is not None:
+            logger.info("✓ UNet is loaded and accessible")
+        else:
+            logger.warning("⚠️  UNet is None")
         
         logger.info("Basic pipeline test completed successfully")
         
