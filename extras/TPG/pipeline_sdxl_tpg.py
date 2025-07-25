@@ -1460,15 +1460,18 @@ class StableDiffusionXLTPGPipeline(
 
                 # expand the latents if we are doing classifier free guidance
                 
-                # cfg
-                if self.do_classifier_free_guidance:
+                # Determine latent input based on guidance types
+                if self.do_classifier_free_guidance and not self.do_token_perturbation_guidance:
+                    # CFG only
                     latent_model_input = torch.cat([latents] * 2)
-                # TPG guidance temporarily disabled for debugging
                 elif not self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
+                    # TPG only
                     latent_model_input = torch.cat([latents] * 2)
                 elif self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
+                    # Both CFG and TPG
                     latent_model_input = torch.cat([latents] * 3)
                 else:
+                    # No guidance
                     latent_model_input = latents
 
                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
