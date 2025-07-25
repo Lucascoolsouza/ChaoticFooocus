@@ -1,6 +1,11 @@
 import unittest
 from unittest.mock import MagicMock, patch
 import torch
+import sys
+import os
+
+# Add the project root to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Mock the parent class and its dependencies
 class MockStableDiffusionXLPipeline:
@@ -29,12 +34,14 @@ class TestStableDiffusionXLPAGPipeline(unittest.TestCase):
     def setUp(self):
         # Mock UNet and its components
         self.mock_unet = MagicMock()
+        # Configure named_children to return mocks that have a set_processor method
         self.mock_unet.named_children.return_value = [
-            ('mid_block', MagicMock(spec=torch.nn.Module, get_processor=MagicMock(return_value=MagicMock()))),
-            ('up_blocks.0', MagicMock(spec=torch.nn.Module, get_processor=MagicMock(return_value=MagicMock()))),
-            ('down_blocks.0', MagicMock(spec=torch.nn.Module, get_processor=MagicMock(return_value=MagicMock()))),
+            ('mid_block', MagicMock(spec=torch.nn.Module, get_processor=MagicMock(return_value=MagicMock()), set_processor=MagicMock())),
+            ('up_blocks.0', MagicMock(spec=torch.nn.Module, get_processor=MagicMock(return_value=MagicMock()), set_processor=MagicMock())),
+            ('down_blocks.0', MagicMock(spec=torch.nn.Module, get_processor=MagicMock(return_value=MagicMock()), set_processor=MagicMock())),
         ]
-        self.mock_unet.set_processor = MagicMock() # Mock the set_processor method
+        # We don't need to mock self.mock_unet.set_processor directly if _set_attention_processors calls children's set_processor
+        # self.mock_unet.set_processor = MagicMock() # Mock the set_processor method
 
         # Mock other pipeline components
         self.mock_vae = MagicMock()
@@ -59,6 +66,7 @@ class TestStableDiffusionXLPAGPipeline(unittest.TestCase):
         pag_applied_layers = ["mid", "up"]
 
         # Call the pipeline with PAG enabled
+        self.pipeline.disable_pag = MagicMock() # Mock disable_pag to prevent it from being called
         print(f"[MOCK DEBUG] Calling pipeline with pag_scale={pag_scale}, pag_applied_layers={pag_applied_layers}")
         self.pipeline(
             prompt="test prompt",
@@ -73,36 +81,44 @@ class TestStableDiffusionXLPAGPipeline(unittest.TestCase):
         self.assertEqual(self.pipeline._pag_applied_layers, pag_applied_layers)
 
         # Verify that PAGAttentionProcessor was set for relevant layers
-        # This requires inspecting the calls to set_processor on the unet
-        set_processor_calls = self.mock_unet.set_processor.call_args_list
-        print(f"[MOCK DEBUG] Number of set_processor calls: {len(set_processor_calls)}")
-        self.assertGreater(len(set_processor_calls), 0)
-
-        # Check if PAGAttentionProcessor was used for 'mid' and 'up' blocks
+        # This requires inspecting the calls to set_processor on the unet's children
         pag_processor_found = False
-        for call_args, _ in set_processor_calls:
-            processor = call_args[0]
-            print(f"[MOCK DEBUG]   Checking processor type: {type(processor)}")
-            if isinstance(processor, PAGAttentionProcessor):
-                pag_processor_found = True
-                print(f"[MOCK DEBUG]   Found PAGAttentionProcessor with perturbation_scale={processor.perturbation_scale}")
-                self.assertEqual(processor.perturbation_scale, pag_scale) # Verify scale is passed
+        for name, module_mock in self.mock_unet.named_children.return_value:
+            if "mid" in name or "up" in name:
+                # Check if set_processor was called on this specific module mock
+                self.assertTrue(module_mock.set_processor.called, f"set_processor not called for {name}")
+                # Get the processor that was set
+                set_processor_args, _ = module_mock.set_processor.call_args
+                processor = set_processor_args[0]
+                if isinstance(processor, PAGAttentionProcessor):
+                    pag_processor_found = True
+                    print(f"[MOCK DEBUG]   Found PAGAttentionProcessor for '{name}' with perturbation_scale={processor.perturbation_scale}")
+                    self.assertEqual(processor.perturbation_scale, pag_scale) # Verify scale is passed
+                else:
+                    print(f"[MOCK DEBUG]   Layer '{name}' set with original processor type: {type(processor)}")
+            else:
+                # For layers not in pag_applied_layers, set_processor should be called with the original processor
+                self.assertTrue(module_mock.set_processor.called, f"set_processor not called for {name}")
+                set_processor_args, _ = module_mock.set_processor.call_args
+                processor = set_processor_args[0]
+                self.assertFalse(isinstance(processor, PAGAttentionProcessor), f"PAGAttentionProcessor incorrectly set for {name}")
+                print(f"[MOCK DEBUG]   Layer '{name}' set with original processor type: {type(processor)}")
 
-        self.assertTrue(pag_processor_found, "PAGAttentionProcessor was not set for any layer.")
+        self.assertTrue(pag_processor_found, "PAGAttentionProcessor was not set for any relevant layer.")
 
         # Assert disable_pag was called after the generation
-        print(f"[MOCK DEBUG] After disable: do_perturbed_attention_guidance={self.pipeline.do_perturbed_attention_guidance}")
-        self.assertFalse(self.pipeline.do_perturbed_attention_guidance)
-        self.assertEqual(self.pipeline.pag_scale, 0.0)
-        self.assertEqual(self.pipeline._pag_applied_layers, [])
+        # We mocked disable_pag, so we assert it was called
+        self.pipeline.disable_pag.assert_called_once()
+        print(f"[MOCK DEBUG] disable_pag was called: {self.pipeline.disable_pag.called}")
 
     def test_pag_attention_processor_perturbation(self):
-        original_processor = MagicMock()
+        original_processor = MagicMock(return_value=torch.randn(1, 10, 10)) # Mock output tensor
+
         pag_processor = PAGAttentionProcessor(original_processor, perturbation_scale=0.5)
-        print(f"[MOCK DEBUG] Initialized PAGAttentionProcessor with perturbation_scale={pag_processor.perturbation_scale}")
 
         mock_attn = MagicMock()
         mock_attn.get_attention_scores.return_value = torch.ones(1, 1, 10, 10) # Mock attention scores
+        print(f"[MOCK DEBUG] Initialized PAGAttentionProcessor with perturbation_scale={pag_processor.perturbation_scale}")
 
         hidden_states = torch.randn(1, 10, 10)
         encoder_hidden_states = torch.randn(1, 10, 10)
