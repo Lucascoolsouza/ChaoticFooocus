@@ -138,7 +138,7 @@ def test_tpg_layer_application():
                 # Simulate ldm_patched transformer block
                 return x + torch.randn_like(x) * 0.01
         
-        # Make it look like an ldm_patched block
+        # Make it look like an ldm_patched block to trigger the correct path
         RealisticTransformerBlock.__module__ = 'ldm_patched.modules.attention'
         RealisticTransformerBlock.__name__ = 'BasicTransformerBlock'
         
@@ -167,14 +167,15 @@ def test_tpg_layer_application():
         
         logger.info("Testing forward pass...")
         # For CFG + TPG, we need 3 chunks: uncond, cond, tpg
-        test_hidden_states = torch.randn(3, 77, 1024)
-        test_encoder_hidden_states = torch.randn(3, 77, 1024)
+        test_input = torch.randn(3, 77, 1024)
+        test_context = torch.randn(3, 77, 1024)
         
-        # This is where freezing might occur
+        # This is where freezing might occur - use ldm_patched signature
         with torch.no_grad():
             output = modified_instance.forward(
-                hidden_states=test_hidden_states,
-                encoder_hidden_states=test_encoder_hidden_states
+                x=test_input,
+                context=test_context,
+                transformer_options={}
             )
         
         logger.info(f"✓ Forward pass successful, output shape: {output.shape}")

@@ -186,8 +186,15 @@ def make_tpg_block(block_class: Type[torch.nn.Module], do_cfg=True) -> Type[torc
                 # Reconstruct encoder_hidden_states for the combined batch
                 encoder_hidden_states = torch.cat([encoder_hidden_states_org, encoder_hidden_states_tpg], dim=0)
                 
-                hidden_states = super().forward(hidden_states, attention_mask, encoder_hidden_states,
-                                 encoder_attention_mask, timestep, cross_attention_kwargs, class_labels)
+                hidden_states = super().forward(
+                    hidden_states=hidden_states,
+                    attention_mask=attention_mask,
+                    encoder_hidden_states=encoder_hidden_states,
+                    encoder_attention_mask=encoder_attention_mask,
+                    timestep=timestep,
+                    cross_attention_kwargs=cross_attention_kwargs,
+                    class_labels=class_labels
+                )
 
                 return hidden_states
 
