@@ -1538,14 +1538,304 @@ def sample_tcd(model, x, sigmas, extra_args=None, callback=None, disable=None, n
     return x
 
 
+@torch.no_grad()
+def sample_euler_token_shuffle(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1., shuffle_strength=1.0):
+    """Euler sampler with token shuffling at each step.
+    
+    This sampler shuffles the spatial positions (tokens) of the latent tensor at each
+    denoising step, creating more diverse and chaotic generation patterns.
+    
+    Args:
+        shuffle_strength: Controls how much shuffling to apply (0.0 = no shuffle, 1.0 = full shuffle)
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    # Store original spatial dimensions
+    batch_size, channels, height, width = x.shape
+    total_tokens = height * width
+    
+    print(f"Token shuffle sampler active - shuffling {total_tokens} tokens each step")
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        # Apply churn noise if specified
+        gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
+        sigma_hat = sigmas[i] * (gamma + 1)
+        if gamma > 0:
+            eps = torch.randn_like(x) * s_noise
+            x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
+        
+        # Shuffle tokens (spatial positions) before denoising
+        if shuffle_strength > 0.0:
+            # Flatten spatial dimensions
+            x_flat = x.view(batch_size, channels, total_tokens)  # [B, C, H*W]
+            
+            # Create shuffling indices for each batch item
+            shuffled_x = torch.zeros_like(x_flat)
+            for b in range(batch_size):
+                # Generate random permutation indices
+                perm_indices = torch.randperm(total_tokens, device=x.device)
+                
+                # Apply partial shuffling based on shuffle_strength
+                if shuffle_strength < 1.0:
+                    # Interpolate between original and shuffled indices
+                    num_shuffle = int(total_tokens * shuffle_strength)
+                    original_indices = torch.arange(total_tokens, device=x.device)
+                    
+                    # Only shuffle a portion of the tokens
+                    shuffle_mask = torch.zeros(total_tokens, dtype=torch.bool, device=x.device)
+                    shuffle_positions = torch.randperm(total_tokens, device=x.device)[:num_shuffle]
+                    shuffle_mask[shuffle_positions] = True
+                    
+                    final_indices = torch.where(shuffle_mask, perm_indices, original_indices)
+                else:
+                    final_indices = perm_indices
+                
+                # Apply shuffling
+                shuffled_x[b] = x_flat[b, :, final_indices]
+            
+            # Reshape back to spatial dimensions
+            x = shuffled_x.view(batch_size, channels, height, width)
+        
+        # Standard denoising step
+        denoised = model(x, sigma_hat * s_in, **extra_args)
+        d = to_d(x, sigma_hat, denoised)
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
+        
+        # Euler step
+        dt = sigmas[i + 1] - sigma_hat
+        x = x + d * dt
+    
+    return x
 
 
+@torch.no_grad()
+def sample_heun_token_shuffle(model, x, sigmas, extra_args=None, callback=None, disable=None, shuffle_strength=1.0, s_noise=1.):
+    """Heun sampler with token shuffling at each step.
+    
+    This sampler combines Heun's method with token shuffling for more accurate
+    but still chaotic generation.
+    
+    Args:
+        shuffle_strength: Controls how much shuffling to apply (0.0 = no shuffle, 1.0 = full shuffle)
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    # Store original spatial dimensions
+    batch_size, channels, height, width = x.shape
+    total_tokens = height * width
+    
+    print(f"Token shuffle Heun sampler active - shuffling {total_tokens} tokens each step")
+    
+    def shuffle_tokens(tensor, strength):
+        """Helper function to shuffle tokens in a tensor"""
+        if strength <= 0.0:
+            return tensor
+            
+        b, c, h, w = tensor.shape
+        tokens = h * w
+        
+        # Flatten spatial dimensions
+        flat = tensor.view(b, c, tokens)
+        shuffled = torch.zeros_like(flat)
+        
+        for batch_idx in range(b):
+            # Generate random permutation
+            perm_indices = torch.randperm(tokens, device=tensor.device)
+            
+            if strength < 1.0:
+                # Partial shuffling
+                num_shuffle = int(tokens * strength)
+                original_indices = torch.arange(tokens, device=tensor.device)
+                
+                shuffle_mask = torch.zeros(tokens, dtype=torch.bool, device=tensor.device)
+                shuffle_positions = torch.randperm(tokens, device=tensor.device)[:num_shuffle]
+                shuffle_mask[shuffle_positions] = True
+                
+                final_indices = torch.where(shuffle_mask, perm_indices, original_indices)
+            else:
+                final_indices = perm_indices
+            
+            shuffled[batch_idx] = flat[batch_idx, :, final_indices]
+        
+        return shuffled.view(b, c, h, w)
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        # Shuffle tokens before each denoising step
+        x = shuffle_tokens(x, shuffle_strength)
+        
+        # First prediction
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        d = to_d(x, sigmas[i], denoised)
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        
+        dt = sigmas[i + 1] - sigmas[i]
+        
+        if sigmas[i + 1] == 0:
+            # Euler step for final iteration
+            x = x + d * dt
+        else:
+            # Heun's method: predictor-corrector
+            x_2 = x + d * dt
+            
+            # Optionally shuffle again for the corrector step
+            x_2 = shuffle_tokens(x_2, shuffle_strength * 0.5)  # Less shuffling for corrector
+            
+            denoised_2 = model(x_2, sigmas[i + 1] * s_in, **extra_args)
+            d_2 = to_d(x_2, sigmas[i + 1], denoised_2)
+            d_prime = (d + d_2) / 2
+            x = x + d_prime * dt
+    
+    return x
 
 
+@torch.no_grad()
+def sample_euler_nag(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1., nag_scale=1.5, nag_tau=2.5, nag_alpha=0.5):
+    """Euler sampler with NAG (Negative-prompt Attention Guidance).
+    
+    This sampler improves negative prompt handling by modifying attention mechanisms
+    to better suppress unwanted features during generation.
+    
+    Args:
+        nag_scale: Scale factor for negative attention guidance (>1.0 enables NAG)
+        nag_tau: Maximum scaling factor for attention normalization
+        nag_alpha: Blending factor between guided and original attention
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    print(f"NAG Euler sampler active - scale: {nag_scale}, tau: {nag_tau}, alpha: {nag_alpha}")
+    
+    # Store NAG parameters in extra_args for model to use
+    nag_params = {
+        'nag_scale': nag_scale,
+        'nag_tau': nag_tau, 
+        'nag_alpha': nag_alpha,
+        'enable_nag': nag_scale > 1.0
+    }
+    extra_args = {**extra_args, **nag_params}
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        # Apply churn noise if specified
+        gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
+        sigma_hat = sigmas[i] * (gamma + 1)
+        if gamma > 0:
+            eps = torch.randn_like(x) * s_noise
+            x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
+        
+        # Standard denoising step with NAG parameters passed to model
+        denoised = model(x, sigma_hat * s_in, **extra_args)
+        d = to_d(x, sigma_hat, denoised)
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
+        
+        # Euler step
+        dt = sigmas[i + 1] - sigma_hat
+        x = x + d * dt
+    
+    return x
 
 
+@torch.no_grad()
+def sample_heun_nag(model, x, sigmas, extra_args=None, callback=None, disable=None, nag_scale=1.5, nag_tau=2.5, nag_alpha=0.5, s_noise=1.):
+    """Heun sampler with NAG (Negative-prompt Attention Guidance).
+    
+    This sampler combines Heun's method with NAG for more accurate sampling
+    while improving negative prompt adherence.
+    
+    Args:
+        nag_scale: Scale factor for negative attention guidance (>1.0 enables NAG)
+        nag_tau: Maximum scaling factor for attention normalization
+        nag_alpha: Blending factor between guided and original attention
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    print(f"NAG Heun sampler active - scale: {nag_scale}, tau: {nag_tau}, alpha: {nag_alpha}")
+    
+    # Store NAG parameters in extra_args for model to use
+    nag_params = {
+        'nag_scale': nag_scale,
+        'nag_tau': nag_tau,
+        'nag_alpha': nag_alpha,
+        'enable_nag': nag_scale > 1.0
+    }
+    extra_args = {**extra_args, **nag_params}
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        # First prediction with NAG
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        d = to_d(x, sigmas[i], denoised)
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        
+        dt = sigmas[i + 1] - sigmas[i]
+        
+        if sigmas[i + 1] == 0:
+            # Euler step for final iteration
+            x = x + d * dt
+        else:
+            # Heun's method: predictor-corrector with NAG
+            x_2 = x + d * dt
+            denoised_2 = model(x_2, sigmas[i + 1] * s_in, **extra_args)
+            d_2 = to_d(x_2, sigmas[i + 1], denoised_2)
+            d_prime = (d + d_2) / 2
+            x = x + d_prime * dt
+    
+    return x
 
 
+@torch.no_grad()
+def sample_dpmpp_2m_nag(model, x, sigmas, extra_args=None, callback=None, disable=None, nag_scale=1.5, nag_tau=2.5, nag_alpha=0.5):
+    """DPM++ 2M sampler with NAG (Negative-prompt Attention Guidance).
+    
+    This sampler combines the efficient DPM++ 2M method with NAG for improved
+    negative prompt handling and faster convergence.
+    
+    Args:
+        nag_scale: Scale factor for negative attention guidance (>1.0 enables NAG)
+        nag_tau: Maximum scaling factor for attention normalization
+        nag_alpha: Blending factor between guided and original attention
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    sigma_fn = lambda t: t.neg().exp()
+    t_fn = lambda sigma: sigma.log().neg()
+    old_denoised = None
+    
+    print(f"NAG DPM++ 2M sampler active - scale: {nag_scale}, tau: {nag_tau}, alpha: {nag_alpha}")
+    
+    # Store NAG parameters in extra_args for model to use
+    nag_params = {
+        'nag_scale': nag_scale,
+        'nag_tau': nag_tau,
+        'nag_alpha': nag_alpha,
+        'enable_nag': nag_scale > 1.0
+    }
+    extra_args = {**extra_args, **nag_params}
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        t, t_next = t_fn(sigmas[i]), t_fn(sigmas[i + 1])
+        h = t_next - t
+        if old_denoised is None or sigmas[i + 1] == 0:
+            x = (sigma_fn(t_next) / sigma_fn(t)) * x - (-h).expm1() * denoised
+        else:
+            h_last = t - t_fn(sigmas[i - 1])
+            r = h_last / h
+            denoised_d = (1 + 1 / (2 * r)) * denoised - (1 / (2 * r)) * old_denoised
+            x = (sigma_fn(t_next) / sigma_fn(t)) * x - (-h).expm1() * denoised_d
+        old_denoised = denoised
+    return x
 
 
 @torch.no_grad()
@@ -1617,258 +1907,3 @@ def sample_restart(model, x, sigmas, extra_args=None, callback=None, disable=Non
 
     return x
 
-
-@torch.no_grad()
-def sample_negative_focus(
-    model,
-    x,
-    sigmas,
-    *,
-    neg_text_emb,           # (B, seq_len, dim) – CLIP text embed of the **negative** prompt
-    neg_scale=1.2,          # how strongly we push *away* from the negative
-    neg_start=0.3,          # sigma fraction where we start applying the effect
-    extra_args=None,
-    callback=None,
-    disable=None,
-):
-    """
-    Euler steps with an **anti-guidance** term that actively *repels* the denoised
-    latent from the negative prompt embedding.
-    """
-    extra_args = {} if extra_args is None else extra_args
-    s_in = x.new_ones([x.shape[0]])
-    neg_sigma_start = sigmas[0] * neg_start
-
-    for i in trange(len(sigmas) - 1, disable=disable):
-        denoised = model(x, sigmas[i] * s_in, **extra_args)
-
-        # --- negative steering -------------------------------------------------
-        if sigmas[i] <= neg_sigma_start:
-            # Compute per-token distance to negative prompt
-            # (simple cosine distance on the spatially-mean token embeddings)
-            denoised_flat = denoised.mean(dim=(2, 3))        # (B, C)
-            neg_flat = neg_text_emb.mean(dim=1)              # (B, C)
-            neg_sim = F.cosine_similarity(denoised_flat, neg_flat, dim=-1)  # (B,)
-            # Build push direction: move *away* from the negative
-            push = (denoised_flat - neg_flat.unsqueeze(-1).unsqueeze(-1))  # broadcast to (B,C,H,W)
-            push = push * neg_sim.view(-1, 1, 1, 1)          # scale by similarity
-            denoised = denoised - neg_scale * push           # subtract ⇒ repel
-        # ----------------------------------------------------------------------
-
-        if callback is not None:
-            callback(
-                {
-                    "x": x,
-                    "i": i,
-                    "sigma": sigmas[i],
-                    "sigma_hat": sigmas[i],
-                    "denoised": denoised,
-                }
-            )
-
-        d = to_d(x, sigmas[i], denoised)
-        dt = sigmas[i + 1] - sigmas[i]
-        x = x + d * dt
-    return x
-@torch.no_grad()
-def sample_token_shuffle(
-    model,
-    x,
-    sigmas,
-    *,
-    shuffle_start=0.5,      # begin shuffling after this sigma fraction
-    shuffle_prob=0.3,       # probability of shuffling *any* token in this step
-    seed=None,
-    extra_args=None,
-    callback=None,
-    disable=None,
-):
-    """
-    Standard Euler, **but** every step we randomly permute the token order of the
-    conditioning vector inside `extra_args["cond"]` (assumed to be a Tensor of
-    shape (B, seq_len, dim)).  This injects diversity at the *semantic* level
-    without touching the denoising math.
-    """
-    extra_args = {} if extra_args is None else extra_args.copy()
-    s_in = x.new_ones([x.shape[0]])
-    sigma_start = sigmas[0] * shuffle_start
-    rng = torch.Generator(device=x.device)
-    if seed is not None:
-        rng.manual_seed(seed)
-
-    for i in trange(len(sigmas) - 1, disable=disable):
-        # ---- token shuffling --------------------------------------------------
-        if sigmas[i] <= sigma_start and "cond" in extra_args:
-            cond = extra_args["cond"]                        # (B, seq, dim)
-            B, L, D = cond.shape
-            for b in range(B):
-                if torch.rand([], generator=rng) < shuffle_prob:
-                    perm = torch.randperm(L, generator=rng)
-                    cond[b] = cond[b][perm]
-            extra_args["cond"] = cond
-        # ----------------------------------------------------------------------
-
-        denoised = model(x, sigmas[i] * s_in, **extra_args)
-        if callback is not None:
-            callback(
-                {
-                    "x": x,
-                    "i": i,
-                    "sigma": sigmas[i],
-                    "sigma_hat": sigmas[i],
-                    "denoised": denoised,
-                }
-            )
-        d = to_d(x, sigmas[i], denoised)
-        dt = sigmas[i + 1] - sigmas[i]
-        x = x + d * dt
-    return x
-@torch.no_grad()
-def sample_diverse_attention(
-    model,
-    x,
-    sigmas,
-    *,
-    attn_dropout=0.1,        # dropout rate on Q/K/V inside self/cross-attention
-    attn_temp=0.7,           # temperature scaling (lower = more diverse)
-    diversity_start=0.4,     # when to start messing with attention
-    extra_args=None,
-    callback=None,
-    disable=None,
-):
-    """
-    Adds **stochastic dropout** and **temperature scaling** to the attention maps
-    of the underlying UNet.  The hooks are installed only after we pass the
-    `diversity_start` sigma threshold to avoid breaking early structure.
-    """
-    extra_args = {} if extra_args is None else extra_args
-    s_in = x.new_ones([x.shape[0]])
-    sigma_start = sigmas[0] * diversity_start
-
-    # --- helper hooks ---------------------------------------------------------
-    def attn_hook(module, inp, out):
-        # inp[0] = Q, inp[1] = K, inp[2] = V
-        q, k, v = inp[0]
-        if attn_dropout > 0:
-            k = F.dropout(k, p=attn_dropout, training=True, inplace=False)
-            v = F.dropout(v, p=attn_dropout, training=True, inplace=False)
-        # Temperature scaling
-        q = q / attn_temp
-        return module(q, k, v, need_weights=False)[0]
-
-    hooks = []
-
-    for i in trange(len(sigmas) - 1, disable=disable):
-        # install / remove hooks dynamically
-        if sigmas[i] <= sigma_start and not hooks:
-            for name, m in model.named_modules():
-                if "attn" in name.lower() and hasattr(m, "forward"):
-                    hooks.append(m.register_forward_hook(attn_hook))
-        elif sigmas[i] > sigma_start and hooks:
-            for h in hooks:
-                h.remove()
-            hooks.clear()
-
-        denoised = model(x, sigmas[i] * s_in, **extra_args)
-        if callback is not None:
-            callback(
-                {
-                    "x": x,
-                    "i": i,
-                    "sigma": sigmas[i],
-                    "sigma_hat": sigmas[i],
-                    "denoised": denoised,
-                }
-            )
-
-        d = to_d(x, sigmas[i], denoised)
-        dt = sigmas[i + 1] - sigmas[i]
-        x = x + d * dt
-
-    # final cleanup
-    for h in hooks:
-        h.remove()
-    return x
-
-@torch.no_grad()
-def sample_dpmpp_unipc_restart(
-    model,
-    x,
-    sigmas,
-    *,
-    extra_args=None,
-    callback=None,
-    disable=None,
-    eta=1.0,
-    s_noise=1.0,
-    noise_sampler=None,
-    restart_list=None,
-    unipc_order=3,
-    unipc_rtol=0.05,
-    unipc_atol=0.0078,
-    unipc_h_init=0.05,
-    unipc_pcoeff=0.0,
-    unipc_icoeff=1.0,
-    unipc_dcoeff=0.0,
-    unipc_accept_safety=0.81,
-):
-    """
-    Combines DPM++ sampling with UNIPC adaptive step size control and restart mechanism.
-    """
-    extra_args = {} if extra_args is None else extra_args
-    noise_sampler = default_noise_sampler(x) if noise_sampler is None else noise_sampler
-    s_in = x.new_ones([x.shape[0]])
-    sigma_fn = lambda t: t.neg().exp()
-    t_fn = lambda sigma: sigma.log().neg()
-
-    if restart_list is None:
-        restart_list = {0.1: [10, 2, 2]}  # Example restart list
-
-    restart_list = {int(torch.argmin(abs(sigmas - key), dim=0)): value for key, value in restart_list.items()}
-
-    step_list = []
-    for i in range(len(sigmas) - 1):
-        step_list.append((sigmas[i], sigmas[i + 1]))
-        if i + 1 in restart_list:
-            restart_steps, restart_times, restart_max = restart_list[i + 1]
-            min_idx = i + 1
-            max_idx = int(torch.argmin(abs(sigmas - restart_max), dim=0))
-            if max_idx < min_idx:
-                sigma_restart = get_sigmas_karras(restart_steps, sigmas[min_idx].item(), sigmas[max_idx].item(), device=sigmas.device)
-                while restart_times > 0:
-                    restart_times -= 1
-                    step_list.extend(zip(sigma_restart[:-1], sigma_restart[1:]))
-
-    def unipc_step(x, t, t_next, eps_cache=None):
-        dpm_solver = DPMSolver(model, extra_args, eps_callback=None, info_callback=None)
-        x, eps_cache = dpm_solver.dpm_solver_adaptive(
-            x, t, t_next, order=unipc_order, rtol=unipc_rtol, atol=unipc_atol, h_init=unipc_h_init,
-            pcoeff=unipc_pcoeff, icoeff=unipc_icoeff, dcoeff=unipc_dcoeff, accept_safety=unipc_accept_safety,
-            eta=eta, s_noise=s_noise, noise_sampler=noise_sampler, return_info=False
-        )
-        return x, eps_cache
-
-    last_sigma = None
-    for old_sigma, new_sigma in tqdm(step_list, disable=disable):
-        if last_sigma is None:
-            last_sigma = old_sigma
-        elif last_sigma < old_sigma:
-            x = x + torch.randn_like(x) * s_noise * (old_sigma ** 2 - last_sigma ** 2) ** 0.5
-
-        t, t_next = t_fn(old_sigma), t_fn(new_sigma)
-        x, _ = unipc_step(x, t, t_next)
-
-        if callback is not None:
-            callback(
-                {
-                    "x": x,
-                    "i": len(step_list) - len(step_list), # This will always be 0, consider using a proper step index
-                    "sigma": old_sigma,
-                    "sigma_hat": old_sigma,
-                    "denoised": x,  # Placeholder for denoised value
-                }
-            )
-
-        last_sigma = new_sigma
-
-    return x

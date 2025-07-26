@@ -524,7 +524,7 @@ class UNIPCBH2(Sampler):
 
 KSAMPLER_NAMES = ["euler", "euler_ancestral","euler_chaotic","euler_triangle_wave","euler_dreamy","euler_dreamy_pp","euler_tpg","euler_nag","euler_dag","euler_guidance","triangular","pixelart","dreamy","comic","fractal","heun", "heunpp2","dpm_2", "dpm_2_ancestral",
                   "lms", "dpm_fast", "dpm_adaptive", "dpmpp_2s_ancestral", "dpmpp_sde", "dpmpp_sde_gpu",
-                  "dpmpp_2m", "dpmpp_2m_sde", "dpmpp_2m_sde_gpu", "dpmpp_3m_sde", "dpmpp_3m_sde_gpu", "ddpm", "lcm", "tcd", "edm_playground_v2.5", "restart", "negative_focus", "token_shuffle", "diverse_attention", "dpmpp_unipc_restart"]
+                  "dpmpp_2m", "dpmpp_2m_sde", "dpmpp_2m_sde_gpu", "dpmpp_3m_sde", "dpmpp_3m_sde_gpu", "ddpm", "lcm", "tcd", "edm_playground_v2.5", "restart", "dpmpp_unipc_restart", "euler_token_shuffle", "heun_token_shuffle", "heun_nag", "dpmpp_2m_nag"]
 
 class KSAMPLER(Sampler):
     def __init__(self, sampler_function, extra_options={}, inpaint_options={}):
@@ -627,12 +627,7 @@ def sample(model, noise, positive, negative, cfg, device, sampler, sigmas, model
     samples = sampler.sample(model_wrap, sigmas, extra_args, callback, noise, latent_image, denoise_mask, disable_pbar)
     return model.process_latent_out(samples.to(torch.float32))
 
-SCHEDULER_NAMES = ["normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform","comic_panel","sinusoidal", "chaotic", "zigzag",
-                    "jitter", "upscale", "mini_dalle", "grid","pixel_art",
-                    "golden_ratio","dream","piecewise","trow_random_blsht",
-                    "smokeywindy","attention_context","claylike","extreme_closeup_detail",
-                    "rhythmic_beats","chaotic_swirl","dropout_spikes","inception_ramp","double_cosine",
-                    "color_rainbow","rgb_split","hsv_cycle","spiral","quantum","organic"]
+SCHEDULER_NAMES = ["normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform"]
 SAMPLER_NAMES = KSAMPLER_NAMES + ["ddim", "uni_pc", "uni_pc_bh2"]
 
 def calculate_sigmas_scheduler(model, scheduler_name, steps):
@@ -657,148 +652,7 @@ def calculate_sigmas_scheduler(model, scheduler_name, steps):
 
     elif scheduler_name == "ddim_uniform":
         sigmas = ddim_scheduler(model, steps)
-
-    elif scheduler_name == "sinusoidal":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_sinusoidal(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "chaotic":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_chaotic(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "zigzag":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_zigzag(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "jitter":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_jitter(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "upscale":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_upscale(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "mini_dalle":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_mini_dalle(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "grid":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_grid(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "pixel_art":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_pixel_art(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "golden_ratio":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_golden_ratio(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "dream":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_dream(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "piecewise":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_piecewise(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "trow_random_blsht":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_trow_random_blsht(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "smokeywindy":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_smokeywindy(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "attention_context":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_attention_context(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "comic_panel":
-        sigmas = k_diffusion_sampling.get_sigmas_comic(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "claylike":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_claylike(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "extreme_closeup_detail":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_extreme_closeup_detail(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "rhythmic_beats":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_rhythmic_beats(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "chaotic_swirl":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_chaotic_swirl(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "dropout_spikes":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_dropout_spikes(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "inception_ramp":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_inception_ramp(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "double_cosine":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_double_cosine(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "color_rainbow":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_color_rainbow(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "rgb_split":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_rgb_split(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "hsv_cycle":
         
-        sigmas = k_diffusion_sampling.get_sigmas_karras_hsv_cycle(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "spiral":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_spiral(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "quantum":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_quantum(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "organic":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_organic(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
     else:
         print("error invalid scheduler", scheduler_name)
         sigmas = None

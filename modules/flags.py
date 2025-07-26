@@ -51,10 +51,11 @@ KSAMPLER = {
     "lcm": "LCM",
     "tcd": "TCD",
     "restart": "Restart",
-    "negative_focus": "Negative Focus",
-    "token_shuffle": "Token Shuffle",
-    "diverse_attention": "Diverse Attention",
-    "dpmpp_unipc_restart": "DPM++ UNIPC Restart",
+    "euler_token_shuffle": "Euler Token Shuffle",
+    "heun_token_shuffle": "Heun Token Shuffle",
+    "euler_nag": "Euler NAG",
+    "heun_nag": "Heun NAG",
+    "dpmpp_2m_nag": "DPM++ 2M NAG"
 }
 
 SAMPLER_EXTRA = {
@@ -70,8 +71,7 @@ KSAMPLER_NAMES = list(KSAMPLER.keys())
 # ! = overcooked, !! = error, !!! = black output, ? = cool unrelated aesthetic
 SCHEDULER_NAMES = ["normal", "karras", "exponential", "sgm_uniform", "simple",
                     "ddim_uniform", "lcm", "turbo", "align_your_steps", "tcd",
-                    "edm_playground_v2.5","negative_focus", "token_shuffle", 
-                    "diverse_attention", "dpmpp_unipc_restart"]
+                    "edm_playground_v2.5"]
 
 SAMPLER_NAMES = KSAMPLER_NAMES + list(SAMPLER_EXTRA.keys())
 
