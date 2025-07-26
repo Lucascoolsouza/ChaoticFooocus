@@ -171,7 +171,14 @@ def sample_euler_tpg(model, x, sigmas, extra_args=None, callback=None, disable=N
         tpg_scale = _guidance_config.get('tpg_scale', 3.0)
     
     print(f"[TPG] Using TPG-enhanced Euler sampler with scale {tpg_scale}")
+    print(f"[TPG] Global config: {_guidance_config}")
     print("[TPG] Shuffling tokens at each step for dynamic perturbation")
+    
+    # Debug: Check if we have conditioning
+    if 'cond' in extra_args and len(extra_args['cond']) > 0:
+        print(f"[TPG] Found {len(extra_args['cond'])} conditioning entries")
+    else:
+        print("[TPG] WARNING: No conditioning found - TPG will have no effect!")
     
     for i in trange(len(sigmas) - 1, disable=disable):
         gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
@@ -252,7 +259,19 @@ def sample_euler_nag(model, x, sigmas, extra_args=None, callback=None, disable=N
         nag_scale = _guidance_config.get('nag_scale', 1.5)
     
     print(f"[NAG] Using NAG-enhanced Euler sampler with scale {nag_scale}")
+    print(f"[NAG] Global config: {_guidance_config}")
     print("[NAG] NAG restores effective negative prompting for better controllability")
+    
+    # Debug: Check if we have conditioning
+    if 'cond' in extra_args and len(extra_args['cond']) > 0:
+        print(f"[NAG] Found {len(extra_args['cond'])} conditioning entries")
+    else:
+        print("[NAG] WARNING: No conditioning found - NAG will have no effect!")
+        
+    if 'uncond' in extra_args and len(extra_args['uncond']) > 0:
+        print(f"[NAG] Found {len(extra_args['uncond'])} unconditioning entries")
+    else:
+        print("[NAG] WARNING: No unconditioning found - NAG will have limited effect!")
     
     for i in trange(len(sigmas) - 1, disable=disable):
         gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.

@@ -109,9 +109,9 @@ class AsyncTask:
         self.tpg_scale = args.pop()
         self.tpg_applied_layers_index = args.pop()
 
-        self.pag_enabled = args.pop()
-        self.pag_scale = args.pop()
-        self.pag_applied_layers = args.pop()
+        self.dag_enabled = args.pop()
+        self.dag_scale = args.pop()
+        self.dag_applied_layers = args.pop()
         if not self.pag_applied_layers:
             self.pag_applied_layers = "mid,up"
         print(f"[ASYNC_WORKER DEBUG] PAG Enabled: {self.pag_enabled}, PAG Scale: {self.pag_scale}, PAG Applied Layers: {self.pag_applied_layers}")
@@ -380,9 +380,9 @@ def worker():
             tpg_enabled=async_task.tpg_enabled,
             tpg_scale=async_task.tpg_scale,
             tpg_applied_layers_index=async_task.tpg_applied_layers_index,
-            pag_enabled=async_task.pag_enabled,
-            pag_scale=async_task.pag_scale,
-            pag_applied_layers=async_task.pag_applied_layers,
+            dag_enabled=async_task.dag_enabled,
+            dag_scale=async_task.dag_scale,
+            dag_applied_layers=async_task.dag_applied_layers,
             detail_daemon_enabled=async_task.detail_daemon_enabled,
             detail_daemon_amount=async_task.detail_daemon_amount,
             detail_daemon_start=async_task.detail_daemon_start,
