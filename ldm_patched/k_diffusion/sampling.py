@@ -1769,10 +1769,11 @@ def sample_tcd(model, x, sigmas, extra_args=None, callback=None, disable=None, n
 # Global guidance configuration
 _guidance_config = {
     'tpg_scale': 0.0,
-    'nag_scale': 1.0
+    'nag_scale': 1.0,
+    'dag_scale': 0.0
 }
 
-def set_guidance_config(tpg_scale=0.0, nag_scale=1.0):
+def set_guidance_config(tpg_scale=0.0, nag_scale=1.0, dag_scale=0.0):
     """Set global guidance configuration"""
     global _guidance_config
     _guidance_config.update({
@@ -1780,7 +1781,7 @@ def set_guidance_config(tpg_scale=0.0, nag_scale=1.0):
         'nag_scale': nag_scale,
         'dag_scale': dag_scale
     })
-    print(f"[GUIDANCE] Config updated: TPG={tpg_scale}, NAG={nag_scale}")
+    print(f"[GUIDANCE] Config updated: TPG={tpg_scale}, NAG={nag_scale}, DAG={dag_scale}")
 
 def get_guidance_config():
     """Get current guidance configuration"""
@@ -1845,7 +1846,49 @@ def apply_attention_degradation(embeddings, degradation_strength=0.5):
     except Exception:
         return embeddings
 
-
+def apply_dynamic_attention_modulation(embeddings, step=None, total_steps=None, modulation_strength=1.0):
+    """Apply dynamic attention modulation for DAG (Dynamic Attention Guidance)"""
+    try:
+        if step is None or total_steps is None:
+            # Fallback to simple perturbation
+            noise = torch.randn_like(embeddings) * 0.1 * modulation_strength
+            return embeddings + noise
+        
+        # Calculate sampling progress
+        progress = step / max(1, total_steps - 1)
+        
+        # Dynamic modulation strategy based on sampling progress
+        if progress < 0.3:
+            # Early stage: Large structural perturbations
+            noise_scale = 0.2 * modulation_strength
+            # Create correlated noise across tokens for structural coherence
+            base_noise = torch.randn(embeddings.shape[0], 1, embeddings.shape[2], device=embeddings.device)
+            noise = base_noise.expand_as(embeddings) * noise_scale
+            
+        elif progress < 0.7:
+            # Mid stage: Feature-level modulations
+            noise_scale = 0.15 * modulation_strength
+            base_noise = torch.randn(embeddings.shape[0], embeddings.shape[1] // 4, embeddings.shape[2], device=embeddings.device)
+            base_noise = torch.nn.functional.interpolate(base_noise.unsqueeze(0), size=(embeddings.shape[1], embeddings.shape[2]), mode='nearest').squeeze(0)
+            independent_noise = torch.randn_like(embeddings) * 0.05
+            noise = (base_noise + independent_noise) * noise_scale
+            
+        else:
+            # Late stage: Fine detail adjustments
+            noise_scale = 0.08 * modulation_strength * (1.0 - progress)  # Fade out towards end
+            noise = torch.randn_like(embeddings) * noise_scale
+        
+        # Apply step-dependent frequency modulation
+        if embeddings.shape[1] > 1:
+            # Create frequency-based modulation
+            freq_factor = 1.0 + 0.5 * math.sin(2 * math.pi * progress * 3)  # 3 cycles through sampling
+            noise = noise * freq_factor
+        
+        return embeddings + noise
+        
+    except Exception as e:
+        print(f"[DAG] Dynamic attention modulation error: {e}")
+        return embeddings
 
 @torch.no_grad()
 def sample_euler_tpg(model, x, sigmas, extra_args=None, callback=None, disable=None, 
