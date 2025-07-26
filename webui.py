@@ -985,16 +985,19 @@ with shared.gradio_root:
                     with gr.Tab(label='NAG'):
                         nag_scale = gr.Slider(label='NAG Scale', minimum=1.0, maximum=10.0, step=0.1, value=1.0,
                                               info='Controls the strength of Normalized Attention Guidance.')
-                        nag_tau = gr.Slider(label='NAG Tau', minimum=0.0, maximum=5.0, step=0.1, value=2.5,
+                        nag_tau = gr.Slider(label='NAG Tau', minimum=0.0, maximum=5.0, step=0.1, value=4.5,
                                             info='Threshold for attention guidance.')
                         nag_alpha = gr.Slider(label='NAG Alpha', minimum=0.0, maximum=1.0, step=0.01, value=0.5,
                                               info='Blending factor for attention guidance.')
                         #nag_negative_prompt = gr.Textbox(label='NAG Negative Prompt', show_label=True,
                         #                                 placeholder="Type negative prompt for NAG here.", lines=2,
                         #                                 elem_id='nag_negative_prompt')
+                        nag_negative_prompt = gr.Textbox(label='NAG Negative Prompt', show_label=True,
+                                                         placeholder="Type negative prompt for NAG here.", lines=2,
+                                                         elem_id='nag_negative_prompt')
                         nag_end = gr.Slider(label='NAG End At Step', minimum=0.0, maximum=1.0, step=0.01, value=1.0,
                                             info='When to end NAG guidance (0.0 to 1.0 of total steps).')
-                        nag_ctrls = [nag_scale, nag_tau, nag_alpha, nag_end]
+                        nag_ctrls = [nag_scale, nag_tau, nag_alpha, nag_negative_prompt, nag_end]
                     with gr.Tab(label='TPG'):
                         tpg_enabled = gr.Checkbox(label='Enable Token Perturbation Guidance', value=False,
                                                   info='Enables Token Perturbation Guidance.')
