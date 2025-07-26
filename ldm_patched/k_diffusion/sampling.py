@@ -2004,7 +2004,7 @@ def sample_euler_nag(model, x, sigmas, extra_args=None, callback=None, disable=N
                                 # Strong degradation to create "null" conditioning
                                 new_model_cond.cond = apply_attention_degradation(
                                     model_cond.cond, 
-                                    degradation_strength=0.8  # Very strong degradation
+                                    degradation_strength=0.2  # Very strong degradation
                                 )
                                 new_c['model_conds'][key] = new_model_cond
                     nag_cond.append(new_c)
