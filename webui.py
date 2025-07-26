@@ -27,9 +27,6 @@ from modules.ui_gradio_extensions import reload_javascript
 from modules.auth import auth_enabled, check_auth
 from modules.util import is_json
 
-inpaint_mask_image_upload = None # Initialize to None
-metadata_scheme_dropdown = None # Initialize to None
-
 def get_task(*args):
     args = list(args)
     args.pop(0)
@@ -988,22 +985,16 @@ with shared.gradio_root:
                     with gr.Tab(label='NAG'):
                         nag_scale = gr.Slider(label='NAG Scale', minimum=1.0, maximum=10.0, step=0.1, value=1.0,
                                               info='Controls the strength of Normalized Attention Guidance.')
-                        nag_tau = gr.Slider(label='NAG Tau', minimum=0.0, maximum=5.0, step=0.1, value=4.5,
+                        nag_tau = gr.Slider(label='NAG Tau', minimum=0.0, maximum=5.0, step=0.1, value=2.5,
                                             info='Threshold for attention guidance.')
                         nag_alpha = gr.Slider(label='NAG Alpha', minimum=0.0, maximum=1.0, step=0.01, value=0.5,
                                               info='Blending factor for attention guidance.')
                         #nag_negative_prompt = gr.Textbox(label='NAG Negative Prompt', show_label=True,
                         #                                 placeholder="Type negative prompt for NAG here.", lines=2,
                         #                                 elem_id='nag_negative_prompt')
-                        nag_negative_prompt = gr.Textbox(label='NAG Negative Prompt', show_label=True,
-                                                         placeholder="Type negative prompt for NAG here.", lines=2,
-                                                         elem_id='nag_negative_prompt')
-                        nag_negative_prompt = gr.Textbox(label='NAG Negative Prompt', show_label=True,
-                                                         placeholder="Type negative prompt for NAG here.", lines=2,
-                                                         elem_id='nag_negative_prompt')
                         nag_end = gr.Slider(label='NAG End At Step', minimum=0.0, maximum=1.0, step=0.01, value=1.0,
                                             info='When to end NAG guidance (0.0 to 1.0 of total steps).')
-                        nag_ctrls = [nag_scale, nag_tau, nag_alpha, nag_negative_prompt, nag_end]
+                        nag_ctrls = [nag_scale, nag_tau, nag_alpha, nag_end]
                     with gr.Tab(label='TPG'):
                         tpg_enabled = gr.Checkbox(label='Enable Token Perturbation Guidance', value=False,
                                                   info='Enables Token Perturbation Guidance.')
@@ -1135,115 +1126,45 @@ with shared.gradio_root:
                                            inpaint_mask_sam_max_detections, dino_erode_or_dilate, debugging_dino],
                                    outputs=inpaint_mask_image, show_progress=True, queue=True)
 
-        ctrls = [
-            currentTask,
-            generate_image_grid,
-            prompt,
-            negative_prompt,
-            style_selections,
-            performance_selection,
-            aspect_ratios_selection,
-            image_number,
-            output_format,
-            image_seed,
-            read_wildcards_in_order,
-            sharpness,
-            guidance_scale,
-            base_model,
-            refiner_model,
-            refiner_switch,
-            *lora_ctrls,
-            input_image_checkbox,
-            current_tab,
-            uov_method,
-            uov_input_image,
-            latent_upscale_method,
-            latent_upscale_scheduler,
-            latent_upscale_size,
-            outpaint_selections,
-            inpaint_input_image,
-            inpaint_additional_prompt,
-            inpaint_mask_image_upload,
-            disable_preview,
-            disable_intermediate_results,
-            disable_seed_increment,
-            black_out_nsfw,
-            adm_scaler_positive,
-            adm_scaler_negative,
-            adm_scaler_end,
-            adaptive_cfg,
-            clip_skip,
-            sampler_name,
-            scheduler_name,
-            vae_name,
-            overwrite_step,
-            overwrite_switch,
-            overwrite_width,
-            overwrite_height,
-            overwrite_vary_strength,
-            overwrite_upscale_strength,
-            upscale_loops,
-            mixing_image_prompt_and_vary_upscale,
-            mixing_image_prompt_and_inpaint,
-            debugging_cn_preprocessor,
-            skipping_cn_preprocessor,
-            canny_low_threshold,
-            canny_high_threshold,
-            refiner_swap_method,
-            controlnet_softness,
-            freeu_enabled,
-            freeu_b1,
-            freeu_b2,
-            freeu_s1,
-            freeu_s2,
-            debugging_inpaint_preprocessor,
-            inpaint_disable_initial_latent,
-            inpaint_engine,
-            inpaint_strength,
-            inpaint_respective_field,
-            inpaint_advanced_masking_checkbox,
-            invert_mask_checkbox,
-            inpaint_erode_or_dilate,
-            nag_scale,
-            nag_tau,
-            nag_alpha,
-            nag_negative_prompt,
-            nag_end,
-            tpg_enabled,
-            tpg_scale,
-            tpg_applied_layers_index,
-            dag_applied_layers,
-            dag_scale,
-            dag_enabled,
-            save_final_enhanced_image_only,
-            save_metadata_to_images,
-            metadata_scheme_dropdown,
-            detail_daemon_enabled,
-            detail_daemon_amount,
-            detail_daemon_start,
-            detail_daemon_end,
-            detail_daemon_bias,
-            detail_daemon_base_multiplier,
-            detail_daemon_start_offset,
-            detail_daemon_end_offset,
-            detail_daemon_exponent,
-            detail_daemon_fade,
-            detail_daemon_mode,
-            detail_daemon_smooth,
-            *cn_ctrls,
-            debugging_dino,
-            dino_erode_or_dilate,
-            debugging_enhance_masks_checkbox,
-            enhance_input_image,
-            enhance_checkbox,
-            enhance_uov_method,
-            enhance_bg_removal_model,
-            enhance_uov_processing_order,
-            enhance_uov_prompt_type,
-            seamless_tiling_method,
-            seamless_tiling_overlap,
-            *enhance_ctrls
+        ctrls = [currentTask, generate_image_grid]
+        ctrls += [
+            prompt, negative_prompt, style_selections,
+            performance_selection, aspect_ratios_selection, image_number, output_format, image_seed,
+            read_wildcards_in_order, sharpness, guidance_scale
         ]
+
+        ctrls += [base_model, refiner_model, refiner_switch] + lora_ctrls
+        ctrls += [input_image_checkbox, current_tab]
+        ctrls += [uov_method, uov_input_image, latent_upscale_method, latent_upscale_scheduler, latent_upscale_size]
+        ctrls += [outpaint_selections, inpaint_input_image, inpaint_additional_prompt, inpaint_mask_image]
+        ctrls += [disable_preview, disable_intermediate_results, disable_seed_increment, black_out_nsfw]
+        ctrls += [adm_scaler_positive, adm_scaler_negative, adm_scaler_end, adaptive_cfg, clip_skip]
+        ctrls += [sampler_name, scheduler_name, vae_name]
+        ctrls += [overwrite_step, overwrite_switch, overwrite_width, overwrite_height, overwrite_vary_strength]
+        ctrls += [overwrite_upscale_strength, upscale_loops, mixing_image_prompt_and_vary_upscale, mixing_image_prompt_and_inpaint]
+        ctrls += [debugging_cn_preprocessor, skipping_cn_preprocessor, canny_low_threshold, canny_high_threshold]
+        ctrls += [refiner_swap_method, controlnet_softness]
+        ctrls += freeu_ctrls
+        ctrls += inpaint_ctrls
+        ctrls += nag_ctrls
+        ctrls += tpg_ctrls
+        ctrls += dag_ctrls
+        
+        if not args_manager.args.disable_image_log:
+            ctrls += [save_final_enhanced_image_only]
+            
+        if not args_manager.args.disable_metadata:
+            ctrls += [save_metadata_to_images, metadata_scheme]
+            
+        ctrls += [detail_daemon_enabled, detail_daemon_amount, detail_daemon_start, detail_daemon_end, 
+                  detail_daemon_bias, detail_daemon_base_multiplier, detail_daemon_start_offset, detail_daemon_end_offset, 
+                  detail_daemon_exponent, detail_daemon_fade, detail_daemon_mode, detail_daemon_smooth]
+
+        ctrls += ip_ctrls
+        ctrls += [debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox,
+                  enhance_input_image, enhance_checkbox, enhance_uov_method, enhance_bg_removal_model, 
+                  enhance_uov_processing_order, enhance_uov_prompt_type, enhance_seamless_tiling_method, enhance_seamless_tiling_overlap]
+        ctrls += enhance_ctrls
 
         def parse_meta(raw_prompt_txt, is_generating):
             loaded_json = None
@@ -1279,14 +1200,12 @@ with shared.gradio_root:
         generate_button.click(lambda: (gr.update(visible=True, interactive=True), gr.update(visible=True, interactive=True), gr.update(visible=False, interactive=False), [], True),
                               outputs=[stop_button, skip_button, generate_button, gallery, state_is_generating]) \
             .then(fn=refresh_seed, inputs=[seed_random, image_seed], outputs=image_seed) \
-            .then(fn=lambda *args: print(f"[WEBUI_DEBUG] ctrls before get_task: {args}"), inputs=ctrls, outputs=None, queue=False) \
             .then(fn=get_task, inputs=ctrls, outputs=currentTask) \
             .then(fn=generate_clicked, inputs=currentTask, outputs=[progress_html, progress_window, progress_gallery, gallery]) \
             .then(lambda: (gr.update(visible=True, interactive=True), gr.update(visible=False, interactive=False), gr.update(visible=False, interactive=False), False),
                   outputs=[generate_button, stop_button, skip_button, state_is_generating]) \
             .then(fn=update_history_link, outputs=history_link) \
-            .then(fn=lambda: None, _js='playNotification') \
-            .then(fn=lambda: None, _js='refresh_grid_delayed')
+            .then(fn=lambda: None, _js='playNotification').then(fn=lambda: None, _js='refresh_grid_delayed')
 
         reset_button.click(lambda: [worker.AsyncTask(args=[]), False, gr.update(visible=True, interactive=True)] +
                                    [gr.update(visible=False)] * 6 +
