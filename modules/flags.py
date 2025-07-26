@@ -7,8 +7,16 @@ strong_variation = 'Vary (Strong)'
 upscale_15 = 'Upscale (1.5x)'
 upscale_2 = 'Upscale (2x)'
 upscale_fast = 'Upscale (Fast 2x)'
+ultrasharp = 'Ultrasharp'
+realistic_rescaler = 'Realistic Rescaler'
+latent_upscale = 'Latent Upscale'
+pixelsharpen = 'PixelSharpen'
+tghqface8x = 'TGHQFace8x'
 
-uov_list = [disabled, subtle_variation, strong_variation, upscale_15, upscale_2, upscale_fast]
+remove_background = 'Remove Background'
+seamless_tiling = 'Seamless Tiling'
+
+uov_list = [disabled, subtle_variation, strong_variation, upscale_15, upscale_2, upscale_fast, ultrasharp, realistic_rescaler, latent_upscale, pixelsharpen, tghqface8x, remove_background, seamless_tiling]
 
 enhancement_uov_before = "Before First Enhancement"
 enhancement_uov_after = "After Last Enhancement"
@@ -23,9 +31,18 @@ CIVITAI_NO_KARRAS = ["euler", "euler_ancestral", "heun", "dpm_fast", "dpm_adapti
 # fooocus: a1111 (Civitai)
 KSAMPLER = {
     "euler": "Euler",
+    "euler_chaotic": "Euler Chaotic",
+    "euler_triangle_wave": "Euler Triangle Wave",
+    "euler_dreamy": "Euler Dreamy",
+    "euler_dreamy_pp": "Euler Dreamy++",
+    "triangular": "Triangular",
+    "pixelart": "Pixel Art",
+    "dreamy": "Dreamy",
+    "comic": "Comic",
+    "fractal": "Fractal",
     "euler_ancestral": "Euler a",
     "heun": "Heun",
-    "heunpp2": "",
+    "heunpp2": "Heun++2",
     "dpm_2": "DPM2",
     "dpm_2_ancestral": "DPM2 a",
     "lms": "LMS",
@@ -37,12 +54,12 @@ KSAMPLER = {
     "dpmpp_2m": "DPM++ 2M",
     "dpmpp_2m_sde": "DPM++ 2M SDE",
     "dpmpp_2m_sde_gpu": "DPM++ 2M SDE",
-    "dpmpp_3m_sde": "",
-    "dpmpp_3m_sde_gpu": "",
-    "ddpm": "",
+    "dpmpp_3m_sde": "DPM++ 3M SDE",
+    "dpmpp_3m_sde_gpu": "DPM++ 3M SDE",
+    "ddpm": "DDPM",
     "lcm": "LCM",
     "tcd": "TCD",
-    "restart": "Restart"
+    "restart": "Restart",
 }
 
 SAMPLER_EXTRA = {
@@ -55,7 +72,16 @@ SAMPLERS = KSAMPLER | SAMPLER_EXTRA
 
 KSAMPLER_NAMES = list(KSAMPLER.keys())
 
-SCHEDULER_NAMES = ["normal", "karras", "exponential", "sgm_uniform", "simple", "ddim_uniform", "lcm", "turbo", "align_your_steps", "tcd", "edm_playground_v2.5"]
+# ! = overcooked, !! = error, !!! = black output, ? = cool unrelated aesthetic
+SCHEDULER_NAMES = ["normal", "karras", "exponential", "sgm_uniform", "simple",
+                    "ddim_uniform", "lcm", "turbo", "align_your_steps", "tcd",
+                    "edm_playground_v2.5","comic_panel","sinusoidal", "chaotic", "zigzag",
+                    "jitter", "upscale", "mini_dalle", "grid","pixel_art",
+                    "golden_ratio","dream","piecewise","trow_random_blsht",
+                    "smokeywindy","attention_context","claylike","extreme_closeup_detail",
+                    "rhythmic_beats","chaotic_swirl","dropout_spikes","inception_ramp","double_cosine",
+                    "color_rainbow","rgb_split","hsv_cycle","spiral","quantum","organic"]
+
 SAMPLER_NAMES = KSAMPLER_NAMES + list(SAMPLER_EXTRA.keys())
 
 sampler_list = SAMPLER_NAMES
@@ -85,6 +111,9 @@ default_parameters = {
 output_formats = ['png', 'jpeg', 'webp']
 
 inpaint_mask_models = ['u2net', 'u2netp', 'u2net_human_seg', 'u2net_cloth_seg', 'silueta', 'isnet-general-use', 'isnet-anime', 'sam']
+
+# Background removal options for enhance
+bg_removal_models = ['u2net', 'u2netp', 'u2net_human_seg', 'silueta', 'isnet-general-use']
 inpaint_mask_cloth_category = ['full', 'upper', 'lower']
 inpaint_mask_sam_model = ['vit_b', 'vit_l', 'vit_h']
 
@@ -96,7 +125,8 @@ inpaint_options = [inpaint_option_default, inpaint_option_detail, inpaint_option
 
 describe_type_photo = 'Photograph'
 describe_type_anime = 'Art/Anime'
-describe_types = [describe_type_photo, describe_type_anime]
+describe_type_joy = 'Joy'
+describe_types = [describe_type_photo, describe_type_anime, describe_type_joy]
 
 sdxl_aspect_ratios = [
     '704*1408', '704*1344', '768*1344', '768*1280', '832*1216', '832*1152',

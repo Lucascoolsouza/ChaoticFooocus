@@ -18,6 +18,7 @@ import copy
 import launch
 from extras.inpaint_mask import SAMOptions
 
+
 from modules.sdxl_styles import legal_style_names
 from modules.private_logger import get_current_html_path
 from modules.ui_gradio_extensions import reload_javascript
@@ -43,10 +44,7 @@ def generate_clicked(task: worker.AsyncTask):
     execution_start_time = time.perf_counter()
     finished = False
 
-    yield gr.update(visible=True, value=modules.html.make_progress_html(1, 'Waiting for task to start ...')), \
-        gr.update(visible=True, value=None), \
-        gr.update(visible=False, value=None), \
-        gr.update(visible=False)
+    yield gr.update(visible=True, value=modules.html.make_progress_html(1, 'Waiting for task to start ...')),         gr.update(visible=True, value=None),         gr.update(visible=False, value=None),         gr.update(visible=False)
 
     worker.async_tasks.append(task)
 
@@ -63,23 +61,14 @@ def generate_clicked(task: worker.AsyncTask):
                         continue
 
                 percentage, title, image = product
-                yield gr.update(visible=True, value=modules.html.make_progress_html(percentage, title)), \
-                    gr.update(visible=True, value=image) if image is not None else gr.update(), \
-                    gr.update(), \
-                    gr.update(visible=False)
+                yield gr.update(visible=True, value=modules.html.make_progress_html(percentage, title)),                     gr.update(visible=True, value=image) if image is not None else gr.update(),                     gr.update(),                     gr.update(visible=False)
             if flag == 'results':
-                yield gr.update(visible=True), \
-                    gr.update(visible=True), \
-                    gr.update(visible=True, value=product), \
-                    gr.update(visible=False)
+                yield gr.update(visible=True),                     gr.update(visible=True),                     gr.update(visible=True, value=product),                     gr.update(visible=False)
             if flag == 'finish':
                 if not args_manager.args.disable_enhance_output_sorting:
                     product = sort_enhance_images(product, task)
 
-                yield gr.update(visible=False), \
-                    gr.update(visible=False), \
-                    gr.update(visible=False), \
-                    gr.update(visible=True, value=product)
+                yield gr.update(visible=False),                     gr.update(visible=False),                     gr.update(visible=False),                     gr.update(visible=True, value=product)
                 finished = True
 
                 # delete Fooocus temp images, only keep gradio temp images
@@ -93,6 +82,17 @@ def generate_clicked(task: worker.AsyncTask):
     return
 
 
+    
+
+def list_wildcard_files():
+    directory = "wildcards"
+    if not os.path.exists(directory):
+        return "Directory 'wildcards' not found. Create it and add files."
+    files = os.listdir(directory)
+    if not files:
+        return "No files found in the 'wildcards' directory."
+    return "\n".join(files)
+  
 def sort_enhance_images(images, task):
     if not task.should_enhance or len(images) <= task.images_to_enhance_count:
         return images
@@ -211,6 +211,28 @@ with shared.gradio_root:
                                 uov_input_image = grh.Image(label='Image', source='upload', type='numpy', show_label=False)
                             with gr.Column():
                                 uov_method = gr.Radio(label='Upscale or Variation:', choices=flags.uov_list, value=modules.config.default_uov_method)
+                                # Latent Upscale options
+                                latent_upscale_method = gr.Dropdown([
+                                    "bilinear", "bilinear-antialiased",
+                                    "bicubic", "bicubic-antialiased",
+                                    "linear", "trilinear",
+                                    "area", "nearest",  "nearest-exact"
+                                ], label="Latent Upscale Method", visible=False, value="bilinear")
+                                latent_upscale_scheduler = gr.Dropdown([
+                                    "simple", "normal", "karras", "exponential",
+                                    "polyexponential", "automatic"
+                                ], label="Latent Upscale Scheduler", visible=False, value="normal")
+                                latent_upscale_size = gr.Dropdown([
+                                    "1x", "1.5x", "2x", "4x"
+                                ], label="Latent Upscale Size", visible=False, value="2x")
+                                def show_latent_upscale_options(selected):
+                                    visible = selected==flags.latent_upscale
+                                    return {
+                                        latent_upscale_method: gr.update(visible=visible),
+                                        latent_upscale_scheduler: gr.update(visible=visible),
+                                        latent_upscale_size: gr.update(visible=visible)
+                                    }
+                                uov_method.change(show_latent_upscale_options, inputs=uov_method, outputs=[latent_upscale_method, latent_upscale_scheduler, latent_upscale_size], queue=False, show_progress=False)
                                 gr.HTML('<a href="https://github.com/lllyasviel/Fooocus/discussions/390" target="_blank">\U0001F4D4 Documentation</a>')
                     with gr.Tab(label='Image Prompt', id='ip_tab') as ip_tab:
                         with gr.Row():
@@ -387,6 +409,28 @@ with shared.gradio_root:
                             with gr.Column():
                                 enhance_uov_method = gr.Radio(label='Upscale or Variation:', choices=flags.uov_list,
                                                               value=modules.config.default_enhance_uov_method)
+                                enhance_bg_removal_model = gr.Radio(label='Background Removal Model:', 
+                                                                   choices=flags.bg_removal_models,
+                                                                   value=modules.config.default_enhance_bg_removal_model,
+                                                                   visible=modules.config.default_enhance_uov_method == flags.remove_background)
+                                
+                                # Seamless Tiling Options
+                                enhance_seamless_tiling_method = gr.Radio(
+                                    label='Seamless Tiling Method:',
+                                    choices=['blend', 'mirror', 'offset'],
+                                    value=modules.config.default_seamless_tiling_method,
+                                    visible=modules.config.default_enhance_uov_method == flags.seamless_tiling,
+                                    info='Method for creating seamless tiles'
+                                )
+                                enhance_seamless_tiling_overlap = gr.Slider(
+                                    label='Edge Overlap Ratio',
+                                    minimum=0.05,
+                                    maximum=0.3,
+                                    value=modules.config.default_seamless_tiling_overlap,
+                                    step=0.05,
+                                    visible=modules.config.default_enhance_uov_method == flags.seamless_tiling,
+                                    info='Amount of edge blending for seamless effect'
+                                )
                                 enhance_uov_processing_order = gr.Radio(label='Order of Processing',
                                                                         info='Use before to enhance small details and after to enhance large areas.',
                                                                         choices=flags.enhancement_uov_processing_order,
@@ -397,6 +441,20 @@ with shared.gradio_root:
                                                                    value=modules.config.default_enhance_uov_prompt_type,
                                                                    visible=modules.config.default_enhance_uov_processing_order == flags.enhancement_uov_after)
 
+                                def update_enhance_uov_options(method):
+                                    return {
+                                        enhance_bg_removal_model: gr.update(visible=method == flags.remove_background),
+                                        enhance_seamless_tiling_method: gr.update(visible=method == flags.seamless_tiling),
+                                        enhance_seamless_tiling_overlap: gr.update(visible=method == flags.seamless_tiling)
+                                    }
+                                
+                                enhance_uov_method.change(
+                                    update_enhance_uov_options,
+                                    inputs=enhance_uov_method,
+                                    outputs=[enhance_bg_removal_model, enhance_seamless_tiling_method, enhance_seamless_tiling_overlap],
+                                    queue=False, show_progress=False
+                                )
+                                
                                 enhance_uov_processing_order.change(lambda x: gr.update(visible=x == flags.enhancement_uov_after),
                                                                     inputs=enhance_uov_processing_order,
                                                                     outputs=enhance_uov_prompt_type,
@@ -618,7 +676,7 @@ with shared.gradio_root:
                 history_link = gr.HTML()
                 shared.gradio_root.load(update_history_link, outputs=history_link, queue=False, show_progress=False)
 
-            with gr.Tab(label='Styles', elem_classes=['style_selections_tab']):
+            with gr.Tab(label='Styles/Wildcards', elem_classes=['style_selections_tab']):
                 style_sorter.try_load_sorted_styles(
                     style_names=legal_style_names,
                     default_selected=modules.config.default_styles)
@@ -632,8 +690,14 @@ with shared.gradio_root:
                                                     value=copy.deepcopy(modules.config.default_styles),
                                                     label='Selected Styles',
                                                     elem_classes=['style_selections'])
+                wildcard_files = gr.Textbox(
+                label='Wildcard Files',
+                lines=5,
+                interactive=False,  # Make it non-editable
+                elem_classes=['wildcard_files']
+                )
                 gradio_receiver_style_selections = gr.Textbox(elem_id='gradio_receiver_style_selections', visible=False)
-
+                shared.gradio_root.load(list_wildcard_files,outputs=wildcard_files)
                 shared.gradio_root.load(lambda: gr.update(choices=copy.deepcopy(style_sorter.all_styles)),
                                         outputs=style_selections)
 
@@ -692,6 +756,59 @@ with shared.gradio_root:
                 sharpness = gr.Slider(label='Image Sharpness', minimum=0.0, maximum=30.0, step=0.001,
                                       value=modules.config.default_sample_sharpness,
                                       info='Higher value means image and texture are sharper.')
+                
+                with gr.Accordion(label='Detail Enhancement', open=False):
+                    detail_daemon_enabled = gr.Checkbox(label='Enable Detail Daemon', value=False,
+                                                        info='Apply detail enhancement to generated images')
+                    
+                    # Main parameters
+                    detail_daemon_amount = gr.Slider(label='Detail Amount', minimum=0.0, maximum=1.0, step=0.01,
+                                                     value=0.25, info='Amount of detail enhancement')
+                    detail_daemon_start = gr.Slider(label='Start', minimum=0.0, maximum=1.0, step=0.01,
+                                                    value=0.2, info='Start position for detail enhancement')
+                    detail_daemon_end = gr.Slider(label='End', minimum=0.0, maximum=1.0, step=0.01,
+                                                  value=0.8, info='End position for detail enhancement')
+                    detail_daemon_bias = gr.Slider(label='Bias', minimum=0.0, maximum=1.0, step=0.01,
+                                                   value=0.71, info='Bias for detail enhancement')
+                    detail_daemon_base_multiplier = gr.Slider(label='Base Multiplier (Sigma)', minimum=0.1, maximum=1.0, step=0.01,
+                                                             value=0.85, info='Base sigma multiplier for detail enhancement')
+                    
+                    # Advanced parameters
+                    with gr.Accordion(label='More Knobs', open=False):
+                        with gr.Row():
+                            detail_daemon_start_offset = gr.Slider(label='Start Offset', minimum=-1.0, maximum=1.0, step=0.01,
+                                                                   value=0, info='Offset for start position')
+                            detail_daemon_end_offset = gr.Slider(label='End Offset', minimum=-1.0, maximum=1.0, step=0.01,
+                                                                 value=-0.15, info='Offset for end position')
+                        with gr.Row():
+                            detail_daemon_exponent = gr.Slider(label='Exponent', minimum=0.1, maximum=3.0, step=0.1,
+                                                               value=1, info='Curve exponent')
+                            detail_daemon_fade = gr.Slider(label='Fade', minimum=0, maximum=1.0, step=0.01,
+                                                           value=0, info='Fade amount')
+                        with gr.Row():
+                            detail_daemon_mode = gr.Dropdown(label='Mode', choices=['both', 'horizontal', 'vertical'], 
+                                                             value='both', info='Enhancement direction')
+                            detail_daemon_smooth = gr.Checkbox(label='Smooth', value=True, info='Apply smoothing')
+                    
+                    detail_daemon_status = gr.Textbox(label='Status', interactive=False, value='Detail Daemon: Disabled, Amount: 0.25')
+                    
+                    def update_detail_daemon_settings_ui(enabled, amount, start, end, bias, base_multiplier, start_offset, end_offset, exponent, fade, mode, smooth):
+                        from modules.detail_daemon import update_detail_daemon_settings
+                        return update_detail_daemon_settings(enabled, amount, start, end, bias, base_multiplier, start_offset, end_offset, exponent, fade, mode, smooth)
+                    
+                    # Update on any parameter change
+                    detail_inputs = [detail_daemon_enabled, detail_daemon_amount, detail_daemon_start, detail_daemon_end, 
+                                   detail_daemon_bias, detail_daemon_base_multiplier, detail_daemon_start_offset, detail_daemon_end_offset, 
+                                   detail_daemon_exponent, detail_daemon_fade, detail_daemon_mode, detail_daemon_smooth]
+                    
+                    for input_component in detail_inputs:
+                        input_component.change(
+                            update_detail_daemon_settings_ui,
+                            inputs=detail_inputs,
+                            outputs=detail_daemon_status,
+                            queue=False
+                        )
+                
                 gr.HTML('<a href="https://github.com/lllyasviel/Fooocus/discussions/117" target="_blank">\U0001F4D4 Documentation</a>')
                 dev_mode = gr.Checkbox(label='Developer Debug Mode', value=modules.config.default_developer_debug_mode_checkbox, container=False)
 
@@ -748,7 +865,9 @@ with shared.gradio_root:
                         overwrite_upscale_strength = gr.Slider(label='Forced Overwrite of Denoising Strength of "Upscale"',
                                                                minimum=-1, maximum=1.0, step=0.001,
                                                                value=modules.config.default_overwrite_upscale,
-                                                               info='Set as negative number to disable. For developer debugging.')
+                                                                info='Set as negative number to disable. For developer debugging.')
+                        upscale_loops = gr.Slider(label='Upscale Loops', minimum=1, maximum=5, step=1, value=1,
+                                                  info='Number of times to apply the upscaler. Higher values increase intensity.')
 
                         disable_preview = gr.Checkbox(label='Disable Preview', value=modules.config.default_black_out_nsfw,
                                                       interactive=not modules.config.default_black_out_nsfw,
@@ -861,6 +980,8 @@ with shared.gradio_root:
                         freeu_s1 = gr.Slider(label='S1', minimum=0, maximum=4, step=0.01, value=0.99)
                         freeu_s2 = gr.Slider(label='S2', minimum=0, maximum=4, step=0.01, value=0.95)
                         freeu_ctrls = [freeu_enabled, freeu_b1, freeu_b2, freeu_s1, freeu_s2]
+                    
+                    
 
                 def dev_mode_checked(r):
                     return gr.update(visible=r)
@@ -983,28 +1104,36 @@ with shared.gradio_root:
 
         ctrls += [base_model, refiner_model, refiner_switch] + lora_ctrls
         ctrls += [input_image_checkbox, current_tab]
-        ctrls += [uov_method, uov_input_image]
+        ctrls += [uov_method, uov_input_image, latent_upscale_method, latent_upscale_scheduler, latent_upscale_size]
         ctrls += [outpaint_selections, inpaint_input_image, inpaint_additional_prompt, inpaint_mask_image]
         ctrls += [disable_preview, disable_intermediate_results, disable_seed_increment, black_out_nsfw]
         ctrls += [adm_scaler_positive, adm_scaler_negative, adm_scaler_end, adaptive_cfg, clip_skip]
         ctrls += [sampler_name, scheduler_name, vae_name]
         ctrls += [overwrite_step, overwrite_switch, overwrite_width, overwrite_height, overwrite_vary_strength]
-        ctrls += [overwrite_upscale_strength, mixing_image_prompt_and_vary_upscale, mixing_image_prompt_and_inpaint]
+        ctrls += [overwrite_upscale_strength, upscale_loops, mixing_image_prompt_and_vary_upscale, mixing_image_prompt_and_inpaint]
         ctrls += [debugging_cn_preprocessor, skipping_cn_preprocessor, canny_low_threshold, canny_high_threshold]
         ctrls += [refiner_swap_method, controlnet_softness]
         ctrls += freeu_ctrls
         ctrls += inpaint_ctrls
+        
+        
 
         if not args_manager.args.disable_image_log:
             ctrls += [save_final_enhanced_image_only]
 
         if not args_manager.args.disable_metadata:
             ctrls += [save_metadata_to_images, metadata_scheme]
+        else:
+            ctrls += [gr.State(False), gr.State(modules.flags.MetadataScheme.FOOOCUS.value)]
+            
+        ctrls += [detail_daemon_enabled, detail_daemon_amount, detail_daemon_start, detail_daemon_end, 
+                  detail_daemon_bias, detail_daemon_base_multiplier, detail_daemon_start_offset, detail_daemon_end_offset, 
+                  detail_daemon_exponent, detail_daemon_fade, detail_daemon_mode, detail_daemon_smooth]
 
         ctrls += ip_ctrls
         ctrls += [debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox,
-                  enhance_input_image, enhance_checkbox, enhance_uov_method, enhance_uov_processing_order,
-                  enhance_uov_prompt_type]
+                  enhance_input_image, enhance_checkbox, enhance_uov_method, enhance_bg_removal_model, 
+                  enhance_uov_processing_order, enhance_uov_prompt_type, enhance_seamless_tiling_method, enhance_seamless_tiling_overlap]
         ctrls += enhance_ctrls
 
         def parse_meta(raw_prompt_txt, is_generating):
@@ -1074,6 +1203,11 @@ with shared.gradio_root:
                 from extras.wd14tagger import default_interrogator as default_interrogator_anime
                 describe_prompts.append(default_interrogator_anime(img))
                 styles.update(["Fooocus V2", "Fooocus Masterpiece"])
+
+            if flags.describe_type_joy in modes:
+                from extras.joy_caption import default_captioner as default_interrogator_joy
+                describe_prompts.append(default_interrogator_joy(img))
+                styles.update(["Fooocus V2", "Fooocus Enhance", "Fooocus Sharp"])
 
             if len(styles) == 0 or not apply_styles:
                 styles = gr.update()
