@@ -762,6 +762,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         tokenizer_g_on_device = add_tokenizer_compatibility(tokenizer_g_on_device)
 
 <<<<<<< HEAD
+<<<<<<< HEAD
         # Handle guidance by selecting appropriate sampler
         # Check if guidance is active either through parameters OR through sampler selection
         guidance_samplers = ['euler_tpg', 'euler_nag', 'euler_dag', 'euler_guidance']
@@ -832,12 +833,80 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         elif nag_scale > 1.0:
             pipe_class = NAGStableDiffusionXLPipeline
             print(f"[NAG] Using NAGStableDiffusionXLPipeline with scale {nag_scale}")
+=======
+        # Handle special guidance with the simpler sampler approach
+        guidance_active = False
+        
+        # Activate TPG if enabled
+        if tpg_enabled and tpg_scale > 0:
+            print(f"[TPG] Activating TPG sampler with scale {tpg_scale}")
+            tpg_sampler.tpg_scale = tpg_scale
+            tpg_sampler.tpg_applied_layers_index = tpg_applied_layers_index
+            tpg_sampler.activate(final_unet)
+            guidance_active = True
+        
+        # Activate NAG if enabled
+        if nag_scale > 1.0:
+            print(f"[NAG] Activating NAG sampler with scale {nag_scale}")
+            nag_sampler.nag_scale = nag_scale
+            nag_sampler.activate(final_unet)
+            guidance_active = True
+        
+        # Activate PAG if enabled
+        if pag_enabled and pag_scale > 0:
+            print(f"[PAG] Activating PAG sampler with scale {pag_scale}")
+            pag_sampler.pag_scale = pag_scale
+            pag_sampler.pag_applied_layers = pag_applied_layers
+            pag_sampler.activate(final_unet)
+            guidance_active = True
+        
+        if guidance_active:
+            try:
+                # Use regular ksampler with guidance modifications
+                ksampler_imgs = core.ksampler(
+                    model=final_unet,
+                    positive=positive_cond,
+                    negative=negative_cond,
+                    latent=initial_latent,
+                    seed=image_seed,
+                    steps=steps,
+                    cfg=cfg_scale,
+                    sampler_name=sampler_name,
+                    scheduler=scheduler_name,
+                    denoise=denoise,
+                    disable_preview=disable_preview,
+                    refiner=final_refiner_unet,
+                    refiner_switch=switch,
+                    sigmas=minmax_sigmas,
+                    callback_function=callback
+                )['samples']
+                
+                # Convert latents to images
+                if ksampler_imgs is not None:
+                    latent_dict = {'samples': ksampler_imgs}
+                    imgs = core.decode_vae(target_vae, latent_dict)
+                    imgs = core.pytorch_to_numpy(imgs)
+                else:
+                    imgs = []
+                
+                return imgs
+                
+            finally:
+                # Always deactivate all guidance methods
+                if tpg_enabled and tpg_scale > 0:
+                    tpg_sampler.deactivate()
+                if nag_scale > 1.0:
+                    nag_sampler.deactivate()
+                if pag_enabled and pag_scale > 0:
+                    pag_sampler.deactivate()
+>>>>>>> parent of 5a0d84b (cc)
         else:
             # Fallback to regular ksampler if no special guidance is enabled
             print("[DEFAULT] No special guidance enabled, using regular ksampler")
             # Skip the complex pipeline setup and use regular ksampler
             pass  # This will fall through to the regular ksampler below
 
+<<<<<<< HEAD
         # Instantiate the selected pipeline with the components on the correct device
         pipe = pipe_class(
             vae=vae_on_device,
@@ -950,11 +1019,17 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         print("Final deliverable:", type(imgs[0]), getattr(imgs[0], 'size', '-'))
         
         # Skip the regular ksampler since we used NAG/TPG/PAG pipeline
+=======
+        # All guidance methods now use the sampler approach above
+>>>>>>> parent of 5a0d84b (cc)
     
     # Use regular ksampler if no special guidance is enabled
     if not (nag_scale > 1.0 or (tpg_enabled and tpg_scale > 0) or (pag_enabled and pag_scale > 0)):
         print("[DEFAULT] Using regular ksampler")
+<<<<<<< HEAD
 >>>>>>> parent of a9a7293 (SAMPLERS)
+=======
+>>>>>>> parent of 5a0d84b (cc)
         ksampler_imgs = core.ksampler(
             model=final_unet,
             positive=positive_cond,
@@ -963,7 +1038,11 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             seed=image_seed,
             steps=steps,
             cfg=cfg_scale,
+<<<<<<< HEAD
             sampler_name=guidance_sampler,
+=======
+            sampler_name=sampler_name,
+>>>>>>> parent of 5a0d84b (cc)
             scheduler=scheduler_name,
             denoise=denoise,
             disable_preview=disable_preview,
@@ -980,5 +1059,10 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             imgs = core.pytorch_to_numpy(imgs)
         else:
             imgs = []
+<<<<<<< HEAD
         
         return imgs
+=======
+    
+    return imgs
+>>>>>>> parent of 5a0d84b (cc)

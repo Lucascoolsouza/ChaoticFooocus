@@ -18,91 +18,147 @@ class NAGSampler:
         self.is_active = False
     
     def activate(self, unet):
-        """Activate NAG by patching the sampling function"""
+        """Activate NAG by modifying the UNet forward method"""
         if self.is_active:
             return
         
         print(f"[NAG] Activating NAG with scale {self.nag_scale}")
         
-        # Import the sampling module
-        try:
-            import ldm_patched.modules.samplers as samplers
-            
-            # Store original sampling function if not already stored
-            if not hasattr(self, '_original_sampling_function'):
-                self._original_sampling_function = samplers.sampling_function
-            
-            # Replace with NAG-enhanced version
-            samplers.sampling_function = self._create_nag_sampling_function(self._original_sampling_function)
-            
-            self.unet = unet
-            self.is_active = True
-            print("[NAG] Successfully patched sampling function")
-            
-        except Exception as e:
-            print(f"[NAG] Failed to patch sampling function: {e}")
-            return
+        # Store original forward method
+        if hasattr(unet, 'model') and hasattr(unet.model, 'apply_model'):
+            self.original_unet_forward = unet.model.apply_model
+            unet.model.apply_model = self._create_nag_apply_model(unet.model.apply_model)
+        elif hasattr(unet, 'forward'):
+            self.original_unet_forward = unet.forward
+            unet.forward = self._create_nag_forward(unet.forward)
+        
+        self.unet = unet
+        self.is_active = True
     
     def deactivate(self):
-        """Deactivate NAG by restoring the original sampling function"""
-        if not self.is_active:
+        """Deactivate NAG by restoring the original UNet forward method"""
+        if not self.is_active or self.original_unet_forward is None:
             return
         
         print("[NAG] Deactivating NAG")
         
-        # Restore original sampling function
-        try:
-            import ldm_patched.modules.samplers as samplers
-            if hasattr(self, '_original_sampling_function'):
-                samplers.sampling_function = self._original_sampling_function
-                print("[NAG] Successfully restored original sampling function")
-        except Exception as e:
-            print(f"[NAG] Failed to restore sampling function: {e}")
+        # Restore original forward method
+        if hasattr(self.unet, 'model') and hasattr(self.unet.model, 'apply_model'):
+            self.unet.model.apply_model = self.original_unet_forward
+        elif hasattr(self.unet, 'forward'):
+            self.unet.forward = self.original_unet_forward
         
+        self.original_unet_forward = None
         self.is_active = False
     
-    def _create_nag_sampling_function(self, original_sampling_function):
-        """Create NAG-modified sampling function"""
-        def nag_sampling_function(model, x, timestep, uncond, cond, cond_scale, model_options={}, seed=None):
-            # Check if we should apply NAG
-            if len(cond) > 0 and len(uncond) > 0:
-                try:
-                    # Create NAG conditioning by degrading attention
-                    nag_cond = []
-                    for c in cond:
-                        new_c = c.copy()
-                        # Apply attention degradation to text embeddings
-                        if 'model_conds' in new_c:
-                            for key, model_cond in new_c['model_conds'].items():
-                                if hasattr(model_cond, 'cond') and isinstance(model_cond.cond, torch.Tensor):
-                                    # Degrade attention for NAG
-                                    degraded_cond = self._apply_attention_degradation(model_cond.cond)
-                                    # Create a new model_cond with degraded attention
-                                    import copy
-                                    new_model_cond = copy.deepcopy(model_cond)
-                                    new_model_cond.cond = degraded_cond
-                                    new_c['model_conds'][key] = new_model_cond
-                        nag_cond.append(new_c)
+    def _create_nag_apply_model(self, original_apply_model):
+        """Create NAG-modified apply_model for ComfyUI-style UNet"""
+        def nag_apply_model(x, timestep, c_crossattn=None, **kwargs):
+            # Check if we have the right batch size for NAG
+            if c_crossattn is not None and c_crossattn.shape[0] == 2:
+                # For NAG, we need to create a degraded version of the conditioning
+                uncond_embeds, cond_embeds = c_crossattn.chunk(2)
+                
+                # Create degraded conditioning by applying attention normalization
+                cond_embeds_degraded = self._apply_attention_degradation(cond_embeds)
+                
+                # Create the full batch: [uncond, cond, cond_degraded]
+                c_crossattn_nag = torch.cat([uncond_embeds, cond_embeds, cond_embeds_degraded], dim=0)
+                
+                # Duplicate latents accordingly
+                if x.shape[0] == 2:
+                    uncond_x, cond_x = x.chunk(2)
+                    x_nag = torch.cat([uncond_x, cond_x, cond_x], dim=0)
+                else:
+                    x_nag = x
+                
+                # Handle other conditioning
+                new_kwargs = {}
+                for key, value in kwargs.items():
+                    if isinstance(value, torch.Tensor) and value.shape[0] == 2:
+                        uncond_val, cond_val = value.chunk(2)
+                        new_kwargs[key] = torch.cat([uncond_val, cond_val, cond_val], dim=0)
+                    else:
+                        new_kwargs[key] = value
+                
+                # Call original apply_model
+                noise_pred = original_apply_model(x_nag, timestep, c_crossattn=c_crossattn_nag, **new_kwargs)
+                
+                # Apply NAG guidance
+                if noise_pred.shape[0] == 3:
+                    noise_pred_uncond, noise_pred_cond, noise_pred_nag = noise_pred.chunk(3)
                     
-                    # Get predictions for all three conditions
-                    noise_pred_uncond = original_sampling_function(model, x, timestep, uncond, [], cond_scale, model_options, seed)
-                    noise_pred_cond = original_sampling_function(model, x, timestep, [], cond, cond_scale, model_options, seed)
-                    noise_pred_nag = original_sampling_function(model, x, timestep, [], nag_cond, cond_scale, model_options, seed)
-                    
-                    # Apply NAG guidance
+                    # Apply NAG: enhance the difference between conditional and degraded
                     noise_pred_enhanced = noise_pred_cond + self.nag_scale * (noise_pred_cond - noise_pred_nag)
                     
-                    # Combine unconditional and enhanced conditional
-                    return noise_pred_uncond + cond_scale * (noise_pred_enhanced - noise_pred_uncond)
-                    
-                except Exception as e:
-                    print(f"[NAG] Error in NAG sampling, falling back to original: {e}")
-                    return original_sampling_function(model, x, timestep, uncond, cond, cond_scale, model_options, seed)
+                    # Return in the expected format for Fooocus (batch size 2: uncond, enhanced_cond)
+                    return torch.cat([noise_pred_uncond, noise_pred_enhanced], dim=0)
+                else:
+                    return noise_pred
             else:
                 # Standard call without NAG
-                return original_sampling_function(model, x, timestep, uncond, cond, cond_scale, model_options, seed)
+                return original_apply_model(x, timestep, c_crossattn=c_crossattn, **kwargs)
         
-        return nag_sampling_function
+        return nag_apply_model
+    
+    def _create_nag_forward(self, original_forward):
+        """Create NAG-modified forward for standard diffusers UNet"""
+        def nag_forward(sample, timestep, encoder_hidden_states, **kwargs):
+            # Check if we have the right batch size for NAG
+            if encoder_hidden_states is not None and encoder_hidden_states.shape[0] == 2:
+                # For NAG, we need to create a degraded version of the conditioning
+                uncond_embeds, cond_embeds = encoder_hidden_states.chunk(2)
+                
+                # Create degraded conditioning by applying attention normalization
+                cond_embeds_degraded = self._apply_attention_degradation(cond_embeds)
+                
+                # Create the full batch: [uncond, cond, cond_degraded]
+                encoder_hidden_states_nag = torch.cat([uncond_embeds, cond_embeds, cond_embeds_degraded], dim=0)
+                
+                # Duplicate latents accordingly
+                if sample.shape[0] == 2:
+                    uncond_sample, cond_sample = sample.chunk(2)
+                    sample_nag = torch.cat([uncond_sample, cond_sample, cond_sample], dim=0)
+                else:
+                    sample_nag = sample
+                
+                # Handle other conditioning
+                new_kwargs = {}
+                for key, value in kwargs.items():
+                    if key == 'added_cond_kwargs' and isinstance(value, dict):
+                        new_added_cond_kwargs = {}
+                        for k, v in value.items():
+                            if isinstance(v, torch.Tensor) and v.shape[0] == 2:
+                                uncond_v, cond_v = v.chunk(2)
+                                new_added_cond_kwargs[k] = torch.cat([uncond_v, cond_v, cond_v], dim=0)
+                            else:
+                                new_added_cond_kwargs[k] = v
+                        new_kwargs[key] = new_added_cond_kwargs
+                    elif isinstance(value, torch.Tensor) and value.shape[0] == 2:
+                        uncond_val, cond_val = value.chunk(2)
+                        new_kwargs[key] = torch.cat([uncond_val, cond_val, cond_val], dim=0)
+                    else:
+                        new_kwargs[key] = value
+                
+                # Call original forward
+                noise_pred = original_forward(sample_nag, timestep, encoder_hidden_states=encoder_hidden_states_nag, **new_kwargs)
+                
+                # Apply NAG guidance
+                if noise_pred.shape[0] == 3:
+                    noise_pred_uncond, noise_pred_cond, noise_pred_nag = noise_pred.chunk(3)
+                    
+                    # Apply NAG: enhance the difference between conditional and degraded
+                    noise_pred_enhanced = noise_pred_cond + self.nag_scale * (noise_pred_cond - noise_pred_nag)
+                    
+                    # Return in the expected format for Fooocus (batch size 2: uncond, enhanced_cond)
+                    return torch.cat([noise_pred_uncond, noise_pred_enhanced], dim=0)
+                else:
+                    return noise_pred
+            else:
+                # Standard call without NAG
+                return original_forward(sample, timestep, encoder_hidden_states=encoder_hidden_states, **kwargs)
+        
+        return nag_forward
     
     def _apply_attention_degradation(self, embeddings):
         """
