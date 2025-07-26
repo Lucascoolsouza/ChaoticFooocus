@@ -1056,42 +1056,30 @@ class StableDiffusionXLTPGPipeline(
 
     def _create_modified_layer(self, original_layer, layer_name):
         """Helper method to create a modified TPG layer with proper device handling"""
-        logger.info(f"    Creating modified layer for {layer_name}...")
-        sys.stdout.flush()
-        
-        # Store original device and dtype
-        original_device = next(original_layer.parameters()).device
-        original_dtype = next(original_layer.parameters()).dtype
-        
-        # Create modified class
-        modified_class = make_tpg_block(original_layer.__class__, do_cfg=self.do_classifier_free_guidance)
-        
-        logger.info(f"    Initializing modified instance...")
-        sys.stdout.flush()
-        
-        # Try proper initialization first
         try:
-            modified_layer = modified_class()
-            modified_layer.load_state_dict(original_layer.state_dict())
-            logger.info(f"    ✓ Used proper initialization for {layer_name}")
-        except Exception as e:
-            logger.warning(f"    Proper initialization failed for {layer_name}, using fallback: {e}")
-            # Fallback to __new__ approach
+            # Store original device and dtype
+            original_device = next(original_layer.parameters()).device
+            original_dtype = next(original_layer.parameters()).dtype
+            
+            # Create modified class
+            modified_class = make_tpg_block(original_layer.__class__, do_cfg=self.do_classifier_free_guidance)
+            
+            # Create new instance using __new__ to avoid initialization issues
             modified_layer = modified_class.__new__(modified_class)
             modified_layer.__dict__.update(original_layer.__dict__)
-        
-        # Add shuffle_tokens method
-        modified_layer.shuffle_tokens = self._create_shuffle_tokens_method()
-        
-        # Ensure correct device placement
-        logger.info(f"    Moving {layer_name} to device {original_device}...")
-        sys.stdout.flush()
-        modified_layer.to(device=original_device, dtype=original_dtype)
-        
-        logger.info(f"    ✓ {layer_name} modification completed")
-        sys.stdout.flush()
-        
-        return modified_layer
+            
+            # Add shuffle_tokens method
+            modified_layer.shuffle_tokens = self._create_shuffle_tokens_method()
+            
+            # Ensure correct device placement
+            modified_layer.to(device=original_device, dtype=original_dtype)
+            
+            return modified_layer
+            
+        except Exception as e:
+            logger.error(f"Failed to create modified layer for {layer_name}: {e}")
+            # Return original layer if modification fails
+            return original_layer
 
     def _create_shuffle_tokens_method(self):
         """Create a shuffle_tokens method that can be bound to transformer blocks"""
