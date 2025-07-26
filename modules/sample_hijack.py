@@ -189,7 +189,37 @@ def sample_hacked(model, noise, positive, negative, cfg, device, sampler, sigmas
             # residual_noise_preview *= x0.std()
             callback(step, x0, x, total_steps)
 
-    samples = sampler.sample(model_wrap, sigmas, extra_args, callback_wrap, noise, latent_image, denoise_mask, disable_pbar)
+    sampler_dispatch = {
+        "euler": k_diffusion_sampling.sample_euler,
+        "euler_ancestral": k_diffusion_sampling.sample_euler_ancestral,
+        "heun": k_diffusion_sampling.sample_heun,
+        "dpm_2": k_diffusion_sampling.sample_dpm_2,
+        "dpm_2_ancestral": k_diffusion_sampling.sample_dpm_2_ancestral,
+        "lms": k_diffusion_sampling.sample_lms,
+        "dpmpp_2s_ancestral": k_diffusion_sampling.sample_dpmpp_2s_ancestral,
+        "dpmpp_sde": k_diffusion_sampling.sample_dpmpp_sde,
+        "dpmpp_2m": k_diffusion_sampling.sample_dpmpp_2m,
+        "dpmpp_2m_sde": k_diffusion_sampling.sample_dpmpp_2m_sde,
+        "dpmpp_3m_sde": k_diffusion_sampling.sample_dpmpp_3m_sde,
+        "ddpm": k_diffusion_sampling.sample_ddpm,
+        "lcm": k_diffusion_sampling.sample_lcm,
+        "heunpp2": k_diffusion_sampling.sample_heunpp2,
+        "tcd": k_diffusion_sampling.sample_tcd,
+        "restart": k_diffusion_sampling.sample_restart,
+        "negative_focus": k_diffusion_sampling.sample_negative_focus,
+        "token_shuffle": k_diffusion_sampling.sample_token_shuffle,
+        "diverse_attention": k_diffusion_sampling.sample_diverse_attention,
+        "dpmpp_unipc_restart": k_diffusion_sampling.sample_dpmpp_unipc_restart,
+        # Add other samplers as needed
+    }
+
+    if sampler in sampler_dispatch:
+        selected_sampler_func = sampler_dispatch[sampler]
+        samples = selected_sampler_func(model_wrap, sigmas, extra_args=extra_args, callback=callback_wrap, disable=disable_pbar, x=noise)
+    else:
+        # Fallback to default if sampler is not found (should not happen if flags are correct)
+        print(f"Warning: Sampler '{sampler}' not found in dispatch table. Falling back to default Euler.")
+        samples = k_diffusion_sampling.sample_euler(model_wrap, sigmas, extra_args=extra_args, callback=callback_wrap, disable=disable_pbar, x=noise)
     return model.process_latent_out(samples.to(torch.float32))
 
 
