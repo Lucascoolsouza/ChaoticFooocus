@@ -386,9 +386,7 @@ def worker():
             tpg_enabled=async_task.tpg_enabled,
             tpg_scale=async_task.tpg_scale,
             tpg_applied_layers_index=async_task.tpg_applied_layers_index,
-            dag_enabled=async_task.dag_enabled,
-            dag_scale=async_task.dag_scale,
-            dag_applied_layers=async_task.dag_applied_layers,
+            
             detail_daemon_enabled=async_task.detail_daemon_enabled,
             detail_daemon_amount=async_task.detail_daemon_amount,
             detail_daemon_start=async_task.detail_daemon_start,
@@ -1324,8 +1322,6 @@ def worker():
                 print(f'[Parameters]   - TPG: scale={async_task.tpg_scale}')
             if async_task.nag_scale > 1.0:
                 print(f'[Parameters]   - NAG: scale={async_task.nag_scale}')
-            if async_task.dag_enabled:
-                print(f'[Parameters]   - DAG: scale={async_task.dag_scale}')
         else:
             print(f'[Parameters] No guidance methods active')
         print(f'[Parameters] Steps = {async_task.steps} - {switch}')
