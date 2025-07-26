@@ -2237,6 +2237,250 @@ def sample_dpmpp_sde_gpu_token_shuffle(model, x, sigmas, extra_args=None, callba
 
 
 @torch.no_grad()
+def sample_euler_pixel_art(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., 
+                          pixel_scale=4, color_levels=16, sharpen_strength=0.5, quantize_strength=0.8):
+    """Euler sampler with pixel art effects.
+    
+    This sampler applies pixelation, color quantization, and sharpening effects
+    at each sampling step to create pixel art-style generations.
+    
+    Args:
+        pixel_scale: Downscaling factor for pixelation (higher = more pixelated)
+        color_levels: Number of color levels per channel (lower = more pixel art-like)
+        sharpen_strength: Strength of edge sharpening (0.0 = none, 1.0 = maximum)
+        quantize_strength: How much to apply color quantization (0.0 = none, 1.0 = full)
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    print(f"Pixel Art Euler sampler active - scale: {pixel_scale}, colors: {color_levels}, sharpen: {sharpen_strength}")
+    
+    def apply_pixelation(tensor, scale_factor, step_ratio):
+        """Apply pixelation effect by downsampling and upsampling"""
+        if scale_factor <= 1:
+            return tensor
+            
+        b, c, h, w = tensor.shape
+        
+        # Progressive pixelation - more aggressive early, less later
+        dynamic_scale = max(1, int(scale_factor * (1.5 - step_ratio * 0.5)))
+        
+        # Calculate new dimensions
+        new_h = max(1, h // dynamic_scale)
+        new_w = max(1, w // dynamic_scale)
+        
+        # Downsample with area interpolation for clean pixelation
+        downsampled = F.interpolate(tensor, size=(new_h, new_w), mode='area')
+        
+        # Upsample with nearest neighbor to maintain sharp pixels
+        pixelated = F.interpolate(downsampled, size=(h, w), mode='nearest')
+        
+        return pixelated
+    
+    def quantize_colors(tensor, levels, strength):
+        """Quantize colors to simulate limited palette"""
+        if levels >= 256 or strength <= 0:
+            return tensor
+            
+        # Normalize to [0, 1] range
+        tensor_norm = (tensor + 1.0) / 2.0
+        
+        # Quantize each channel
+        quantized = torch.round(tensor_norm * (levels - 1)) / (levels - 1)
+        
+        # Convert back to [-1, 1] range
+        quantized = quantized * 2.0 - 1.0
+        
+        # Blend with original based on strength
+        return strength * quantized + (1.0 - strength) * tensor
+    
+    def apply_sharpening(tensor, strength):
+        """Apply sharpening filter to enhance edges"""
+        if strength <= 0:
+            return tensor
+            
+        # Sharpening kernel
+        kernel = torch.tensor([[[[-1, -1, -1],
+                                [-1,  9, -1],
+                                [-1, -1, -1]]]], dtype=tensor.dtype, device=tensor.device)
+        kernel = kernel.repeat(tensor.shape[1], 1, 1, 1) / 9.0
+        
+        # Apply convolution for each channel
+        sharpened = F.conv2d(tensor, kernel, padding=1, groups=tensor.shape[1])
+        
+        # Blend with original
+        return strength * sharpened + (1.0 - strength) * tensor
+    
+    def apply_pixel_art_effects(tensor, step_ratio):
+        """Apply all pixel art effects in sequence"""
+        # 1. Pixelation (creates blocky structure)
+        result = apply_pixelation(tensor, pixel_scale, step_ratio)
+        
+        # 2. Color quantization (reduces color palette)
+        result = quantize_colors(result, color_levels, quantize_strength)
+        
+        # 3. Sharpening (enhances pixel boundaries)
+        result = apply_sharpening(result, sharpen_strength)
+        
+        # 4. Clamp to valid range
+        result = torch.clamp(result, -1.0, 1.0)
+        
+        return result
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        # Calculate step ratio for progressive effects
+        step_ratio = i / (len(sigmas) - 1)
+        
+        # Apply pixel art effects before denoising
+        x = apply_pixel_art_effects(x, step_ratio)
+        
+        # Standard Euler denoising step
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        d = to_d(x, sigmas[i], denoised)
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        
+        dt = sigmas[i + 1] - sigmas[i]
+        x = x + d * dt
+        
+        # Apply pixel art effects after the step as well (but lighter)
+        if i < len(sigmas) - 2:  # Don't apply on final step
+            x = apply_pixel_art_effects(x, step_ratio)
+    
+    return x
+
+
+@torch.no_grad()
+def sample_heun_pixel_art(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., 
+                         pixel_scale=4, color_levels=16, sharpen_strength=0.5, quantize_strength=0.8):
+    """Heun sampler with pixel art effects.
+    
+    This sampler combines Heun's method with pixel art effects for more accurate
+    sampling while maintaining the distinctive pixel art aesthetic.
+    
+    Args:
+        pixel_scale: Downscaling factor for pixelation (higher = more pixelated)
+        color_levels: Number of color levels per channel (lower = more pixel art-like)
+        sharpen_strength: Strength of edge sharpening (0.0 = none, 1.0 = maximum)
+        quantize_strength: How much to apply color quantization (0.0 = none, 1.0 = full)
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    print(f"Pixel Art Heun sampler active - scale: {pixel_scale}, colors: {color_levels}, sharpen: {sharpen_strength}")
+    
+    def apply_pixelation(tensor, scale_factor, step_ratio):
+        """Apply pixelation effect by downsampling and upsampling"""
+        if scale_factor <= 1:
+            return tensor
+            
+        b, c, h, w = tensor.shape
+        
+        # Progressive pixelation - more aggressive early, less later
+        dynamic_scale = max(1, int(scale_factor * (1.5 - step_ratio * 0.5)))
+        
+        # Calculate new dimensions
+        new_h = max(1, h // dynamic_scale)
+        new_w = max(1, w // dynamic_scale)
+        
+        # Downsample with area interpolation for clean pixelation
+        downsampled = F.interpolate(tensor, size=(new_h, new_w), mode='area')
+        
+        # Upsample with nearest neighbor to maintain sharp pixels
+        pixelated = F.interpolate(downsampled, size=(h, w), mode='nearest')
+        
+        return pixelated
+    
+    def quantize_colors(tensor, levels, strength):
+        """Quantize colors to simulate limited palette"""
+        if levels >= 256 or strength <= 0:
+            return tensor
+            
+        # Normalize to [0, 1] range
+        tensor_norm = (tensor + 1.0) / 2.0
+        
+        # Quantize each channel
+        quantized = torch.round(tensor_norm * (levels - 1)) / (levels - 1)
+        
+        # Convert back to [-1, 1] range
+        quantized = quantized * 2.0 - 1.0
+        
+        # Blend with original based on strength
+        return strength * quantized + (1.0 - strength) * tensor
+    
+    def apply_sharpening(tensor, strength):
+        """Apply sharpening filter to enhance edges"""
+        if strength <= 0:
+            return tensor
+            
+        # Sharpening kernel
+        kernel = torch.tensor([[[[-1, -1, -1],
+                                [-1,  9, -1],
+                                [-1, -1, -1]]]], dtype=tensor.dtype, device=tensor.device)
+        kernel = kernel.repeat(tensor.shape[1], 1, 1, 1) / 9.0
+        
+        # Apply convolution for each channel
+        sharpened = F.conv2d(tensor, kernel, padding=1, groups=tensor.shape[1])
+        
+        # Blend with original
+        return strength * sharpened + (1.0 - strength) * tensor
+    
+    def apply_pixel_art_effects(tensor, step_ratio):
+        """Apply all pixel art effects in sequence"""
+        # 1. Pixelation (creates blocky structure)
+        result = apply_pixelation(tensor, pixel_scale, step_ratio)
+        
+        # 2. Color quantization (reduces color palette)
+        result = quantize_colors(result, color_levels, quantize_strength)
+        
+        # 3. Sharpening (enhances pixel boundaries)
+        result = apply_sharpening(result, sharpen_strength)
+        
+        # 4. Clamp to valid range
+        result = torch.clamp(result, -1.0, 1.0)
+        
+        return result
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        # Calculate step ratio for progressive effects
+        step_ratio = i / (len(sigmas) - 1)
+        
+        # Apply pixel art effects before denoising
+        x = apply_pixel_art_effects(x, step_ratio)
+        
+        # First prediction
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        d = to_d(x, sigmas[i], denoised)
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        
+        dt = sigmas[i + 1] - sigmas[i]
+        
+        if sigmas[i + 1] == 0:
+            # Euler step for final iteration
+            x = x + d * dt
+        else:
+            # Heun's method: predictor-corrector
+            x_2 = x + d * dt
+            
+            # Apply light pixel art effects to corrector step
+            x_2 = apply_pixel_art_effects(x_2, step_ratio)
+            
+            denoised_2 = model(x_2, sigmas[i + 1] * s_in, **extra_args)
+            d_2 = to_d(x_2, sigmas[i + 1], denoised_2)
+            d_prime = (d + d_2) / 2
+            x = x + d_prime * dt
+        
+        # Apply pixel art effects after the step (but lighter for later steps)
+        if i < len(sigmas) - 2:  # Don't apply on final step
+            x = apply_pixel_art_effects(x, step_ratio)
+    
+    return x
+
+
+@torch.no_grad()
 def sample_restart(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., restart_list=None):
     """Implements restart sampling in Restart Sampling for Improving Generative Processes (2023)
     Restart_list format: {min_sigma: [ restart_steps, restart_times, max_sigma]}

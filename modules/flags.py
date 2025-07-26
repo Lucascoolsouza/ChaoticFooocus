@@ -58,7 +58,9 @@ KSAMPLER = {
     "dpmpp_2m_nag": "DPM++ 2M NAG",
     "euler_multiscale": "Euler Multi-Scale",
     "heun_multiscale": "Heun Multi-Scale",
-    "dpmpp_sde_gpu_token_shuffle": "DPM++ SDE GPU Token Shuffle"
+    "dpmpp_sde_gpu_token_shuffle": "DPM++ SDE GPU Token Shuffle",
+    "euler_pixel_art": "Euler Pixel Art",
+    "heun_pixel_art": "Heun Pixel Art"
 }
 
 SAMPLER_EXTRA = {
