@@ -188,11 +188,88 @@ def sample_hacked(model, noise, positive, negative, cfg, device, sampler, sigmas
             # residual_noise_preview *= x0.std()
             callback(step, x0, x, total_steps)
 
+    # Create a copy of model_options to avoid modifying the original
+    current_model_options = model_options.copy()
+    extra_args_for_sampler = {
+        "cond": positive,
+        "uncond": negative,
+        "cond_scale": cfg,
+        "model_options": current_model_options,
+        "seed": seed
+    }
+
+    # Dispatch to the correct sampler function
+    sampler_functions = {
+        "euler": k_diffusion_sampling.sample_euler,
+        "euler_ancestral": k_diffusion_sampling.sample_euler_ancestral,
+        "heun": k_diffusion_sampling.sample_heun,
+        "dpm_2": k_diffusion_sampling.sample_dpm_2,
+        "dpm_2_ancestral": k_diffusion_sampling.sample_dpm_2_ancestral,
+        "lms": k_diffusion_sampling.sample_lms,
+        "dpm_fast": k_diffusion_sampling.sample_dpm_fast,
+        "dpm_adaptive": k_diffusion_sampling.sample_dpm_adaptive,
+        "dpmpp_2s_ancestral": k_diffusion_sampling.sample_dpmpp_2s_ancestral,
+        "dpmpp_sde": k_diffusion_sampling.sample_dpmpp_sde,
+        "dpmpp_2m": k_diffusion_sampling.sample_dpmpp_2m,
+        "dpmpp_2m_sde": k_diffusion_sampling.sample_dpmpp_2m_sde,
+        "dpmpp_3m_sde": k_diffusion_sampling.sample_dpmpp_3m_sde,
+        "dpmpp_3m_sde_gpu": k_diffusion_sampling.sample_dpmpp_3m_sde_gpu,
+        "dpmpp_2m_sde_gpu": k_diffusion_sampling.sample_dpmpp_2m_sde_gpu,
+        "dpmpp_sde_gpu": k_diffusion_sampling.sample_dpmpp_sde_gpu,
+        "ddpm": k_diffusion_sampling.sample_ddpm,
+        "lcm": k_diffusion_sampling.sample_lcm,
+        "heunpp2": k_diffusion_sampling.sample_heunpp2,
+        "tcd": k_diffusion_sampling.sample_tcd,
+        "restart": k_diffusion_sampling.sample_restart,
+        "negative_focus": k_diffusion_sampling.sample_negative_focus,
+        "token_shuffle": k_diffusion_sampling.sample_token_shuffle,
+        "diverse_attention": k_diffusion_sampling.sample_diverse_attention,
+        "dpmpp_unipc_restart": k_diffusion_sampling.sample_dpmpp_unipc_restart,
+        "euler_dreamy": k_diffusion_sampling.sample_euler_dreamy,
+        "euler_dreamy_pp": k_diffusion_sampling.sample_euler_dreamy_pp,
+        "euler_chaotic": k_diffusion_sampling.sample_euler_chaotic,
+        "euler_triangle_wave": k_diffusion_sampling.sample_euler_triangle_wave,
+        "triangular": k_diffusion_sampling.sample_triangular,
+        "pixelart": k_diffusion_sampling.sample_pixelart,
+        "dreamy": k_diffusion_sampling.sample_dreamy,
+        "comic": k_diffusion_sampling.sample_comic,
+        "fractal": k_diffusion_sampling.sample_fractal,
+    }
+
+    current_sampler_function = sampler_functions.get(sampler)
+    if current_sampler_function is None:
+        raise ValueError(f"Unknown sampler: {sampler}")
+
     if sampler == "negative_focus":
-        neg_text_emb = extra_args.pop("neg_text_emb", None)
-        samples = sampler.sample(model_wrap, sigmas, extra_args, callback_wrap, noise, latent_image, denoise_mask, disable_pbar, neg_text_emb=neg_text_emb)
+        # Extract neg_text_emb from the negative conditioning
+        if negative and 'model_conds' in negative[0] and 'c_crossattn' in negative[0]['model_conds']:
+            neg_text_emb = negative[0]['model_conds']['c_crossattn'].cond
+        else:
+            print("Warning: neg_text_emb not found for negative_focus sampler. Using empty tensor.")
+            neg_text_emb = torch.empty(1, 1, 768) # Placeholder, adjust dimensions as needed
+        samples = current_sampler_function(model_wrap, sigmas, neg_text_emb=neg_text_emb, callback=callback_wrap, disable=disable_pbar, **extra_args_for_sampler)
+    elif sampler == "token_shuffle":
+        # token_shuffle expects 'cond' to be the actual conditioning tensor, not the extra_args dict
+        if positive and 'model_conds' in positive[0] and 'c_crossattn' in positive[0]['model_conds']:
+            cond_tensor = positive[0]['model_conds']['c_crossattn'].cond
+        else:
+            print("Warning: cond tensor not found for token_shuffle sampler. Using empty tensor.")
+            cond_tensor = torch.empty(1, 1, 768) # Placeholder, adjust dimensions as needed
+        samples = current_sampler_function(model_wrap, sigmas, cond=cond_tensor, callback=callback_wrap, disable=disable_pbar, **extra_args_for_sampler)
+    elif sampler == "diverse_attention":
+        samples = current_sampler_function(model_wrap, sigmas, callback=callback_wrap, disable=disable_pbar, **extra_args_for_sampler)
+    elif sampler == "dpmpp_unipc_restart":
+        samples = current_sampler_function(model_wrap, sigmas, callback=callback_wrap, disable=disable_pbar, **extra_args_for_sampler)
+    elif sampler == "dpm_fast":
+        sigma_min_val = float(model.model_sampling.sigma_min)
+        sigma_max_val = float(model.model_sampling.sigma_max)
+        samples = current_sampler_function(model_wrap, noise, sigma_min_val, sigma_max_val, len(sigmas) - 1, extra_args=extra_args_for_sampler, callback=callback_wrap, disable=disable_pbar)
+    elif sampler == "dpm_adaptive":
+        sigma_min_val = float(model.model_sampling.sigma_min)
+        sigma_max_val = float(model.model_sampling.sigma_max)
+        samples = current_sampler_function(model_wrap, noise, sigma_min_val, sigma_max_val, extra_args=extra_args_for_sampler, callback=callback_wrap, disable=disable_pbar)
     else:
-        samples = sampler.sample(model_wrap, sigmas, extra_args, callback_wrap, noise, latent_image, denoise_mask, disable_pbar)
+        samples = current_sampler_function(model_wrap, sigmas, extra_args=extra_args_for_sampler, callback=callback_wrap, disable=disable_pbar)
     return model.process_latent_out(samples.to(torch.float32))
 
 
