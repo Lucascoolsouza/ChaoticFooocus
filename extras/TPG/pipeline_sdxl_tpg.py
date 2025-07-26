@@ -1891,22 +1891,7 @@ class StableDiffusionXLTPGPipeline(
         if not return_dict:
             return (image,)
 
-        return StableDiffusionXLPipelineOutput(images=image)lf.do_token_perturbation_guidance:
-                    logger.debug("Applying TPG only")
-                    noise_pred_original, noise_pred_perturb = noise_pred.chunk(2)
-                    signal_scale = self.tpg_scale
-                    noise_pred = noise_pred_original + signal_scale * (noise_pred_original - noise_pred_perturb)
-                elif self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
-                    logger.debug("Applying both CFG and TPG")
-                    noise_pred_uncond, noise_pred_text, noise_pred_text_perturb = noise_pred.chunk(3)
-                    signal_scale = self.tpg_scale
-                    noise_pred = noise_pred_text + (self.guidance_scale-1.0) * (noise_pred_text - noise_pred_uncond) + signal_scale * (noise_pred_text - noise_pred_text_perturb)
-                else:
-                    logger.debug("No guidance applied")
-
-                if self.do_classifier_free_guidance and self.guidance_rescale > 0.0:
-                    # Based on 3.4. in https://arxiv.org/pdf/2305.08891.pdf
-                    noise_pred = rescale_noise_cfg(noise_pred, noise_pred_text, guidance_rescale=self.guidance_rescale)
+        return StableDiffusionXLPipelineOutput(images=image)
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents_dtype = latents.dtype
