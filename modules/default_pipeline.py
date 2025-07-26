@@ -779,7 +779,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             
             # Set global guidance configuration
             try:
-                from extras.guidance_samplers import set_guidance_config
+                from ldm_patched.k_diffusion.sampling import set_guidance_config
                 set_guidance_config(
                     tpg_scale=tpg_scale if tpg_enabled else 0.0,
                     nag_scale=nag_scale,
