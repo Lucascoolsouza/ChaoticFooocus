@@ -5,6 +5,27 @@ import torch
 import math
 from tqdm.auto import trange
 
+# Global guidance configuration
+_guidance_config = {
+    'tpg_scale': 0.0,
+    'nag_scale': 1.0,
+    'pag_scale': 0.0
+}
+
+def set_guidance_config(tpg_scale=0.0, nag_scale=1.0, pag_scale=0.0):
+    """Set global guidance configuration"""
+    global _guidance_config
+    _guidance_config.update({
+        'tpg_scale': tpg_scale,
+        'nag_scale': nag_scale,
+        'pag_scale': pag_scale
+    })
+    print(f"[GUIDANCE] Config updated: TPG={tpg_scale}, NAG={nag_scale}, PAG={pag_scale}")
+
+def get_guidance_config():
+    """Get current guidance configuration"""
+    return _guidance_config.copy()
+
 def shuffle_tokens(x):
     """Shuffle tokens for TPG"""
     try:
@@ -42,10 +63,14 @@ def to_d(x, sigma, denoised):
 
 @torch.no_grad()
 def sample_euler_tpg(model, x, sigmas, extra_args=None, callback=None, disable=None, 
-                     tpg_scale=3.0, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
+                     tpg_scale=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
     """Euler method with TPG (Token Perturbation Guidance)"""
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
+    
+    # Get TPG scale from global config if not provided
+    if tpg_scale is None:
+        tpg_scale = _guidance_config.get('tpg_scale', 3.0)
     
     print(f"[TPG] Using TPG-enhanced Euler sampler with scale {tpg_scale}")
     
