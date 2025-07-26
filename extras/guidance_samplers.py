@@ -26,25 +26,58 @@ def get_guidance_config():
     """Get current guidance configuration"""
     return _guidance_config.copy()
 
-def shuffle_tokens(x, step=None, seed_offset=0):
-    """Shuffle tokens for TPG - creates different shuffling at each step"""
+def shuffle_tokens(x, step=None, seed_offset=0, shuffle_strength=1.0):
+    """Shuffle tokens for TPG - creates different shuffling at each step
+    
+    Args:
+        x: Token embeddings to shuffle
+        step: Current sampling step (for step-dependent shuffling)
+        seed_offset: Offset for reproducible randomness
+        shuffle_strength: How much to shuffle (0.0 = no shuffle, 1.0 = full shuffle)
+    """
     try:
         if len(x.shape) >= 2:
             b, n = x.shape[:2]
+            
+            if shuffle_strength <= 0:
+                return x
             
             # Create different shuffling for each step
             if step is not None:
                 # Use step-based seed for reproducible but different shuffling each step
                 generator = torch.Generator(device=x.device)
                 generator.manual_seed(hash((step + seed_offset)) % (2**32))
-                permutation = torch.randperm(n, device=x.device, generator=generator)
+                
+                if shuffle_strength < 1.0:
+                    # Partial shuffling: only shuffle a portion of tokens
+                    num_to_shuffle = max(1, int(n * shuffle_strength))
+                    indices_to_shuffle = torch.randperm(n, device=x.device, generator=generator)[:num_to_shuffle]
+                    shuffled_indices = torch.randperm(num_to_shuffle, device=x.device, generator=generator)
+                    
+                    result = x.clone()
+                    result[:, indices_to_shuffle] = x[:, indices_to_shuffle[shuffled_indices]]
+                    return result
+                else:
+                    # Full shuffling
+                    permutation = torch.randperm(n, device=x.device, generator=generator)
+                    return x[:, permutation]
             else:
                 # Random shuffling if no step provided
-                permutation = torch.randperm(n, device=x.device)
+                if shuffle_strength < 1.0:
+                    num_to_shuffle = max(1, int(n * shuffle_strength))
+                    indices_to_shuffle = torch.randperm(n, device=x.device)[:num_to_shuffle]
+                    shuffled_indices = torch.randperm(num_to_shuffle, device=x.device)
+                    
+                    result = x.clone()
+                    result[:, indices_to_shuffle] = x[:, indices_to_shuffle[shuffled_indices]]
+                    return result
+                else:
+                    permutation = torch.randperm(n, device=x.device)
+                    return x[:, permutation]
                 
-            return x[:, permutation]
         return x
-    except Exception:
+    except Exception as e:
+        print(f"[TPG] Token shuffling error: {e}")
         return x
 
 def apply_attention_degradation(embeddings, degradation_strength=0.5):
@@ -81,7 +114,11 @@ def to_d(x, sigma, denoised):
 @torch.no_grad()
 def sample_euler_tpg(model, x, sigmas, extra_args=None, callback=None, disable=None, 
                      tpg_scale=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
-    """Euler method with TPG (Token Perturbation Guidance)"""
+    """Euler method with TPG (Token Perturbation Guidance)
+    
+    TPG works by shuffling tokens at each step to create perturbations,
+    then using the difference for guidance to improve generation quality.
+    """
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     
@@ -90,6 +127,7 @@ def sample_euler_tpg(model, x, sigmas, extra_args=None, callback=None, disable=N
         tpg_scale = _guidance_config.get('tpg_scale', 3.0)
     
     print(f"[TPG] Using TPG-enhanced Euler sampler with scale {tpg_scale}")
+    print("[TPG] Shuffling tokens at each step for dynamic perturbation")
     
     for i in trange(len(sigmas) - 1, disable=disable):
         gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
@@ -102,9 +140,9 @@ def sample_euler_tpg(model, x, sigmas, extra_args=None, callback=None, disable=N
         denoised = model(x, sigma_hat * s_in, **extra_args)
         
         # Apply TPG if we have conditioning
-        if 'cond' in extra_args and len(extra_args['cond']) > 0:
+        if 'cond' in extra_args and len(extra_args['cond']) > 0 and tpg_scale > 0:
             try:
-                # Create TPG conditioning by shuffling tokens
+                # Create TPG conditioning by shuffling tokens at this step
                 tpg_extra_args = extra_args.copy()
                 tpg_cond = []
                 
@@ -113,23 +151,37 @@ def sample_euler_tpg(model, x, sigmas, extra_args=None, callback=None, disable=N
                     if 'model_conds' in new_c:
                         for key, model_cond in new_c['model_conds'].items():
                             if hasattr(model_cond, 'cond') and isinstance(model_cond.cond, torch.Tensor):
-                                # Create shuffled version
+                                # Create shuffled version - different shuffling for each step
                                 import copy
                                 new_model_cond = copy.deepcopy(model_cond)
-                                new_model_cond.cond = shuffle_tokens(model_cond.cond)
+                                
+                                # Adaptive shuffling strength: stronger early, weaker later
+                                progress = i / (len(sigmas) - 1)
+                                shuffle_strength = 1.0 - 0.5 * progress  # 1.0 -> 0.5
+                                
+                                new_model_cond.cond = shuffle_tokens(
+                                    model_cond.cond, 
+                                    step=i,  # Use step number for different shuffling each step
+                                    seed_offset=hash(str(model_cond.cond.shape)) % 1000,
+                                    shuffle_strength=shuffle_strength
+                                )
                                 new_c['model_conds'][key] = new_model_cond
                     tpg_cond.append(new_c)
                 
                 tpg_extra_args['cond'] = tpg_cond
                 
-                # Get TPG prediction
+                # Get TPG prediction with shuffled tokens
                 denoised_tpg = model(x, sigma_hat * s_in, **tpg_extra_args)
                 
-                # Apply TPG guidance
-                denoised = denoised + tpg_scale * (denoised - denoised_tpg)
+                # Apply TPG guidance: enhance difference between normal and shuffled
+                guidance_direction = denoised - denoised_tpg
+                denoised = denoised + tpg_scale * guidance_direction
+                
+                if i % 10 == 0:  # Log occasionally
+                    print(f"[TPG] Step {i}: Applied token shuffling guidance (scale: {tpg_scale})")
                 
             except Exception as e:
-                print(f"[TPG] Error applying TPG, using standard denoising: {e}")
+                print(f"[TPG] Error applying TPG at step {i}, using standard denoising: {e}")
         
         d = to_d(x, sigma_hat, denoised)
         if callback is not None:
@@ -331,7 +383,7 @@ def sample_euler_guidance(model, x, sigmas, extra_args=None, callback=None, disa
                 guidance_sum = torch.zeros_like(denoised)
                 guidance_count = 0
                 
-                # Apply TPG
+                # Apply TPG - shuffle tokens at each step
                 if tpg_scale > 0:
                     tpg_extra_args = extra_args.copy()
                     tpg_cond = []
@@ -342,7 +394,16 @@ def sample_euler_guidance(model, x, sigmas, extra_args=None, callback=None, disa
                                 if hasattr(model_cond, 'cond') and isinstance(model_cond.cond, torch.Tensor):
                                     import copy
                                     new_model_cond = copy.deepcopy(model_cond)
-                                    new_model_cond.cond = shuffle_tokens(model_cond.cond)
+                                    # Shuffle tokens differently at each step with adaptive strength
+                                    progress = i / (len(sigmas) - 1)
+                                    shuffle_strength = 1.0 - 0.5 * progress  # Stronger early, weaker later
+                                    
+                                    new_model_cond.cond = shuffle_tokens(
+                                        model_cond.cond,
+                                        step=i,  # Different shuffling each step
+                                        seed_offset=hash(str(model_cond.cond.shape)) % 1000,
+                                        shuffle_strength=shuffle_strength
+                                    )
                                     new_c['model_conds'][key] = new_model_cond
                         tpg_cond.append(new_c)
                     tpg_extra_args['cond'] = tpg_cond
