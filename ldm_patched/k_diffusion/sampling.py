@@ -2317,10 +2317,10 @@ def sample_euler_pixel_art(model, x, sigmas, extra_args=None, callback=None, dis
         result = apply_pixelation(tensor, pixel_scale, step_ratio)
         
         # 2. Color quantization (reduces color palette)
-        result = quantize_colors(result, color_levels, quantize_strength)
+        # result = quantize_colors(result, color_levels, quantize_strength)  # Disabled - causes color bleeding
         
         # 3. Sharpening (enhances pixel boundaries)
-        result = apply_sharpening(result, sharpen_strength)
+        # result = apply_sharpening(result, sharpen_strength)  # Disabled - causes artifacts
         
         # 4. Clamp to valid range
         result = torch.clamp(result, -1.0, 1.0)
@@ -2429,10 +2429,10 @@ def sample_heun_pixel_art(model, x, sigmas, extra_args=None, callback=None, disa
         result = apply_pixelation(tensor, pixel_scale, step_ratio)
         
         # 2. Color quantization (reduces color palette)
-        result = quantize_colors(result, color_levels, quantize_strength)
+        # result = quantize_colors(result, color_levels, quantize_strength)  # Disabled - causes color bleeding
         
         # 3. Sharpening (enhances pixel boundaries)
-        result = apply_sharpening(result, sharpen_strength)
+        # result = apply_sharpening(result, sharpen_strength)  # Disabled - causes artifacts
         
         # 4. Clamp to valid range
         result = torch.clamp(result, -1.0, 1.0)
