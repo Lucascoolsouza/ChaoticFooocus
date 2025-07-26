@@ -354,7 +354,20 @@ def worker():
                         pipeline.loaded_ControlNets[cn_path], cn_img, cn_weight, 0, cn_stop)
 
         # Use the pipeline.process_diffusion which now supports NAG and Detail Daemon
-        print(f"[PROCESS_TASK DEBUG] pag_enabled: {async_task.pag_enabled}, tpg_enabled: {async_task.tpg_enabled}, nag_scale: {async_task.nag_scale}")
+        print(f"[PROCESS_TASK DEBUG] dag_enabled: {async_task.dag_enabled}, tpg_enabled: {async_task.tpg_enabled}, nag_scale: {async_task.nag_scale}")
+        
+        # Debug: Check if guidance samplers are being used
+        guidance_sampler_names = ['euler_tpg', 'euler_nag', 'euler_dag', 'euler_guidance']
+        if async_task.sampler_name in guidance_sampler_names:
+            print(f"[ASYNC_WORKER] 🎯 GUIDANCE SAMPLER DETECTED: {async_task.sampler_name}")
+            print(f"[ASYNC_WORKER] TPG: enabled={async_task.tpg_enabled}, scale={async_task.tpg_scale}")
+            print(f"[ASYNC_WORKER] NAG: scale={async_task.nag_scale}")
+            print(f"[ASYNC_WORKER] DAG: enabled={async_task.dag_enabled}, scale={async_task.dag_scale}")
+        else:
+            print(f"[ASYNC_WORKER] Regular sampler: {async_task.sampler_name}")
+            if async_task.tpg_enabled or async_task.nag_scale > 1.0 or async_task.dag_enabled:
+                print(f"[ASYNC_WORKER] ⚠️  WARNING: Guidance enabled but not using guidance sampler!")
+        
         imgs = pipeline.process_diffusion(
             positive_cond=positive_cond,
             negative_cond=negative_cond,
@@ -1310,6 +1323,18 @@ def worker():
         async_task.steps, switch, width, height = apply_overrides(async_task, async_task.steps, height, width)
 
         print(f'[Parameters] Sampler = {async_task.sampler_name} - {async_task.scheduler_name}')
+        
+        # Debug: Show guidance parameters
+        if async_task.tpg_enabled or async_task.nag_scale > 1.0 or async_task.dag_enabled:
+            print(f'[Parameters] 🎯 GUIDANCE ACTIVE:')
+            if async_task.tpg_enabled:
+                print(f'[Parameters]   - TPG: scale={async_task.tpg_scale}')
+            if async_task.nag_scale > 1.0:
+                print(f'[Parameters]   - NAG: scale={async_task.nag_scale}')
+            if async_task.dag_enabled:
+                print(f'[Parameters]   - DAG: scale={async_task.dag_scale}')
+        else:
+            print(f'[Parameters] No guidance methods active')
         print(f'[Parameters] Steps = {async_task.steps} - {switch}')
 
         progressbar(async_task, current_progress, 'Initializing ...')

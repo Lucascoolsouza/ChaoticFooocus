@@ -357,7 +357,14 @@ def sample_euler_dag(model, x, sigmas, extra_args=None, callback=None, disable=N
     
     total_steps = len(sigmas) - 1
     print(f"[DAG] Using DAG-enhanced Euler sampler with scale {dag_scale}")
+    print(f"[DAG] Global config: {_guidance_config}")
     print("[DAG] Applying dynamic attention modulations throughout sampling")
+    
+    # Debug: Check if we have conditioning
+    if 'cond' in extra_args and len(extra_args['cond']) > 0:
+        print(f"[DAG] Found {len(extra_args['cond'])} conditioning entries")
+    else:
+        print("[DAG] WARNING: No conditioning found - DAG will have no effect!")
     
     for i in trange(total_steps, disable=disable):
         gamma = min(s_churn / total_steps, 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
@@ -451,6 +458,15 @@ def sample_euler_guidance(model, x, sigmas, extra_args=None, callback=None, disa
     
     if active_methods:
         print(f"[GUIDANCE] Using combined guidance: {', '.join(active_methods)}")
+        print(f"[GUIDANCE] Global config: {_guidance_config}")
+        
+        # Debug: Check if we have conditioning
+        if 'cond' in extra_args and len(extra_args['cond']) > 0:
+            print(f"[GUIDANCE] Found {len(extra_args['cond'])} conditioning entries")
+        else:
+            print("[GUIDANCE] WARNING: No conditioning found - Combined guidance will have no effect!")
+    else:
+        print("[GUIDANCE] No active guidance methods - using regular Euler")
     
     for i in trange(len(sigmas) - 1, disable=disable):
         gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
