@@ -124,10 +124,14 @@ def sample_euler_tpg(model, x, sigmas, extra_args=None, callback=None, disable=N
 
 @torch.no_grad()
 def sample_euler_nag(model, x, sigmas, extra_args=None, callback=None, disable=None,
-                     nag_scale=1.5, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
+                     nag_scale=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
     """Euler method with NAG (Negative Attention Guidance)"""
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
+    
+    # Get NAG scale from global config if not provided
+    if nag_scale is None:
+        nag_scale = _guidance_config.get('nag_scale', 1.5)
     
     print(f"[NAG] Using NAG-enhanced Euler sampler with scale {nag_scale}")
     
@@ -181,10 +185,14 @@ def sample_euler_nag(model, x, sigmas, extra_args=None, callback=None, disable=N
 
 @torch.no_grad()
 def sample_euler_pag(model, x, sigmas, extra_args=None, callback=None, disable=None,
-                     pag_scale=3.0, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
+                     pag_scale=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
     """Euler method with PAG (Perturbed Attention Guidance)"""
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
+    
+    # Get PAG scale from global config if not provided
+    if pag_scale is None:
+        pag_scale = _guidance_config.get('pag_scale', 3.0)
     
     print(f"[PAG] Using PAG-enhanced Euler sampler with scale {pag_scale}")
     
@@ -239,11 +247,19 @@ def sample_euler_pag(model, x, sigmas, extra_args=None, callback=None, disable=N
 # Combined guidance sampler
 @torch.no_grad()
 def sample_euler_guidance(model, x, sigmas, extra_args=None, callback=None, disable=None,
-                         tpg_scale=0.0, nag_scale=1.0, pag_scale=0.0,
+                         tpg_scale=None, nag_scale=None, pag_scale=None,
                          s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
     """Euler method with combined TPG, NAG, and PAG guidance"""
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
+    
+    # Get guidance scales from global config if not provided
+    if tpg_scale is None:
+        tpg_scale = _guidance_config.get('tpg_scale', 0.0)
+    if nag_scale is None:
+        nag_scale = _guidance_config.get('nag_scale', 1.0)
+    if pag_scale is None:
+        pag_scale = _guidance_config.get('pag_scale', 0.0)
     
     # Count active guidance methods
     active_methods = []

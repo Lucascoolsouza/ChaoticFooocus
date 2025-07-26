@@ -759,6 +759,17 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         guidance_active = (tpg_enabled and tpg_scale > 0) or (nag_scale > 1.0) or (pag_enabled and pag_scale > 0)
         
         if guidance_active:
+            # Set global guidance configuration
+            try:
+                from extras.guidance_samplers import set_guidance_config
+                set_guidance_config(
+                    tpg_scale=tpg_scale if tpg_enabled else 0.0,
+                    nag_scale=nag_scale,
+                    pag_scale=pag_scale if pag_enabled else 0.0
+                )
+            except ImportError:
+                print("[GUIDANCE] Warning: guidance_samplers not available")
+            
             # Determine which guidance sampler to use
             if (tpg_enabled and tpg_scale > 0) and (nag_scale > 1.0) and (pag_enabled and pag_scale > 0):
                 # All three guidance methods - use combined sampler
@@ -794,11 +805,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             refiner=final_refiner_unet,
             refiner_switch=switch,
             sigmas=minmax_sigmas,
-            callback_function=callback,
-            # Pass guidance parameters
-            tpg_scale=tpg_scale if tpg_enabled else 0.0,
-            nag_scale=nag_scale,
-            pag_scale=pag_scale if pag_enabled else 0.0
+            callback_function=callback
         )['samples']
         
         # Convert latents to images
