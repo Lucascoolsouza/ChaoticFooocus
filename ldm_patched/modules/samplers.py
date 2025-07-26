@@ -524,7 +524,7 @@ class UNIPCBH2(Sampler):
 
 KSAMPLER_NAMES = ["euler", "euler_ancestral","euler_chaotic","euler_triangle_wave","euler_dreamy","euler_dreamy_pp","euler_tpg","euler_nag","euler_dag","euler_guidance","triangular","pixelart","dreamy","comic","fractal","heun", "heunpp2","dpm_2", "dpm_2_ancestral",
                   "lms", "dpm_fast", "dpm_adaptive", "dpmpp_2s_ancestral", "dpmpp_sde", "dpmpp_sde_gpu",
-                  "dpmpp_2m", "dpmpp_2m_sde", "dpmpp_2m_sde_gpu", "dpmpp_3m_sde", "dpmpp_3m_sde_gpu", "ddpm", "lcm", "tcd", "edm_playground_v2.5", "restart", "dpmpp_unipc_restart", "euler_token_shuffle", "heun_token_shuffle", "heun_nag", "dpmpp_2m_nag"]
+                  "dpmpp_2m", "dpmpp_2m_sde", "dpmpp_2m_sde_gpu", "dpmpp_3m_sde", "dpmpp_3m_sde_gpu", "ddpm", "lcm", "tcd", "edm_playground_v2.5", "restart", "dpmpp_unipc_restart", "euler_token_shuffle", "heun_token_shuffle", "heun_nag", "dpmpp_2m_nag", "euler_multiscale", "heun_multiscale"]
 
 class KSAMPLER(Sampler):
     def __init__(self, sampler_function, extra_options={}, inpaint_options={}):

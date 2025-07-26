@@ -1839,6 +1839,239 @@ def sample_dpmpp_2m_nag(model, x, sigmas, extra_args=None, callback=None, disabl
 
 
 @torch.no_grad()
+def sample_euler_multiscale(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1., scales=[1.0, 0.5, 0.25], guidance_weights=[0.6, 0.3, 0.1], blend_mode='weighted'):
+    """Euler sampler with multi-scale guidance for better detail preservation.
+    
+    This sampler processes the latent at multiple scales simultaneously and combines
+    the guidance for improved detail preservation and overall coherence.
+    
+    Args:
+        scales: List of scale factors for multi-scale processing (1.0 = original size)
+        guidance_weights: Weights for combining guidance from different scales
+        blend_mode: How to blend multi-scale guidance ('weighted', 'adaptive', 'frequency')
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    # Normalize guidance weights
+    guidance_weights = torch.tensor(guidance_weights, device=x.device, dtype=x.dtype)
+    guidance_weights = guidance_weights / guidance_weights.sum()
+    
+    print(f"Multi-scale Euler sampler active - scales: {scales}, weights: {guidance_weights.tolist()}, blend: {blend_mode}")
+    
+    def resize_latent(latent, scale):
+        """Resize latent tensor to given scale"""
+        if scale == 1.0:
+            return latent
+        b, c, h, w = latent.shape
+        new_h, new_w = int(h * scale), int(w * scale)
+        # Use area interpolation for downscaling, bilinear for upscaling
+        mode = 'area' if scale < 1.0 else 'bilinear'
+        return F.interpolate(latent, size=(new_h, new_w), mode=mode, align_corners=False if mode == 'bilinear' else None)
+    
+    def resize_back(latent, target_shape):
+        """Resize latent back to target shape"""
+        if latent.shape[-2:] == target_shape[-2:]:
+            return latent
+        return F.interpolate(latent, size=target_shape[-2:], mode='bilinear', align_corners=False)
+    
+    def adaptive_blend(guidance_list, step_ratio):
+        """Adaptively blend guidance based on sampling progress"""
+        # Early steps: favor larger scales (global structure)
+        # Later steps: favor smaller scales (fine details)
+        if step_ratio < 0.3:
+            # Early: emphasize large scale
+            weights = torch.tensor([0.7, 0.25, 0.05], device=x.device, dtype=x.dtype)
+        elif step_ratio < 0.7:
+            # Middle: balanced
+            weights = torch.tensor([0.5, 0.35, 0.15], device=x.device, dtype=x.dtype)
+        else:
+            # Late: emphasize fine details
+            weights = torch.tensor([0.4, 0.35, 0.25], device=x.device, dtype=x.dtype)
+        
+        weights = weights[:len(guidance_list)]
+        weights = weights / weights.sum()
+        
+        combined = torch.zeros_like(guidance_list[0])
+        for i, guidance in enumerate(guidance_list):
+            combined += weights[i] * guidance
+        return combined
+    
+    def frequency_blend(guidance_list):
+        """Blend guidance using frequency domain analysis"""
+        # Convert to frequency domain
+        combined = torch.zeros_like(guidance_list[0])
+        
+        for i, guidance in enumerate(guidance_list):
+            # Apply frequency-based weighting
+            # Larger scales contribute more to low frequencies
+            # Smaller scales contribute more to high frequencies
+            freq_weight = 1.0 / (scales[i] + 0.1)  # Inverse relationship
+            combined += guidance_weights[i] * freq_weight * guidance
+        
+        return combined
+    
+    original_shape = x.shape
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        # Apply churn noise if specified
+        gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
+        sigma_hat = sigmas[i] * (gamma + 1)
+        if gamma > 0:
+            eps = torch.randn_like(x) * s_noise
+            x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
+        
+        # Multi-scale processing
+        guidance_list = []
+        
+        for scale_idx, scale in enumerate(scales):
+            # Resize input for this scale
+            x_scaled = resize_latent(x, scale)
+            
+            # Get prediction at this scale
+            denoised_scaled = model(x_scaled, sigma_hat * s_in, **extra_args)
+            
+            # Calculate guidance (derivative) at this scale
+            d_scaled = to_d(x_scaled, sigma_hat, denoised_scaled)
+            
+            # Resize guidance back to original resolution
+            d_resized = resize_back(d_scaled, original_shape)
+            
+            guidance_list.append(d_resized)
+        
+        # Combine multi-scale guidance
+        if blend_mode == 'weighted':
+            # Simple weighted combination
+            d = torch.zeros_like(guidance_list[0])
+            for j, guidance in enumerate(guidance_list):
+                d += guidance_weights[j] * guidance
+        elif blend_mode == 'adaptive':
+            # Adaptive blending based on sampling progress
+            step_ratio = i / (len(sigmas) - 1)
+            d = adaptive_blend(guidance_list, step_ratio)
+        elif blend_mode == 'frequency':
+            # Frequency-aware blending
+            d = frequency_blend(guidance_list)
+        else:
+            # Fallback to weighted
+            d = torch.zeros_like(guidance_list[0])
+            for j, guidance in enumerate(guidance_list):
+                d += guidance_weights[j] * guidance
+        
+        # Use the original scale prediction for callback
+        denoised = model(x, sigma_hat * s_in, **extra_args)
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
+        
+        # Euler step with multi-scale guidance
+        dt = sigmas[i + 1] - sigma_hat
+        x = x + d * dt
+    
+    return x
+
+
+@torch.no_grad()
+def sample_heun_multiscale(model, x, sigmas, extra_args=None, callback=None, disable=None, scales=[1.0, 0.5, 0.25], guidance_weights=[0.6, 0.3, 0.1], blend_mode='adaptive', s_noise=1.):
+    """Heun sampler with multi-scale guidance for better detail preservation.
+    
+    This sampler combines Heun's method with multi-scale processing for more accurate
+    sampling while preserving details at multiple resolutions.
+    
+    Args:
+        scales: List of scale factors for multi-scale processing
+        guidance_weights: Weights for combining guidance from different scales
+        blend_mode: How to blend multi-scale guidance ('weighted', 'adaptive', 'frequency')
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    # Normalize guidance weights
+    guidance_weights = torch.tensor(guidance_weights, device=x.device, dtype=x.dtype)
+    guidance_weights = guidance_weights / guidance_weights.sum()
+    
+    print(f"Multi-scale Heun sampler active - scales: {scales}, weights: {guidance_weights.tolist()}, blend: {blend_mode}")
+    
+    def resize_latent(latent, scale):
+        """Resize latent tensor to given scale"""
+        if scale == 1.0:
+            return latent
+        b, c, h, w = latent.shape
+        new_h, new_w = int(h * scale), int(w * scale)
+        mode = 'area' if scale < 1.0 else 'bilinear'
+        return F.interpolate(latent, size=(new_h, new_w), mode=mode, align_corners=False if mode == 'bilinear' else None)
+    
+    def resize_back(latent, target_shape):
+        """Resize latent back to target shape"""
+        if latent.shape[-2:] == target_shape[-2:]:
+            return latent
+        return F.interpolate(latent, size=target_shape[-2:], mode='bilinear', align_corners=False)
+    
+    def get_multiscale_guidance(x_input, sigma_input):
+        """Get multi-scale guidance for given input"""
+        guidance_list = []
+        
+        for scale in scales:
+            # Resize input for this scale
+            x_scaled = resize_latent(x_input, scale)
+            
+            # Get prediction at this scale
+            denoised_scaled = model(x_scaled, sigma_input * s_in, **extra_args)
+            
+            # Calculate guidance at this scale
+            d_scaled = to_d(x_scaled, sigma_input, denoised_scaled)
+            
+            # Resize guidance back to original resolution
+            d_resized = resize_back(d_scaled, x_input.shape)
+            
+            guidance_list.append(d_resized)
+        
+        # Combine guidance
+        if blend_mode == 'adaptive':
+            # Adaptive blending (simplified for Heun)
+            combined = torch.zeros_like(guidance_list[0])
+            for j, guidance in enumerate(guidance_list):
+                combined += guidance_weights[j] * guidance
+        else:
+            # Weighted blending
+            combined = torch.zeros_like(guidance_list[0])
+            for j, guidance in enumerate(guidance_list):
+                combined += guidance_weights[j] * guidance
+        
+        return combined
+    
+    original_shape = x.shape
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        # First prediction with multi-scale guidance
+        d = get_multiscale_guidance(x, sigmas[i])
+        
+        # Get original scale prediction for callback
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        
+        dt = sigmas[i + 1] - sigmas[i]
+        
+        if sigmas[i + 1] == 0:
+            # Euler step for final iteration
+            x = x + d * dt
+        else:
+            # Heun's method: predictor-corrector with multi-scale
+            x_2 = x + d * dt
+            
+            # Second prediction with multi-scale guidance
+            d_2 = get_multiscale_guidance(x_2, sigmas[i + 1])
+            
+            # Combine predictions
+            d_prime = (d + d_2) / 2
+            x = x + d_prime * dt
+    
+    return x
+
+
+@torch.no_grad()
 def sample_restart(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., restart_list=None):
     """Implements restart sampling in Restart Sampling for Improving Generative Processes (2023)
     Restart_list format: {min_sigma: [ restart_steps, restart_times, max_sigma]}

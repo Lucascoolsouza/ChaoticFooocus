@@ -55,7 +55,9 @@ KSAMPLER = {
     "heun_token_shuffle": "Heun Token Shuffle",
     "euler_nag": "Euler NAG",
     "heun_nag": "Heun NAG",
-    "dpmpp_2m_nag": "DPM++ 2M NAG"
+    "dpmpp_2m_nag": "DPM++ 2M NAG",
+    "euler_multiscale": "Euler Multi-Scale",
+    "heun_multiscale": "Heun Multi-Scale"
 }
 
 SAMPLER_EXTRA = {
