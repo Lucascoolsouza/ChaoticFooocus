@@ -1778,7 +1778,7 @@ def set_guidance_config(tpg_scale=0.0, nag_scale=1.0):
     _guidance_config.update({
         'tpg_scale': tpg_scale,
         'nag_scale': nag_scale,
-        'dag_scale': dag_scale
+        
     })
     print(f"[GUIDANCE] Config updated: TPG={tpg_scale}, NAG={nag_scale}")
 

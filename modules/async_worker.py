@@ -1316,7 +1316,7 @@ def worker():
         print(f'[Parameters] Sampler = {async_task.sampler_name} - {async_task.scheduler_name}')
         
         # Debug: Show guidance parameters
-        if async_task.tpg_enabled or async_task.nag_scale > 1.0 or async_task.dag_enabled:
+        if async_task.tpg_enabled or async_task.nag_scale > 1.0:
             print(f'[Parameters] 🎯 GUIDANCE ACTIVE:')
             if async_task.tpg_enabled:
                 print(f'[Parameters]   - TPG: scale={async_task.tpg_scale}')
