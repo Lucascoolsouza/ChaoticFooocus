@@ -1139,7 +1139,7 @@ with shared.gradio_root:
                                            inpaint_mask_sam_max_detections, dino_erode_or_dilate, debugging_dino],
                                    outputs=inpaint_mask_image, show_progress=True, queue=True)
 
-        ctrls = [currentTask, generate_image_grid]
+        ctrls = [currentTask, generate_image_grid, *nag_ctrls, *tpg_ctrls, *dag_ctrls]
         ctrls += [
             prompt, negative_prompt, style_selections,
             performance_selection, aspect_ratios_selection, image_number, output_format, image_seed,
