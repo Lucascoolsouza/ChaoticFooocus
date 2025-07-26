@@ -9,21 +9,28 @@ The guidance samplers provide advanced control over the diffusion process by mod
 ## Available Guidance Methods
 
 ### 1. TPG (Token Perturbation Guidance)
+
 - **Purpose**: Enhances image quality by perturbing token embeddings
 - **How it works**: Creates shuffled versions of text embeddings and uses the difference to guide generation
 - **Parameters**:
   - `tpg_scale`: Guidance strength (default: 3.0)
   - `tpg_applied_layers_index`: Which layers to apply TPG to (optional)
 
-### 2. NAG (Normalized Attention Guidance)
-- **Purpose**: Improves attention patterns by using degraded conditioning as reference
-- **How it works**: Creates degraded versions of embeddings and enhances the difference
+### 2. NAG (Negative Attention Guidance)
+
+- **Purpose**: Restores effective negative prompting in few-step models where CFG fails
+- **How it works**: Creates degraded positive conditioning to enhance negative prompt influence
+- **Key Benefits**:
+  - Enables direct suppression of visual, semantic, and stylistic attributes
+  - Works with few-step models like Flux-Schnell where traditional CFG is weak
+  - Supports prompt-based debiasing and enhanced controllability
+  - Allows removal of specific elements (glasses, realistic style, blur, etc.)
 - **Parameters**:
-  - `nag_scale`: Guidance strength (default: 1.0, >1.0 to enable)
-  - `nag_tau`: Degradation noise strength (default: 2.5)
-  - `nag_alpha`: Degradation factor (default: 0.5)
+  - `nag_scale`: Guidance strength (default: 1.5, >1.0 to enable)
+  - Values: 1.0=disabled, 1.5-2.0=moderate, 2.0-3.0=strong, 3.0+=very strong
 
 ### 3. PAG (Perturbed Attention Guidance)
+
 - **Purpose**: Enhances generation by using perturbed attention as reference
 - **How it works**: Adds controlled noise to embeddings and uses the difference for guidance
 - **Parameters**:
@@ -33,12 +40,15 @@ The guidance samplers provide advanced control over the diffusion process by mod
 ## Integration with Fooocus
 
 ### Sampler Architecture
+
 Each guidance method is implemented as a sampler class that:
+
 1. Stores the original UNet forward method
 2. Replaces it with a modified version during sampling
 3. Restores the original method after sampling
 
 ### Activation/Deactivation
+
 ```python
 # Example usage
 tpg_sampler.tpg_scale = 3.0
@@ -48,7 +58,9 @@ tpg_sampler.deactivate()
 ```
 
 ### Multiple Guidance Methods
+
 The system supports using multiple guidance methods simultaneously:
+
 - TPG + NAG
 - TPG + PAG  
 - NAG + PAG
@@ -57,7 +69,9 @@ The system supports using multiple guidance methods simultaneously:
 ## Technical Implementation
 
 ### UNet Forward Method Modification
+
 The samplers work by:
+
 1. Intercepting the UNet forward call
 2. Duplicating the conditioning for guidance (uncond, cond, guidance_cond)
 3. Processing all three through the UNet
@@ -65,9 +79,11 @@ The samplers work by:
 5. Returning the enhanced prediction
 
 ### Device Management
+
 The samplers automatically handle device placement and ensure all tensors are on the correct device.
 
 ### Error Handling
+
 Each sampler includes robust error handling and will fall back to standard behavior if guidance fails.
 
 ## Custom Samplers
@@ -75,6 +91,7 @@ Each sampler includes robust error handling and will fall back to standard behav
 The system also includes many creative custom samplers from the original sampling.py:
 
 ### Artistic Samplers
+
 - **dreamy**: Creates dreamy, soft images with temporal blending
 - **comic**: High contrast, sharp edges for comic book style
 - **fractal**: Self-similar patterns at different scales
@@ -82,6 +99,7 @@ The system also includes many creative custom samplers from the original samplin
 - **triangular**: Enhances triangular artifacts and patterns
 
 ### Experimental Samplers
+
 - **euler_chaotic**: Adds chaotic perturbations to Euler sampling
 - **euler_triangle_wave**: Oscillating noise patterns
 - **euler_dreamy**: Smooth transitions with motion blur effects
@@ -90,6 +108,7 @@ The system also includes many creative custom samplers from the original samplin
 ## Scheduler Integration
 
 The system works with all the custom schedulers:
+
 - **quantum**: Quantum tunneling-inspired discrete levels
 - **organic**: Fibonacci-based natural growth patterns  
 - **spiral**: Spiral trajectory noise scheduling
@@ -100,6 +119,7 @@ The system works with all the custom schedulers:
 ## Usage Examples
 
 ### Basic TPG Usage
+
 ```python
 # Enable TPG with default settings
 tpg_enabled = True
@@ -107,6 +127,7 @@ tpg_scale = 3.0
 ```
 
 ### Combined Guidance
+
 ```python
 # Use TPG + NAG together
 tpg_enabled = True
@@ -115,6 +136,7 @@ nag_scale = 1.5
 ```
 
 ### With Custom Samplers
+
 ```python
 # Use PAG with dreamy sampler and quantum scheduler
 pag_enabled = True
@@ -133,12 +155,15 @@ scheduler_name = "quantum"
 ## Troubleshooting
 
 ### Common Issues
+
 1. **Out of Memory**: Reduce guidance scales or use fewer guidance methods
 2. **No Effect**: Ensure guidance scales are set correctly (>0 for PAG, >1 for NAG)
 3. **Crashes**: Check that UNet architecture is compatible
 
 ### Debug Information
+
 The system provides detailed logging:
+
 - Activation/deactivation messages
 - Guidance scale information
 - Error messages with fallback behavior
@@ -146,6 +171,7 @@ The system provides detailed logging:
 ## Future Enhancements
 
 Potential improvements:
+
 - Adaptive guidance scaling based on timestep
 - Layer-specific guidance control
 - Integration with ControlNet and other conditioning

@@ -26,12 +26,22 @@ def get_guidance_config():
     """Get current guidance configuration"""
     return _guidance_config.copy()
 
-def shuffle_tokens(x):
-    """Shuffle tokens for TPG"""
+def shuffle_tokens(x, step=None, seed_offset=0):
+    """Shuffle tokens for TPG - creates different shuffling at each step"""
     try:
         if len(x.shape) >= 2:
             b, n = x.shape[:2]
-            permutation = torch.randperm(n, device=x.device)
+            
+            # Create different shuffling for each step
+            if step is not None:
+                # Use step-based seed for reproducible but different shuffling each step
+                generator = torch.Generator(device=x.device)
+                generator.manual_seed(hash((step + seed_offset)) % (2**32))
+                permutation = torch.randperm(n, device=x.device, generator=generator)
+            else:
+                # Random shuffling if no step provided
+                permutation = torch.randperm(n, device=x.device)
+                
             return x[:, permutation]
         return x
     except Exception:
