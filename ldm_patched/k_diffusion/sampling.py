@@ -1616,3 +1616,176 @@ def sample_restart(model, x, sigmas, extra_args=None, callback=None, disable=Non
         last_sigma = new_sigma
 
     return x
+
+
+@torch.no_grad()
+def sample_negative_focus(
+    model,
+    x,
+    sigmas,
+    *,
+    neg_text_emb,           # (B, seq_len, dim) – CLIP text embed of the **negative** prompt
+    neg_scale=1.2,          # how strongly we push *away* from the negative
+    neg_start=0.3,          # sigma fraction where we start applying the effect
+    extra_args=None,
+    callback=None,
+    disable=None,
+):
+    """
+    Euler steps with an **anti-guidance** term that actively *repels* the denoised
+    latent from the negative prompt embedding.
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    neg_sigma_start = sigmas[0] * neg_start
+
+    for i in trange(len(sigmas) - 1, disable=disable):
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+
+        # --- negative steering -------------------------------------------------
+        if sigmas[i] <= neg_sigma_start:
+            # Compute per-token distance to negative prompt
+            # (simple cosine distance on the spatially-mean token embeddings)
+            denoised_flat = denoised.mean(dim=(2, 3))        # (B, C)
+            neg_flat = neg_text_emb.mean(dim=1)              # (B, C)
+            neg_sim = F.cosine_similarity(denoised_flat, neg_flat, dim=-1)  # (B,)
+            # Build push direction: move *away* from the negative
+            push = (denoised_flat - neg_flat.unsqueeze(-1).unsqueeze(-1))  # broadcast to (B,C,H,W)
+            push = push * neg_sim.view(-1, 1, 1, 1)          # scale by similarity
+            denoised = denoised - neg_scale * push           # subtract ⇒ repel
+        # ----------------------------------------------------------------------
+
+        if callback is not None:
+            callback(
+                {
+                    "x": x,
+                    "i": i,
+                    "sigma": sigmas[i],
+                    "sigma_hat": sigmas[i],
+                    "denoised": denoised,
+                }
+            )
+
+        d = to_d(x, sigmas[i], denoised)
+        dt = sigmas[i + 1] - sigmas[i]
+        x = x + d * dt
+    return x
+@torch.no_grad()
+def sample_token_shuffle(
+    model,
+    x,
+    sigmas,
+    *,
+    shuffle_start=0.5,      # begin shuffling after this sigma fraction
+    shuffle_prob=0.3,       # probability of shuffling *any* token in this step
+    seed=None,
+    extra_args=None,
+    callback=None,
+    disable=None,
+):
+    """
+    Standard Euler, **but** every step we randomly permute the token order of the
+    conditioning vector inside `extra_args["cond"]` (assumed to be a Tensor of
+    shape (B, seq_len, dim)).  This injects diversity at the *semantic* level
+    without touching the denoising math.
+    """
+    extra_args = {} if extra_args is None else extra_args.copy()
+    s_in = x.new_ones([x.shape[0]])
+    sigma_start = sigmas[0] * shuffle_start
+    rng = torch.Generator(device=x.device)
+    if seed is not None:
+        rng.manual_seed(seed)
+
+    for i in trange(len(sigmas) - 1, disable=disable):
+        # ---- token shuffling --------------------------------------------------
+        if sigmas[i] <= sigma_start and "cond" in extra_args:
+            cond = extra_args["cond"]                        # (B, seq, dim)
+            B, L, D = cond.shape
+            for b in range(B):
+                if torch.rand([], generator=rng) < shuffle_prob:
+                    perm = torch.randperm(L, generator=rng)
+                    cond[b] = cond[b][perm]
+            extra_args["cond"] = cond
+        # ----------------------------------------------------------------------
+
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        if callback is not None:
+            callback(
+                {
+                    "x": x,
+                    "i": i,
+                    "sigma": sigmas[i],
+                    "sigma_hat": sigmas[i],
+                    "denoised": denoised,
+                }
+            )
+        d = to_d(x, sigmas[i], denoised)
+        dt = sigmas[i + 1] - sigmas[i]
+        x = x + d * dt
+    return x
+@torch.no_grad()
+def sample_diverse_attention(
+    model,
+    x,
+    sigmas,
+    *,
+    attn_dropout=0.1,        # dropout rate on Q/K/V inside self/cross-attention
+    attn_temp=0.7,           # temperature scaling (lower = more diverse)
+    diversity_start=0.4,     # when to start messing with attention
+    extra_args=None,
+    callback=None,
+    disable=None,
+):
+    """
+    Adds **stochastic dropout** and **temperature scaling** to the attention maps
+    of the underlying UNet.  The hooks are installed only after we pass the
+    `diversity_start` sigma threshold to avoid breaking early structure.
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    sigma_start = sigmas[0] * diversity_start
+
+    # --- helper hooks ---------------------------------------------------------
+    def attn_hook(module, inp, out):
+        # inp[0] = Q, inp[1] = K, inp[2] = V
+        q, k, v = inp
+        if attn_dropout > 0:
+            k = F.dropout(k, p=attn_dropout, training=True, inplace=False)
+            v = F.dropout(v, p=attn_dropout, training=True, inplace=False)
+        # Temperature scaling
+        q = q / attn_temp
+        return module(q, k, v, need_weights=False)[0]
+
+    hooks = []
+
+    for i in trange(len(sigmas) - 1, disable=disable):
+        # install / remove hooks dynamically
+        if sigmas[i] <= sigma_start and not hooks:
+            for name, m in model.named_modules():
+                if "attn" in name.lower() and hasattr(m, "forward"):
+                    hooks.append(m.register_forward_hook(attn_hook))
+        elif sigmas[i] > sigma_start and hooks:
+            for h in hooks:
+                h.remove()
+            hooks.clear()
+
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        if callback is not None:
+            callback(
+                {
+                    "x": x,
+                    "i": i,
+                    "sigma": sigmas[i],
+                    "sigma_hat": sigmas[i],
+                    "denoised": denoised,
+                }
+            )
+
+        d = to_d(x, sigmas[i], denoised)
+        dt = sigmas[i + 1] - sigmas[i]
+        x = x + d * dt
+
+    # final cleanup
+    for h in hooks:
+        h.remove()
+    return x
