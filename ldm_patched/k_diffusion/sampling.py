@@ -1567,35 +1567,54 @@ def sample_euler_token_shuffle(model, x, sigmas, extra_args=None, callback=None,
         
         # Shuffle tokens (spatial positions) before denoising
         if shuffle_strength > 0.0:
-            # Flatten spatial dimensions
-            x_flat = x.view(batch_size, channels, total_tokens)  # [B, C, H*W]
+            # Progressive shuffling that decreases over time to preserve final details
+            step_ratio = i / (len(sigmas) - 1)
+            dynamic_strength = shuffle_strength * (1.0 - step_ratio * 0.8)  # Reduce shuffling as we progress
             
-            # Create shuffling indices for each batch item
-            shuffled_x = torch.zeros_like(x_flat)
-            for b in range(batch_size):
-                # Generate random permutation indices
-                perm_indices = torch.randperm(total_tokens, device=x.device)
+            if dynamic_strength > 0.01:  # Only shuffle if strength is meaningful
+                # Flatten spatial dimensions
+                x_flat = x.view(batch_size, channels, total_tokens)  # [B, C, H*W]
                 
-                # Apply partial shuffling based on shuffle_strength
-                if shuffle_strength < 1.0:
-                    # Interpolate between original and shuffled indices
-                    num_shuffle = int(total_tokens * shuffle_strength)
-                    original_indices = torch.arange(total_tokens, device=x.device)
+                # Create shuffling indices for each batch item
+                shuffled_x = torch.zeros_like(x_flat)
+                for b in range(batch_size):
+                    # Local shuffling: shuffle within small neighborhoods to preserve structure
+                    neighborhood_size = max(4, int(16 * (1.0 - dynamic_strength)))  # Smaller neighborhoods for stronger shuffle
                     
-                    # Only shuffle a portion of the tokens
-                    shuffle_mask = torch.zeros(total_tokens, dtype=torch.bool, device=x.device)
-                    shuffle_positions = torch.randperm(total_tokens, device=x.device)[:num_shuffle]
-                    shuffle_mask[shuffle_positions] = True
+                    # Create a copy to work with
+                    current_tokens = x_flat[b].clone()
                     
-                    final_indices = torch.where(shuffle_mask, perm_indices, original_indices)
-                else:
-                    final_indices = perm_indices
+                    # Apply neighborhood-based shuffling
+                    for start_idx in range(0, total_tokens, neighborhood_size):
+                        end_idx = min(start_idx + neighborhood_size, total_tokens)
+                        neighborhood_size_actual = end_idx - start_idx
+                        
+                        if neighborhood_size_actual > 1:
+                            # Only shuffle a fraction of tokens within this neighborhood
+                            num_to_shuffle = max(1, int(neighborhood_size_actual * dynamic_strength))
+                            
+                            # Get indices within this neighborhood
+                            local_indices = torch.arange(start_idx, end_idx, device=x.device)
+                            
+                            # Randomly select which tokens to shuffle
+                            shuffle_candidates = torch.randperm(neighborhood_size_actual, device=x.device)[:num_to_shuffle]
+                            selected_indices = local_indices[shuffle_candidates]
+                            
+                            # Shuffle only the selected tokens within the neighborhood
+                            if len(selected_indices) > 1:
+                                shuffled_order = torch.randperm(len(selected_indices), device=x.device)
+                                temp_values = current_tokens[:, selected_indices].clone()
+                                current_tokens[:, selected_indices] = temp_values[:, shuffled_order]
+                    
+                    shuffled_x[b] = current_tokens
                 
-                # Apply shuffling
-                shuffled_x[b] = x_flat[b, :, final_indices]
-            
-            # Reshape back to spatial dimensions
-            x = shuffled_x.view(batch_size, channels, height, width)
+                # Blend with original to reduce harshness
+                blend_factor = 0.7 + 0.3 * step_ratio  # More blending as we progress
+                x_original = x.view(batch_size, channels, total_tokens)
+                x_blended = blend_factor * x_original + (1.0 - blend_factor) * shuffled_x
+                
+                # Reshape back to spatial dimensions
+                x = x_blended.view(batch_size, channels, height, width)
         
         # Standard denoising step
         denoised = model(x, sigma_hat * s_in, **extra_args)
@@ -1630,42 +1649,67 @@ def sample_heun_token_shuffle(model, x, sigmas, extra_args=None, callback=None, 
     
     print(f"Token shuffle Heun sampler active - shuffling {total_tokens} tokens each step")
     
-    def shuffle_tokens(tensor, strength):
-        """Helper function to shuffle tokens in a tensor"""
+    def shuffle_tokens(tensor, strength, step_ratio):
+        """Helper function to shuffle tokens in a tensor with improved algorithm"""
         if strength <= 0.0:
             return tensor
             
         b, c, h, w = tensor.shape
         tokens = h * w
         
+        # Progressive shuffling that decreases over time
+        dynamic_strength = strength * (1.0 - step_ratio * 0.8)
+        
+        if dynamic_strength <= 0.01:
+            return tensor
+        
         # Flatten spatial dimensions
         flat = tensor.view(b, c, tokens)
         shuffled = torch.zeros_like(flat)
         
         for batch_idx in range(b):
-            # Generate random permutation
-            perm_indices = torch.randperm(tokens, device=tensor.device)
+            # Local shuffling: shuffle within small neighborhoods to preserve structure
+            neighborhood_size = max(4, int(16 * (1.0 - dynamic_strength)))
             
-            if strength < 1.0:
-                # Partial shuffling
-                num_shuffle = int(tokens * strength)
-                original_indices = torch.arange(tokens, device=tensor.device)
-                
-                shuffle_mask = torch.zeros(tokens, dtype=torch.bool, device=tensor.device)
-                shuffle_positions = torch.randperm(tokens, device=tensor.device)[:num_shuffle]
-                shuffle_mask[shuffle_positions] = True
-                
-                final_indices = torch.where(shuffle_mask, perm_indices, original_indices)
-            else:
-                final_indices = perm_indices
+            # Create a copy to work with
+            current_tokens = flat[batch_idx].clone()
             
-            shuffled[batch_idx] = flat[batch_idx, :, final_indices]
+            # Apply neighborhood-based shuffling
+            for start_idx in range(0, tokens, neighborhood_size):
+                end_idx = min(start_idx + neighborhood_size, tokens)
+                neighborhood_size_actual = end_idx - start_idx
+                
+                if neighborhood_size_actual > 1:
+                    # Only shuffle a fraction of tokens within this neighborhood
+                    num_to_shuffle = max(1, int(neighborhood_size_actual * dynamic_strength))
+                    
+                    # Get indices within this neighborhood
+                    local_indices = torch.arange(start_idx, end_idx, device=tensor.device)
+                    
+                    # Randomly select which tokens to shuffle
+                    shuffle_candidates = torch.randperm(neighborhood_size_actual, device=tensor.device)[:num_to_shuffle]
+                    selected_indices = local_indices[shuffle_candidates]
+                    
+                    # Shuffle only the selected tokens within the neighborhood
+                    if len(selected_indices) > 1:
+                        shuffled_order = torch.randperm(len(selected_indices), device=tensor.device)
+                        temp_values = current_tokens[:, selected_indices].clone()
+                        current_tokens[:, selected_indices] = temp_values[:, shuffled_order]
+            
+            shuffled[batch_idx] = current_tokens
         
-        return shuffled.view(b, c, h, w)
+        # Blend with original to reduce harshness
+        blend_factor = 0.7 + 0.3 * step_ratio
+        x_blended = blend_factor * flat + (1.0 - blend_factor) * shuffled
+        
+        return x_blended.view(b, c, h, w)
     
     for i in trange(len(sigmas) - 1, disable=disable):
+        # Calculate step ratio for progressive shuffling
+        step_ratio = i / (len(sigmas) - 1)
+        
         # Shuffle tokens before each denoising step
-        x = shuffle_tokens(x, shuffle_strength)
+        x = shuffle_tokens(x, shuffle_strength, step_ratio)
         
         # First prediction
         denoised = model(x, sigmas[i] * s_in, **extra_args)
@@ -1683,8 +1727,8 @@ def sample_heun_token_shuffle(model, x, sigmas, extra_args=None, callback=None, 
             # Heun's method: predictor-corrector
             x_2 = x + d * dt
             
-            # Optionally shuffle again for the corrector step
-            x_2 = shuffle_tokens(x_2, shuffle_strength * 0.5)  # Less shuffling for corrector
+            # Optionally shuffle again for the corrector step with reduced strength
+            x_2 = shuffle_tokens(x_2, shuffle_strength * 0.5, step_ratio)
             
             denoised_2 = model(x_2, sigmas[i + 1] * s_in, **extra_args)
             d_2 = to_d(x_2, sigmas[i + 1], denoised_2)
@@ -1756,18 +1800,15 @@ def sample_heun_nag(model, x, sigmas, extra_args=None, callback=None, disable=No
     
     print(f"NAG Heun sampler active - scale: {nag_scale}, tau: {nag_tau}, alpha: {nag_alpha}")
     
-    # Store NAG parameters in extra_args for model to use
-    nag_params = {
-        'nag_scale': nag_scale,
-        'nag_tau': nag_tau,
-        'nag_alpha': nag_alpha,
-        'enable_nag': nag_scale > 1.0
-    }
-    extra_args = {**extra_args, **nag_params}
+    # Filter out NAG parameters to avoid passing them to model wrapper
+    model_args = {k: v for k, v in extra_args.items() if k not in ['nag_scale', 'nag_tau', 'nag_alpha', 'enable_nag']}
+    
+    # Note: NAG functionality would need to be implemented at the model/attention level
+    # For now, this sampler works as a regular Heun sampler with NAG parameters logged
     
     for i in trange(len(sigmas) - 1, disable=disable):
-        # First prediction with NAG
-        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        # First prediction with filtered args
+        denoised = model(x, sigmas[i] * s_in, **model_args)
         d = to_d(x, sigmas[i], denoised)
         
         if callback is not None:
@@ -1779,9 +1820,9 @@ def sample_heun_nag(model, x, sigmas, extra_args=None, callback=None, disable=No
             # Euler step for final iteration
             x = x + d * dt
         else:
-            # Heun's method: predictor-corrector with NAG
+            # Heun's method: predictor-corrector
             x_2 = x + d * dt
-            denoised_2 = model(x_2, sigmas[i + 1] * s_in, **extra_args)
+            denoised_2 = model(x_2, sigmas[i + 1] * s_in, **model_args)
             d_2 = to_d(x_2, sigmas[i + 1], denoised_2)
             d_prime = (d + d_2) / 2
             x = x + d_prime * dt
@@ -1809,17 +1850,14 @@ def sample_dpmpp_2m_nag(model, x, sigmas, extra_args=None, callback=None, disabl
     
     print(f"NAG DPM++ 2M sampler active - scale: {nag_scale}, tau: {nag_tau}, alpha: {nag_alpha}")
     
-    # Store NAG parameters in extra_args for model to use
-    nag_params = {
-        'nag_scale': nag_scale,
-        'nag_tau': nag_tau,
-        'nag_alpha': nag_alpha,
-        'enable_nag': nag_scale > 1.0
-    }
-    extra_args = {**extra_args, **nag_params}
+    # Filter out NAG parameters to avoid passing them to model wrapper
+    model_args = {k: v for k, v in extra_args.items() if k not in ['nag_scale', 'nag_tau', 'nag_alpha', 'enable_nag']}
+    
+    # Note: NAG functionality would need to be implemented at the model/attention level
+    # For now, this sampler works as a regular DPM++ 2M sampler with NAG parameters logged
     
     for i in trange(len(sigmas) - 1, disable=disable):
-        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        denoised = model(x, sigmas[i] * s_in, **model_args)
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
         t, t_next = t_fn(sigmas[i]), t_fn(sigmas[i + 1])
@@ -1836,21 +1874,23 @@ def sample_dpmpp_2m_nag(model, x, sigmas, extra_args=None, callback=None, disabl
 
 
 @torch.no_grad()
-def sample_euler_multiscale(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=0.5, scales=[1.0, 0.5, 0.25], guidance_weights=[0.6, 0.3, 0.1], blend_mode='weighted'):
+def sample_euler_multiscale(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., 
+                           scales=[1.0, 0.75, 0.5], guidance_weights=[0.8, 0.15, 0.05], blend_mode='weighted'):
     """Euler sampler with multi-scale guidance for better detail preservation.
     
-    This sampler processes the latent at multiple scales simultaneously and combines
-    the guidance for improved detail preservation and overall coherence.
+    This sampler processes the image at multiple resolutions and combines guidance
+    from different scales to improve both global structure and fine details.
     
     Args:
-        scales: List of scale factors for multi-scale processing (1.0 = original size)
+        scales: List of scale factors for multi-resolution processing
         guidance_weights: Weights for combining guidance from different scales
         blend_mode: How to blend multi-scale guidance ('weighted', 'adaptive', 'frequency')
     """
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     
-    # Normalize guidance weights
+    print(f"Multi-scale Euler sampler active - scales: {scales}, weights: {guidance_weights}, mode: {blend_mode}")
+    
     guidance_weights = torch.tensor(guidance_weights, device=x.device, dtype=x.dtype)
     guidance_weights = guidance_weights / guidance_weights.sum()
     
@@ -1874,17 +1914,16 @@ def sample_euler_multiscale(model, x, sigmas, extra_args=None, callback=None, di
     
     def adaptive_blend(guidance_list, step_ratio):
         """Adaptively blend guidance based on sampling progress"""
-        # Early steps: favor larger scales (global structure)
-        # Later steps: favor smaller scales (fine details)
+        # More conservative adaptive blending - always favor the original scale heavily
         if step_ratio < 0.3:
-            # Early: emphasize large scale
-            weights = torch.tensor([0.7, 0.25, 0.05], device=x.device, dtype=x.dtype)
+            # Early: heavily emphasize original scale
+            weights = torch.tensor([0.85, 0.12, 0.03], device=x.device, dtype=x.dtype)
         elif step_ratio < 0.7:
-            # Middle: balanced
-            weights = torch.tensor([0.5, 0.35, 0.15], device=x.device, dtype=x.dtype)
+            # Middle: still favor original scale
+            weights = torch.tensor([0.8, 0.15, 0.05], device=x.device, dtype=x.dtype)
         else:
-            # Late: emphasize fine details
-            weights = torch.tensor([0.4, 0.35, 0.25], device=x.device, dtype=x.dtype)
+            # Late: slightly more detail enhancement but still conservative
+            weights = torch.tensor([0.75, 0.18, 0.07], device=x.device, dtype=x.dtype)
         
         weights = weights[:len(guidance_list)]
         weights = weights / weights.sum()
@@ -1939,21 +1978,27 @@ def sample_euler_multiscale(model, x, sigmas, extra_args=None, callback=None, di
         # Combine multi-scale guidance
         if blend_mode == 'weighted':
             # Simple weighted combination
-            d = torch.zeros_like(guidance_list[0])
+            d_multiscale = torch.zeros_like(guidance_list[0])
             for j, guidance in enumerate(guidance_list):
-                d += guidance_weights[j] * guidance
+                d_multiscale += guidance_weights[j] * guidance
         elif blend_mode == 'adaptive':
             # Adaptive blending based on sampling progress
             step_ratio = i / (len(sigmas) - 1)
-            d = adaptive_blend(guidance_list, step_ratio)
+            d_multiscale = adaptive_blend(guidance_list, step_ratio)
         elif blend_mode == 'frequency':
             # Frequency-aware blending
-            d = frequency_blend(guidance_list)
+            d_multiscale = frequency_blend(guidance_list)
         else:
             # Fallback to weighted
-            d = torch.zeros_like(guidance_list[0])
+            d_multiscale = torch.zeros_like(guidance_list[0])
             for j, guidance in enumerate(guidance_list):
-                d += guidance_weights[j] * guidance
+                d_multiscale += guidance_weights[j] * guidance
+        
+        # Blend multi-scale guidance with original scale guidance for subtlety
+        # This reduces the aggressiveness of the multi-scale effect
+        d_original = guidance_list[0]  # Original scale guidance
+        blend_factor = 0.3  # How much multi-scale effect to apply (0.0 = none, 1.0 = full)
+        d = (1.0 - blend_factor) * d_original + blend_factor * d_multiscale
         
         # Use the original scale prediction for callback
         denoised = model(x, sigma_hat * s_in, **extra_args)
@@ -1969,7 +2014,7 @@ def sample_euler_multiscale(model, x, sigmas, extra_args=None, callback=None, di
 
 
 @torch.no_grad()
-def sample_heun_multiscale(model, x, sigmas, extra_args=None, callback=None, disable=None, scales=[1.0, 0.5, 0.25], guidance_weights=[0.6, 0.3, 0.1], blend_mode='adaptive', s_noise=1.):
+def sample_heun_multiscale(model, x, sigmas, extra_args=None, callback=None, disable=None, scales=[1.0, 0.75, 0.5], guidance_weights=[0.8, 0.15, 0.05], blend_mode='adaptive', s_noise=1.):
     """Heun sampler with multi-scale guidance for better detail preservation.
     
     This sampler combines Heun's method with multi-scale processing for more accurate
