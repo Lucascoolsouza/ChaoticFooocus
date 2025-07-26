@@ -134,8 +134,7 @@ def sample_hacked(model, noise, positive, negative, cfg, device, sampler, sigmas
             extra_args["neg_text_emb"] = torch.empty(1, 1, 768) # Placeholder, adjust dimensions as needed
 
     if sampler == "token_shuffle":
-        # For token_shuffle, the 'cond' in extra_args is already the positive conditioning
-        # No specific extraction needed here, as 'cond' is already set to 'positive'
+        extra_args["cond"] = positive[0]['model_conds']['c_crossattn'].cond
         extra_args["shuffle_start"] = 0.5
         extra_args["shuffle_prob"] = 0.3
 
@@ -189,7 +188,11 @@ def sample_hacked(model, noise, positive, negative, cfg, device, sampler, sigmas
             # residual_noise_preview *= x0.std()
             callback(step, x0, x, total_steps)
 
-    samples = sampler.sample(model_wrap, sigmas, extra_args, callback_wrap, noise, latent_image, denoise_mask, disable_pbar)
+    if sampler == "negative_focus":
+        neg_text_emb = extra_args.pop("neg_text_emb", None)
+        samples = sampler.sample(model_wrap, sigmas, extra_args, callback_wrap, noise, latent_image, denoise_mask, disable_pbar, neg_text_emb=neg_text_emb)
+    else:
+        samples = sampler.sample(model_wrap, sigmas, extra_args, callback_wrap, noise, latent_image, denoise_mask, disable_pbar)
     return model.process_latent_out(samples.to(torch.float32))
 
 

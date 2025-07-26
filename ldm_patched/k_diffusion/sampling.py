@@ -1748,7 +1748,7 @@ def sample_diverse_attention(
     # --- helper hooks ---------------------------------------------------------
     def attn_hook(module, inp, out):
         # inp[0] = Q, inp[1] = K, inp[2] = V
-        q, k, v = inp
+        q, k, v = inp[0]
         if attn_dropout > 0:
             k = F.dropout(k, p=attn_dropout, training=True, inplace=False)
             v = F.dropout(v, p=attn_dropout, training=True, inplace=False)
