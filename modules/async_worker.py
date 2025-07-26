@@ -112,6 +112,9 @@ class AsyncTask:
         self.dag_applied_layers = args.pop()
         self.dag_scale = args.pop()
         self.dag_enabled = args.pop()
+        # Ensure dag_enabled is a boolean
+        if isinstance(self.dag_enabled, str):
+            self.dag_enabled = bool(self.dag_enabled)
         if not self.dag_applied_layers:
             self.dag_applied_layers = "mid,up"
         print(f"[ASYNC_WORKER DEBUG] DAG Enabled: {self.dag_enabled}, DAG Scale: {self.dag_scale}, DAG Applied Layers: {self.dag_applied_layers}")

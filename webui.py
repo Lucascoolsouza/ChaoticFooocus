@@ -31,13 +31,6 @@ def get_task(*args):
     args = list(args)
     args.pop(0)
 
-    # Ensure dag_enabled is a boolean
-    if len(args) > 0 and isinstance(args[-1], str):
-        if args[-1] == '':
-            args[-1] = False
-        else:
-            args[-1] = bool(args[-1])
-
     return worker.AsyncTask(args=args)
 
 def generate_clicked(task: worker.AsyncTask):
@@ -1139,45 +1132,118 @@ with shared.gradio_root:
                                            inpaint_mask_sam_max_detections, dino_erode_or_dilate, debugging_dino],
                                    outputs=inpaint_mask_image, show_progress=True, queue=True)
 
-        ctrls = [currentTask, generate_image_grid, *nag_ctrls, *tpg_ctrls, *dag_ctrls]
-        ctrls += [
-            prompt, negative_prompt, style_selections,
-            performance_selection, aspect_ratios_selection, image_number, output_format, image_seed,
-            read_wildcards_in_order, sharpness, guidance_scale
+        ctrls = [
+            # Enhance controls (reversed order of popping in async_worker.py)
+            *enhance_ctrls,
+            seamless_tiling_overlap,
+            seamless_tiling_method,
+            enhance_uov_prompt_type,
+            enhance_uov_processing_order,
+            enhance_bg_removal_model,
+            enhance_uov_method,
+            enhance_checkbox,
+            enhance_input_image,
+            debugging_enhance_masks_checkbox,
+            dino_erode_or_dilate,
+            debugging_dino,
+            # ControlNet controls (reversed order of popping in async_worker.py)
+            *cn_ctrls,
+            detail_daemon_smooth,
+            detail_daemon_mode,
+            detail_daemon_fade,
+            detail_daemon_exponent,
+            detail_daemon_end_offset,
+            detail_daemon_start_offset,
+            detail_daemon_base_multiplier,
+            detail_daemon_bias,
+            detail_daemon_end,
+            detail_daemon_start,
+            detail_daemon_amount,
+            detail_daemon_enabled,
+            metadata_scheme_dropdown,
+            save_metadata_to_images,
+            save_final_enhanced_image_only,
+            dag_enabled,
+            dag_scale,
+            dag_applied_layers,
+            tpg_applied_layers_index,
+            tpg_scale,
+            tpg_enabled,
+            nag_end,
+            nag_negative_prompt,
+            nag_alpha,
+            nag_tau,
+            nag_scale,
+            inpaint_erode_or_dilate,
+            invert_mask_checkbox,
+            inpaint_advanced_masking_checkbox,
+            inpaint_respective_field,
+            inpaint_strength,
+            inpaint_engine,
+            inpaint_disable_initial_latent,
+            debugging_inpaint_preprocessor,
+            freeu_s2,
+            freeu_s1,
+            freeu_b2,
+            freeu_b1,
+            freeu_enabled,
+            controlnet_softness,
+            refiner_swap_method,
+            canny_high_threshold,
+            canny_low_threshold,
+            skipping_cn_preprocessor,
+            debugging_cn_preprocessor,
+            mixing_image_prompt_and_inpaint,
+            mixing_image_prompt_and_vary_upscale,
+            upscale_loops,
+            overwrite_upscale_strength,
+            overwrite_vary_strength,
+            overwrite_height,
+            overwrite_width,
+            overwrite_switch,
+            overwrite_step,
+            vae_name,
+            scheduler_name,
+            sampler_name,
+            clip_skip,
+            adaptive_cfg,
+            adm_scaler_end,
+            adm_scaler_negative,
+            adm_scaler_positive,
+            black_out_nsfw,
+            disable_seed_increment,
+            disable_intermediate_results,
+            disable_preview,
+            inpaint_mask_image_upload,
+            inpaint_additional_prompt,
+            inpaint_input_image,
+            outpaint_selections,
+            latent_upscale_size,
+            latent_upscale_scheduler,
+            latent_upscale_method,
+            uov_input_image,
+            uov_method,
+            current_tab,
+            input_image_checkbox,
+            # LoRA controls (reversed order of popping in async_worker.py)
+            *lora_ctrls,
+            refiner_switch,
+            refiner_model,
+            base_model,
+            guidance_scale,
+            sharpness,
+            read_wildcards_in_order,
+            image_seed,
+            output_format,
+            image_number,
+            aspect_ratios_selection,
+            performance_selection,
+            style_selections,
+            negative_prompt,
+            prompt,
+            generate_image_grid,
+            currentTask
         ]
-
-        ctrls += [base_model, refiner_model, refiner_switch] + lora_ctrls
-        ctrls += [input_image_checkbox, current_tab]
-        ctrls += [uov_method, uov_input_image, latent_upscale_method, latent_upscale_scheduler, latent_upscale_size]
-        ctrls += [outpaint_selections, inpaint_input_image, inpaint_additional_prompt, inpaint_mask_image]
-        ctrls += [disable_preview, disable_intermediate_results, disable_seed_increment, black_out_nsfw]
-        ctrls += [adm_scaler_positive, adm_scaler_negative, adm_scaler_end, adaptive_cfg, clip_skip]
-        ctrls += [sampler_name, scheduler_name, vae_name]
-        ctrls += [overwrite_step, overwrite_switch, overwrite_width, overwrite_height, overwrite_vary_strength]
-        ctrls += [overwrite_upscale_strength, upscale_loops, mixing_image_prompt_and_vary_upscale, mixing_image_prompt_and_inpaint]
-        ctrls += [debugging_cn_preprocessor, skipping_cn_preprocessor, canny_low_threshold, canny_high_threshold]
-        ctrls += [refiner_swap_method, controlnet_softness]
-        ctrls += freeu_ctrls
-        ctrls += inpaint_ctrls
-        ctrls += nag_ctrls
-        ctrls += tpg_ctrls
-        ctrls += dag_ctrls
-        
-        if not args_manager.args.disable_image_log:
-            ctrls += [save_final_enhanced_image_only]
-            
-        if not args_manager.args.disable_metadata:
-            ctrls += [save_metadata_to_images, metadata_scheme]
-            
-        ctrls += [detail_daemon_enabled, detail_daemon_amount, detail_daemon_start, detail_daemon_end, 
-                  detail_daemon_bias, detail_daemon_base_multiplier, detail_daemon_start_offset, detail_daemon_end_offset, 
-                  detail_daemon_exponent, detail_daemon_fade, detail_daemon_mode, detail_daemon_smooth]
-
-        ctrls += ip_ctrls
-        ctrls += [debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox,
-                  enhance_input_image, enhance_checkbox, enhance_uov_method, enhance_bg_removal_model, 
-                  enhance_uov_processing_order, enhance_uov_prompt_type, enhance_seamless_tiling_method, enhance_seamless_tiling_overlap]
-        ctrls += enhance_ctrls
 
         def parse_meta(raw_prompt_txt, is_generating):
             loaded_json = None
