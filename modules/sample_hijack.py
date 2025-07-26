@@ -215,11 +215,11 @@ def sample_hacked(model, noise, positive, negative, cfg, device, sampler, sigmas
 
     if sampler in sampler_dispatch:
         selected_sampler_func = sampler_dispatch[sampler]
-        samples = selected_sampler_func(model_wrap, noise, sigmas, extra_args=extra_args, callback=callback_wrap, disable=disable_pbar)
+        samples = selected_sampler_func(model_wrap, sigmas, extra_args=extra_args, callback=callback_wrap, disable=disable_pbar, x=noise)
     else:
         # Fallback to default if sampler is not found (should not happen if flags are correct)
         print(f"Warning: Sampler '{sampler}' not found in dispatch table. Falling back to default Euler.")
-        samples = k_diffusion_sampling.sample_euler(model_wrap, noise, sigmas, extra_args=extra_args, callback=callback_wrap, disable=disable_pbar)
+        samples = k_diffusion_sampling.sample_euler(model_wrap, sigmas, extra_args=extra_args, callback=callback_wrap, disable=disable_pbar, x=noise)
     return model.process_latent_out(samples.to(torch.float32))
 
 
