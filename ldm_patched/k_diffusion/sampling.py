@@ -5,13 +5,14 @@ import torch
 from torch import nn
 import torchsde
 from tqdm.auto import trange, tqdm
+import numpy as np
+import torch.nn.functional as F
 
 from . import utils
 
 
 def append_zero(x):
     return torch.cat([x, x.new_zeros([1])])
-
 
 def get_sigmas_karras(n, sigma_min, sigma_max, rho=7., device='cpu'):
     """Constructs the noise schedule of Karras et al. (2022)."""
@@ -20,7 +21,203 @@ def get_sigmas_karras(n, sigma_min, sigma_max, rho=7., device='cpu'):
     max_inv_rho = sigma_max ** (1 / rho)
     sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
     return append_zero(sigmas).to(device)
+    
 
+def get_sigmas_karras_base(n, sigma_min, sigma_max, rho=7., device='cpu'):
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    return append_zero(sigmas).to(device)
+
+def get_sigmas_karras_sinusoidal(n, sigma_min, sigma_max, rho=7., device='cpu',
+                                 sin_freq=5.0, amp=0.1):
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    perturb = 1 + amp * torch.sin(2 * torch.pi * sin_freq * ramp)
+    sigmas = base * perturb
+    return append_zero(sigmas).to(device)
+
+def get_sigmas_karras_chaotic(n, sigma_min, sigma_max, rho=7., device='cpu',
+                              logistic_r=3.6, chaotic_amplitude=0.12, iters=5):
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    x = ramp.clone()
+    for _ in range(iters):
+        x = logistic_r * x * (1 - x)
+    sigmas = base * (1 + chaotic_amplitude * (2*x - 1))
+    print("behold, the chaos!")
+    return append_zero(sigmas).to(device)
+
+def get_sigmas_karras_zigzag(n, sigma_min, sigma_max, rho=5., device='cpu', zigzag_strength=0.5):
+    ramp = torch.linspace(0, 1, n, device=device)
+    zigzag_offset = (torch.arange(n, device=device) % 2) * zigzag_strength / n
+    ramp += zigzag_offset
+    ramp = torch.clamp(ramp, 0, 1)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    return append_zero(sigmas).to(device)
+
+def get_sigmas_karras_piecewise(n, sigma_min, sigma_max, device='cpu', start_frac=0.2, end_frac=0.8):
+    i = torch.arange(n, device=device) / (n-1)
+    sig = torch.where(
+        i < start_frac,
+        sigma_max,
+        torch.where(
+          i > end_frac,
+          sigma_min,
+          sigma_max + (i - start_frac) / (end_frac - start_frac) * (sigma_min - sigma_max)
+        )
+    )
+    return append_zero(sig).to(device)
+
+def get_sigmas_karras_jitter(n, sigma_min, sigma_max, rho=1.2,device='cpu', jitter_strength=0.5):
+    ramp = torch.linspace(0, 1, n, device=device)
+    jitter = (torch.rand(n, device=device) - 0.5) * 2 * jitter_strength / n
+    ramp += jitter
+    ramp = torch.clamp(ramp, 0, 1)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    print("i fell thoose jitters")
+    return append_zero(sigmas).to(device)
+
+def get_sigmas_karras_upscale(n, sigma_min, sigma_max, rho=7., device='cpu',
+                                    detail_freq=10.0, detail_amp=0.05, sharpness=0.1, noise_strength=0.02):
+
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    detail_perturb = detail_amp * torch.sin(2 * torch.pi * detail_freq * ramp)
+    sharp_transition = torch.tanh(sharpness * (ramp - 0.5)) + 1  
+    noise = noise_strength * (torch.rand(n, device=device) - 0.5)
+    sigmas = base * (1 + detail_perturb) * sharp_transition + noise
+    return append_zero(sigmas).to(device)
+
+def get_sigmas_karras_trow_random_blsht(n, sigma_min, sigma_max, num_levels=10, device='cpu'):
+    if num_levels < 2:
+        raise ValueError("num_levels must be at least 2")
+    ramp = torch.linspace(1, 0, n, device=device)
+    quantized_ramp = torch.floor(ramp * (num_levels - 1)) / (num_levels - 1)
+    log_sigma_min = math.log(sigma_min)
+    log_sigma_max = math.log(sigma_max)
+    log_sigmas = quantized_ramp * (log_sigma_max - log_sigma_min) + log_sigma_min
+    sigmas = torch.exp(log_sigmas)
+    return append_zero(sigmas).to(device)
+
+
+
+
+
+
+
+
+
+
+
+
+
+def get_sigmas_comic(n, sigma_min, sigma_max, iterations=2, device='cpu'):
+    """Creates a fractal-like noise schedule with self-similar patterns at different scales."""
+    t = torch.linspace(0, 1, n, device=device)
+    fractal = torch.zeros_like(t)
+    
+    # Build up the fractal pattern
+    for i in range(iterations):
+        scale = 20 ** i
+        fractal += torch.sin(t * math.pi * scale) / scale
+    
+    # Normalize and convert to sigma space
+    fractal = (fractal - fractal.min()) / (fractal.max() - fractal.min())
+    
+    # Apply exponential mapping for better diffusion properties
+    sigmas = sigma_min * torch.exp(fractal * math.log(sigma_max / sigma_min))
+    
+    return append_zero(sigmas).to(device)
+
+
+
+
+
+
+
+
+
+
+    
+def get_sigmas_karras_dream(n, sigma_min, sigma_max, rho=70., device='cpu'):
+    """Constructs the noise schedule of Karras et al. (2022) with a google-dream like schedule"""
+    sigmas = []
+    prev = sigma_max
+    for _ in range(n - 1):
+        curr = prev - (prev - sigma_min) / (2 ** (1 / rho))
+        sigmas.append(curr)
+        prev = curr
+    sigmas.append(sigma_min)
+    return append_zero(torch.tensor(sigmas[::-1], device=device, dtype=torch.float32)).to(device)
+
+def get_sigmas_karras_golden_ratio(n, sigma_min, sigma_max, rho=7., device='cpu'):
+    """Constructs the noise schedule of Karras et al. (2022) with the golden ratio."""
+    golden_ratio = (1 + 5 ** 0.5) / 2
+    sigmas = []
+    prev = sigma_max
+    for _ in range(n - 1):
+        curr = prev * golden_ratio ** (-1 / rho)
+        sigmas.append(curr)
+        prev = curr
+    sigmas.append(sigma_min)
+    return append_zero(torch.tensor(sigmas[::-1], device=device, dtype=torch.float32)).to(device)
+
+
+def get_sigmas_karras_pixel_art(n, sigma_min, sigma_max, rho=7., device='cpu', quantize_levels=8):
+    """Constructs a quantized noise schedule for pixel art-like generation."""
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    
+    # Quantize the sigmas to create step-like transitions typical in pixel art
+    quantized = torch.round(base * quantize_levels) / quantize_levels
+    sigmas = torch.clamp(quantized, sigma_min, sigma_max)
+    return append_zero(sigmas).to(device)
+
+
+
+def get_sigmas_karras_mini_dalle(n, sigma_min, sigma_max, rho=20., device='cpu',
+                            freq=10.0, amp=0.05):
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    # smooth checker modulation
+    checker = torch.sin(2 * torch.pi * freq * ramp) * torch.cos(2 * torch.pi * freq * ramp)
+    sigmas = (base * (1 + amp * checker)).clamp(min=sigma_min, max=sigma_max)
+    return append_zero(sigmas).to(device)
+
+
+
+
+
+
+
+
+
+def get_sigmas_karras_grid(n, sigma_min, sigma_max, rho=7., device='cpu',
+                           freq=5.0, amp=0.05):
+    ramp = torch.linspace(0, 1, n, device=device)
+    min_inv_rho = sigma_min ** (1 / rho)
+    max_inv_rho = sigma_max ** (1 / rho)
+    base = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+    # smooth checker modulation
+    checker = torch.sin(2 * torch.pi * freq * ramp) * torch.cos(2 * torch.pi * freq * ramp)
+    sigmas = (base * (1 + amp * checker)).clamp(min=sigma_min, max=sigma_max)
+    return append_zero(sigmas).to(device)
 
 def get_sigmas_exponential(n, sigma_min, sigma_max, device='cpu'):
     """Constructs an exponential noise schedule."""
@@ -40,6 +237,15 @@ def get_sigmas_vp(n, beta_d=19.9, beta_min=0.1, eps_s=1e-3, device='cpu'):
     t = torch.linspace(1, eps_s, n, device=device)
     sigmas = torch.sqrt(torch.exp(beta_d * t ** 2 / 2 + beta_min * t) - 1)
     return append_zero(sigmas)
+
+
+
+
+
+
+
+
+
 
 
 def to_d(x, sigma, denoised):
@@ -143,7 +349,476 @@ def sample_euler(model, x, sigmas, extra_args=None, callback=None, disable=None,
         x = x + d * dt
     return x
 
+@torch.no_grad()
+def sample_euler_dreamy(model, x, sigmas, extra_args=None, callback=None, disable=None, smoothing_factor=3.25):
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    d_old = None  # Store the previous derivative
+    print ("it's dreaming")
+    for i in trange(len(sigmas) - 1, disable=disable):
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        d = to_d(x, sigmas[i], denoised)
+        if d_old is not None and smoothing_factor > 0:
+            d_smooth = (1.0 - smoothing_factor) * d + smoothing_factor * d_old
+        else:
+            d_smooth = d
+        d_old = d 
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised, 'd': d, 'd_smooth': d_smooth})
+        dt = sigmas[i + 1] - sigmas[i]
+        x = x + d_smooth * dt
+    return x
 
+@torch.no_grad()
+def sample_euler_dreamy_pp(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                       noise_factor=0.005, extrapolation_factor=0.002, s_noise=0.2):
+    extra_args = {} if extra_args is None else extra_args
+    noise_sampler = default_noise_sampler(x) # Use a basic noise sampler here for perturbation
+    s_in = x.new_ones([x.shape[0]])
+    print("It's dreaming... progressively?")
+
+    for i in trange(len(sigmas) - 1, disable=disable):
+
+        sigma_cur = sigmas[i]
+        sigma_next = sigmas[i+1]
+
+        denoised = model(x, sigma_cur * s_in, **extra_args)
+        d = to_d(x, sigma_cur, denoised)
+
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigma_cur, 'sigma_hat': sigma_cur, 'denoised': denoised, 'd': d, 'stage': 'predictor_start'})
+        perturbation = noise_sampler(sigma_cur, sigma_next) * s_noise * noise_factor * sigma_cur
+        d_perturbed = d + perturbation
+
+        dt = sigma_next - sigma_cur
+        x_pred = x + d_perturbed * dt
+
+        if sigma_next == 0:
+            x = x_pred
+            if callback is not None:
+                 callback({'x': x, 'i': i, 'sigma': sigma_next, 'sigma_hat': sigma_cur, 'denoised': denoised, 'd': d, 'stage': 'final_step'})
+
+        else:
+            denoised_2 = model(x_pred, sigma_next * s_in, **extra_args)
+            d_2 = to_d(x_pred, sigma_next, denoised_2)
+            d_avg = (d_perturbed + d_2) / 2 # Heun uses d, not d_perturbed here. Let's stick to d_perturbed for consistency with x_pred
+            d_diff = d_2 - d_perturbed # Difference using the perturbed d for consistency
+            
+            d_prime = d_avg + extrapolation_factor * d_diff
+
+            if callback is not None:
+
+                 callback({'x': x, 'i': i, 'sigma': sigma_next, 'sigma_hat': sigma_cur, 'denoised': denoised, 'd_prime': d_prime, 'stage': 'corrector_update'})
+
+            x = x + d_prime * dt
+
+    return x
+
+def quantize_tensor(tensor, num_levels):
+    if num_levels <= 1:
+        return torch.zeros_like(tensor)
+    
+    min_val = torch.min(tensor)
+    max_val = torch.max(tensor)
+
+    if max_val == min_val: 
+        return torch.full_like(tensor, (min_val + max_val) / 2) 
+
+    scaled_tensor = (tensor - min_val) / (max_val - min_val)
+
+    quantized_indices = torch.floor(scaled_tensor * (num_levels - 1))
+
+    quantized_indices = torch.clamp(quantized_indices, 0, num_levels - 1)
+    level_values = torch.linspace(min_val, max_val, num_levels, device=tensor.device)
+
+    bin_width = (max_val - min_val) / (num_levels - 1)
+    quantized_values = min_val + quantized_indices * bin_width
+    
+    return quantized_values
+
+
+@torch.no_grad()
+def sample_euler_chaotic(model, x, sigmas, extra_args=None, callback=None, disable=None, num_levels=128):
+
+    if num_levels < 2:
+        raise ValueError("num_levels must be at least 2 for quantization")
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+
+    for i in trange(len(sigmas) - 1, disable=disable):
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        d = to_d(x, sigmas[i], denoised)
+
+        # Quantize the derivative
+        d_quantized = quantize_tensor(d, num_levels)
+
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised, 'd': d, 'd_quantized': d_quantized})
+
+        dt = sigmas[i + 1] - sigmas[i]
+
+        # Euler method using the quantized derivative
+        x = x + d_quantized * dt
+
+    return x
+
+@torch.no_grad()
+def sample_euler_triangle_wave(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                               oscillation_amplitude=0.4, oscillation_periods=1.6, s_noise=1.0):
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    n_steps = len(sigmas) - 1
+
+    for i in trange(n_steps, disable=disable):
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        d = to_d(x, sigmas[i], denoised)
+
+        # Calculate oscillation factor (sine wave from 0 to 2*pi*periods)
+        phase = (i / n_steps) * oscillation_periods * 2 * math.pi
+        osc_factor = oscillation_amplitude * math.sin(phase)
+
+        # Add scaled noise to the derivative
+        perturbation_noise = torch.randn_like(x) * s_noise
+        d_perturbed = d + osc_factor * perturbation_noise
+        # Note: The noise is added to 'd' before multiplying by 'dt'.
+        # The effect scales with the magnitude of 'd'.
+
+        if callback is not None:
+             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised, 'd': d, 'd_perturbed': d_perturbed, 'osc_factor': osc_factor})
+
+        dt = sigmas[i + 1] - sigmas[i]
+
+        # Euler method using the perturbed derivative
+        x = x + d_perturbed * dt
+
+    return x
+@torch.no_grad()
+def sample_triangular(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
+    """Triangle artifact-enhancing sampler based on the Heun method."""
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    # Triangle enhancement parameters
+    triangle_scale = 3.2  # Emphasizes triangle patterns
+    edge_enhance = 0.05  # Edge enhancement amount
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
+        sigma_hat = sigmas[i] * (gamma + 1)
+        if gamma > 0:
+            eps = torch.randn_like(x) * s_noise
+            x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
+        
+        # Get model prediction
+        denoised = model(x, sigma_hat * s_in, **extra_args)
+        
+        # Triangle pattern enhancement - creates more angular artifacts
+        if i > len(sigmas) // 3:  # Only apply in later steps
+            # Enhance edges by emphasizing gradients
+            edges = torch.abs(x - denoised)
+            edge_mask = (edges > edges.mean() * triangle_scale).float()
+            denoised = denoised * (1 - edge_enhance * edge_mask) + x * (edge_enhance * edge_mask)
+        
+        d = to_d(x, sigma_hat, denoised)
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
+        
+        dt = sigmas[i + 1] - sigma_hat
+        if sigmas[i + 1] == 0:
+            # Euler method
+            x = x + d * dt
+        else:
+            # Heun's method with triangle emphasis
+            x_2 = x + d * dt
+            denoised_2 = model(x_2, sigmas[i + 1] * s_in, **extra_args)
+            d_2 = to_d(x_2, sigmas[i + 1], denoised_2)
+            d_prime = (d + d_2) / 2
+            x = x + d_prime * dt
+    
+    return x
+
+@torch.no_grad()
+def sample_pixelart(model, x, sigmas, extra_args=None, callback=None, disable=None, quantize_levels=6, s_noise=0.05):
+    """Pixelated art style sampler that quantizes outputs during generation."""
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    # Track previous denoised result to blend with current for stability
+    prev_denoised = None
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        # Standard denoising step
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        
+        # Blend with previous denoised for stability
+        if prev_denoised is not None and i > len(sigmas) // 2:
+            blend_factor = 0.2  # How much to blend with previous iteration
+            denoised = denoised * (1 - blend_factor) + prev_denoised * blend_factor
+        
+        # Apply pixel art effect through quantization in later diffusion steps
+        if i > len(sigmas) * 0.6:  # Only apply in later steps for better convergence
+            # Gradually increase quantization effect
+            progress = (i - len(sigmas) * 0.6) / (len(sigmas) * 0.4)
+            effective_levels = max(2, int(quantize_levels * (1 - progress * 0.5)))
+            
+            # Quantize the denoised prediction to create pixel art effect
+            denoised = torch.round(denoised * effective_levels) / effective_levels
+            
+            # Add block patterns for more "pixel-art" feel
+            block_size = max(1, int(2 * progress))
+            if block_size > 1:
+                # Simple pooling to create blocks
+                shape = denoised.shape
+                denoised = denoised.view(shape[0], shape[1], 
+                                      shape[2]//block_size, block_size, 
+                                      shape[3]//block_size, block_size)
+                denoised = denoised.mean(dim=(3, 5))
+                denoised = torch.nn.functional.interpolate(denoised, size=(shape[2], shape[3]), mode='nearest')
+        
+        prev_denoised = denoised
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        
+        # Standard update step with noise addition for next iteration
+        d = to_d(x, sigmas[i], denoised)
+        dt = sigmas[i + 1] - sigmas[i]
+        x = x + d * dt
+        
+        # Add controlled noise for next iteration if not the final step
+        if sigmas[i + 1] > 0:
+            x = x + torch.randn_like(x) * sigmas[i + 1] * s_noise
+    
+    return x
+
+@torch.no_grad()
+def sample_dreamy(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=0.1, dreaminess=0.1):
+    """Dreamy VGAN-style sampler with smooth transitions and glow effects."""
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    # Keep track of previous denoised results for motion blur effect
+    history = []
+    history_weight = 0.3  # How much to blend with historical predictions
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        # Standard model prediction
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        
+        # Apply dreamy effects in mid-to-late diffusion steps
+        dream_start = int(len(sigmas) * 0.3)
+        if i > dream_start:
+            # Calculate how far we are into the "dreamy" phase
+            dream_phase = min(1.0, (i - dream_start) / (len(sigmas) - dream_start - 1))
+            
+            # 1. Apply temporal blending with history (motion blur effect)
+            if history:
+                # Weighted average of previous results (temporal smoothing)
+                temporal_mix = sum(h * w for h, w in zip(history, 
+                                  [pow(0.7, len(history)-j) for j in range(len(history))]))
+                temporal_mix /= sum(pow(0.7, len(history)-j) for j in range(len(history)))
+                
+                # Blend current with history based on dream phase
+                blend_amount = history_weight * dream_phase * dreaminess
+                denoised = denoised * (1 - blend_amount) + temporal_mix * blend_amount
+            
+            # 2. Apply dream glow effect (enhance bright areas)
+            if dream_phase > 0.4:
+                # Create a glow mask for bright areas
+                brightness = denoised.mean(dim=1, keepdim=True)
+                glow_mask = torch.sigmoid((brightness - 0.6) * 10) * dreaminess * 0.3
+                
+                # Apply glow by brightening and slightly shifting bright areas
+                glow = torch.nn.functional.avg_pool2d(denoised, 5, stride=1, padding=2)
+                denoised = denoised * (1 - glow_mask) + glow * glow_mask
+            
+            # 3. Add subtle color shifts for dream-like quality
+            if dream_phase > 0.2:
+                color_shift = torch.sin(torch.tensor([0.1, 0.2, 0.3]) * i * 0.1)
+                color_shift = color_shift.view(1, 3, 1, 1).to(denoised.device) * 0.02 * dreaminess
+                denoised = denoised + color_shift
+        
+        # Add to history, keep only last 3 iterations
+        history.append(denoised.detach())
+        if len(history) > 3:
+            history.pop(0)
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        
+        # Standard update
+        d = to_d(x, sigmas[i], denoised)
+        dt = sigmas[i + 1] - sigmas[i]
+        
+        # Apply smoother transition with controlled noise
+        if i > len(sigmas) * 0.7:
+            # Gradually reduce noise at the end for smoother results
+            noise_scale = s_noise * (1.0 - (i - len(sigmas) * 0.7) / (len(sigmas) * 0.3))
+        else:
+            noise_scale = s_noise
+            
+        x = x + d * dt
+        
+        # Add noise for next iteration if not the last step
+        if sigmas[i + 1] > 0:
+            noise = torch.randn_like(x)
+            # Apply wavelike pattern to noise for dreamy effect
+            if dreaminess > 0.3:
+                wave = torch.sin(torch.linspace(0, 3, x.shape[2], device=x.device).view(1, 1, -1, 1) * math.pi)
+                wave = wave + torch.sin(torch.linspace(0, 3, x.shape[3], device=x.device).view(1, 1, 1, -1) * math.pi)
+                wave = wave * 0.5 * dreaminess
+                noise = noise * (1 + wave)
+            
+            x = x + noise * sigmas[i + 1] * noise_scale
+
+        # Debug prints
+        print(f"Dreamy Sampler - Iteration {i}:")
+        print(f"  History length: {len(history)}")
+        if history:
+            print(f"  First history item stats: mean={history[0].mean()}, std={history[0].std()}, min={history[0].min()}, max={history[0].max()}")
+        print(f"  Denoised stats: mean={denoised.mean()}, std={denoised.std()}, min={denoised.min()}, max={denoised.max()}")
+        print(f"  X stats: mean={x.mean()}, std={x.std()}, min={x.min()}, max={x.max()}")
+    
+    return x
+
+# Sampler for comic book style with sharp edges and high contrast
+@torch.no_grad()
+def sample_comic(model, x, sigmas, extra_args=None, callback=None, disable=None, 
+                contrast=0.5, edge_threshold=0.5):
+    """Comic book style sampler with high contrast and sharp edges."""
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        # Get model prediction
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        
+        # Apply comic book styling in later steps
+        if i > len(sigmas) * 0.5:
+            # Calculate effect strength based on current step
+            effect_strength = min(1.0, (i - len(sigmas) * 0.5) / (len(sigmas) * 0.5))
+            
+            # 1. Increase contrast
+            denoised_mean = denoised.mean()
+            denoised = denoised_mean + (denoised - denoised_mean) * (1 + effect_strength * contrast)
+            
+            # 2. Edge detection and enhancement
+            if i > len(sigmas) * 0.7:
+                # Simple gradient-based edge detection
+                dx = torch.abs(torch.roll(denoised, -1, dims=-1) - denoised)
+                dy = torch.abs(torch.roll(denoised, -1, dims=-2) - denoised)
+                edges = torch.max(dx, dy)
+                edge_mask = (edges > edge_threshold).float()
+                
+                # Sharpen edges - darker lines on edges
+                denoised = denoised * (1 - edge_mask * effect_strength * 0.5)
+            
+            # 3. Color simplification - reduce color palette
+            if i > len(sigmas) * 0.8:
+                # Quantize colors for comic book look
+                levels = max(4, 10 - int(effect_strength * 5))
+                denoised = torch.round(denoised * levels) / levels
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        
+        # Standard update
+        d = to_d(x, sigmas[i], denoised)
+        dt = sigmas[i + 1] - sigmas[i]
+        
+        # Use Heun's method for better stability
+        if sigmas[i + 1] == 0:
+            # Euler method for last step
+            x = x + d * dt
+        else:
+            # Heun's method
+            x_2 = x + d * dt
+            denoised_2 = model(x_2, sigmas[i + 1] * s_in, **extra_args)
+            d_2 = to_d(x_2, sigmas[i + 1], denoised_2)
+            d_prime = (d + d_2) / 2
+            x = x + d_prime * dt
+    
+    return x
+
+# Fractal-style sampler that creates self-similar patterns
+@torch.no_grad()
+def sample_fractal(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                  recursion_depth=5, fractal_scale=0.07):
+    """Fractal-style sampler that enhances self-similar patterns."""
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    # Store results from prior iterations to blend with current step
+    multi_scale_history = [None] * recursion_depth
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        # Get standard prediction
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        
+        # Apply fractal effects in later diffusion steps
+        if i > len(sigmas) * 0.4:
+            # Calculate effect strength
+            effect_strength = min(1.0, (i - len(sigmas) * 0.4) / (len(sigmas) * 0.6))
+            effect_strength *= fractal_scale
+            
+            # Create multi-scale self-similar patterns
+            fractal_denoised = denoised.clone()
+            
+            # Generate and combine multiple rescaled versions of the image
+            for scale in range(recursion_depth):
+                # Scale factor for this level
+                scale_factor = 1.0 / (2 ** (scale + 1))
+                
+                # Downscale
+                h, w = denoised.shape[2:]
+                scaled_h, scaled_w = max(1, int(h * scale_factor)), max(1, int(w * scale_factor))
+                downscaled = torch.nn.functional.interpolate(
+                    denoised, size=(scaled_h, scaled_w), mode='bilinear'
+                )
+                
+                # Optional: Apply extra noise to this scale
+                if scale > 0:
+                    scale_noise = torch.randn_like(downscaled) * 0.1 * scale
+                    downscaled = downscaled + scale_noise
+                
+                # Process this scale through the model if we're deep enough in the diffusion
+                if i > len(sigmas) * 0.6 and scale < recursion_depth - 1:
+                    # Process with adjusted noise level
+                    scale_sigma = sigmas[i] * (1 + scale * 0.5)
+                    downscaled = model(downscaled, scale_sigma * s_in, **extra_args)
+                    
+                    # Store in history for this scale
+                    multi_scale_history[scale] = downscaled
+                elif multi_scale_history[scale] is not None:
+                    # Blend with history for this scale
+                    downscaled = downscaled * 0.7 + multi_scale_history[scale] * 0.3
+                
+                # Upscale back and blend with the main image
+                upscaled = torch.nn.functional.interpolate(
+                    downscaled, size=(h, w), mode='bilinear'
+                )
+                
+                # Calculate blend weight that decreases with scale
+                blend_weight = effect_strength * (0.5 ** scale)
+                fractal_denoised = fractal_denoised * (1 - blend_weight) + upscaled * blend_weight
+            
+            # Apply the fractal-enhanced result
+            denoised = denoised * (1 - effect_strength * 0.7) + fractal_denoised * (effect_strength * 0.7)
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        
+        # Standard update with noise addition
+        d = to_d(x, sigmas[i], denoised)
+        dt = sigmas[i + 1] - sigmas[i]
+        x = x + d * dt
+        
+        # Add controlled noise for next iteration if not the final step
+        if sigmas[i + 1] > 0:
+            x = x + torch.randn_like(x) * sigmas[i + 1]
+    
+    return x
 @torch.no_grad()
 def sample_euler_ancestral(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=1., s_noise=1., noise_sampler=None):
     """Ancestral sampling with Euler method steps."""
@@ -165,31 +840,38 @@ def sample_euler_ancestral(model, x, sigmas, extra_args=None, callback=None, dis
 
 
 @torch.no_grad()
-def sample_heun(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
-    """Implements Algorithm 2 (Heun steps) from Karras et al. (2022)."""
+def sample_heun(model, x, sigmas, extra_args=None, callback=None, disable=None, noise_scale=0., s_noise=1.):
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     for i in trange(len(sigmas) - 1, disable=disable):
-        gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
-        sigma_hat = sigmas[i] * (gamma + 1)
-        if gamma > 0:
+        # Add noise proportional to step size if noise_scale > 0
+        if noise_scale > 0:
             eps = torch.randn_like(x) * s_noise
-            x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
-        denoised = model(x, sigma_hat * s_in, **extra_args)
-        d = to_d(x, sigma_hat, denoised)
+            # Noise scaled by step difference for consistency
+            x = x + eps * noise_scale * (sigmas[i] - sigmas[i + 1])
+        
+        # Model prediction at current sigma
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        d = to_d(x, sigmas[i], denoised)
+        
+        # Optional progress callback
         if callback is not None:
-            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
-        dt = sigmas[i + 1] - sigma_hat
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'denoised': denoised})
+        
+        # Step size
+        dt = sigmas[i + 1] - sigmas[i]
+        
         if sigmas[i + 1] == 0:
-            # Euler method
+            # Euler step for the final iteration
             x = x + d * dt
         else:
-            # Heun's method
+            # Heun's method: two-stage update
             x_2 = x + d * dt
             denoised_2 = model(x_2, sigmas[i + 1] * s_in, **extra_args)
             d_2 = to_d(x_2, sigmas[i + 1], denoised_2)
             d_prime = (d + d_2) / 2
             x = x + d_prime * dt
+    
     return x
 
 
@@ -267,23 +949,41 @@ def linear_multistep_coeff(order, t, i, j):
 
 
 @torch.no_grad()
-def sample_lms(model, x, sigmas, extra_args=None, callback=None, disable=None, order=4):
+def sample_lms(model, x, sigmas, extra_args=None, callback=None, disable=None, noise_scale=0., s_noise=1.):
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
-    sigmas_cpu = sigmas.detach().cpu().numpy()
-    ds = []
     for i in trange(len(sigmas) - 1, disable=disable):
+        # Add noise proportional to step size if noise_scale > 0
+        if noise_scale > 0:
+            eps = torch.randn_like(x) * s_noise * 4
+            # Noise scaled by step difference for consistency
+            x = x + eps * noise_scale * (sigmas[i] - sigmas[i + 1])
+        
+        # Model prediction at current sigma
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         d = to_d(x, sigmas[i], denoised)
-        ds.append(d)
-        if len(ds) > order:
-            ds.pop(0)
+        
+        # Optional progress callback
         if callback is not None:
-            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
-        cur_order = min(i + 1, order)
-        coeffs = [linear_multistep_coeff(cur_order, sigmas_cpu, i, j) for j in range(cur_order)]
-        x = x + sum(coeff * d for coeff, d in zip(coeffs, reversed(ds)))
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'denoised': denoised})
+        
+        # Step size
+        dt = sigmas[i + 1] - sigmas[i]
+        
+        if sigmas[i + 1] == 0:
+            # Euler step for the final iteration
+            x = x + d * dt / 2
+        else:
+            # Heun's method: two-stage update
+            x_2 = x + d * dt / 2
+            denoised_2 = model(x_2, sigmas[i + 1] * s_in, **extra_args)
+            d_2 = to_d(x_2, sigmas[i + 1], denoised_2)
+            d_prime = (d + d_2) / 2
+            x = x + d_prime * dt
+    
     return x
+
+
 
 
 class PIDStepSizeController:
@@ -836,6 +1536,16 @@ def sample_tcd(model, x, sigmas, extra_args=None, callback=None, disable=None, n
             x *= torch.sqrt(1.0 + sigmas[i + 1] ** 2)
 
     return x
+
+
+
+
+
+
+
+
+
+
 
 
 @torch.no_grad()
