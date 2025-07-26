@@ -5,7 +5,7 @@ import ldm_patched.modules.model_management
 from collections import namedtuple
 from ldm_patched.contrib.external_align_your_steps import AlignYourStepsScheduler
 from ldm_patched.contrib.external_custom_sampler import SDTurboScheduler
-from ldm_patched.k_diffusion import sampling as k_diffusion_sampling
+# Import guidance configuration functions
 from ldm_patched.modules.samplers import normal_scheduler, simple_scheduler, ddim_scheduler
 from ldm_patched.modules.model_base import SDXLRefiner, SDXL
 from ldm_patched.modules.conds import CONDRegular
@@ -14,16 +14,8 @@ from ldm_patched.modules.samplers import resolve_areas_and_cond_masks, wrap_mode
     create_cond_with_same_area_if_none, pre_run_control, apply_empty_x_to_equal_area, encode_model_conds
 
 # Import guidance configuration functions
-from ldm_patched.k_diffusion.sampling import set_guidance_config, get_guidance_config
-
-
 current_refiner = None
 refiner_switch_step = -1
-
-def configure_guidance_samplers(tpg_scale=0.0, nag_scale=1.0, dag_scale=0.0):
-    """Configure guidance sampler parameters"""
-    set_guidance_config(tpg_scale=tpg_scale, nag_scale=nag_scale, dag_scale=dag_scale)
-    return get_guidance_config()
 
 
 @torch.no_grad()
@@ -270,80 +262,7 @@ def calculate_sigmas_scheduler_hacked(model, scheduler_name, steps):
             n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
         )
 
-    elif scheduler_name == "smokeywindy":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_smokeywindy(
-            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
-        )
-
-    elif scheduler_name == "attention_context":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_attention_context(
-            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
-        )
-
-    elif scheduler_name == "claylike":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_claylike(
-            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
-        )
-
-    elif scheduler_name == "extreme_closeup_detail":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_extreme_closeup_detail(
-            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
-        )
-
-    elif scheduler_name == "rhythmic_beats":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_rhythmic_beats(
-            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
-        )
-
-    elif scheduler_name == "chaotic_swirl":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_chaotic_swirl(
-            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
-        )
-
-    elif scheduler_name == "dropout_spikes":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_dropout_spikes(
-            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
-        )
-
-    elif scheduler_name == "inception_ramp":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_inception_ramp(
-            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
-        )
-
-    elif scheduler_name == "double_cosine":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_double_cosine(
-            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
-        )
-
-    elif scheduler_name == "color_rainbow":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_color_rainbow(
-            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
-        )
-
-    elif scheduler_name == "rgb_split":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_rgb_split(
-            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
-        )
-
-    elif scheduler_name == "hsv_cycle":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_hsv_cycle(
-            n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max)
-        )
-
-    elif scheduler_name == "spiral":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_spiral(
-            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
-        )
-
-    elif scheduler_name == "quantum":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_quantum(
-            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
-        )
-
-    elif scheduler_name == "organic":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_organic(
-            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
-        )
+    
         
     else:
         raise TypeError(f"error invalid scheduler: {scheduler_name}")

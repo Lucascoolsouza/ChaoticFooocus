@@ -99,14 +99,6 @@ class AsyncTask:
         self.inpaint_advanced_masking_checkbox = args.pop()
         self.invert_mask_checkbox = args.pop()
         self.inpaint_erode_or_dilate = args.pop()
-        self.nag_scale = args.pop()
-        self.nag_tau = args.pop()
-        self.nag_alpha = args.pop()
-        self.nag_negative_prompt = args.pop()
-        self.nag_end = args.pop()
-        self.tpg_enabled = args.pop()
-        self.tpg_scale = args.pop()
-        self.tpg_applied_layers_index = args.pop()
         
         
         self.save_final_enhanced_image_only = args.pop() if not args_manager.args.disable_image_log else False
@@ -350,9 +342,7 @@ def worker():
         print(" SAMPLER DEBUG:")
         print(f"  Requested sampler: {async_task.sampler_name}")
         
-        is_guidance_sampler = any(name in async_task.sampler_name.lower() for name in ['tpg', 'nag', 'dag', 'guidance'])
-        print(f"[SAMPLER CHECK] Is guidance sampler: {is_guidance_sampler}")
-        print(f"[SAMPLER CHECK] Sampler name: {async_task.sampler_name}")
+        
 
         import inspect
         from ldm_patched.k_diffusion import sampling as k_sampling
@@ -378,14 +368,7 @@ def worker():
             cfg_scale=async_task.cfg_scale,
             refiner_swap_method=async_task.refiner_swap_method,
             disable_preview=async_task.disable_preview,
-            nag_scale=async_task.nag_scale,
-            nag_tau=async_task.nag_tau,
-            nag_alpha=async_task.nag_alpha,
-            nag_negative_prompt=async_task.nag_negative_prompt,
-            nag_end=async_task.nag_end,
-            tpg_enabled=async_task.tpg_enabled,
-            tpg_scale=async_task.tpg_scale,
-            tpg_applied_layers_index=async_task.tpg_applied_layers_index,
+            
             
             detail_daemon_enabled=async_task.detail_daemon_enabled,
             detail_daemon_amount=async_task.detail_daemon_amount,
@@ -1316,14 +1299,7 @@ def worker():
         print(f'[Parameters] Sampler = {async_task.sampler_name} - {async_task.scheduler_name}')
         
         # Debug: Show guidance parameters
-        if async_task.tpg_enabled or async_task.nag_scale > 1.0:
-            print(f'[Parameters] 🎯 GUIDANCE ACTIVE:')
-            if async_task.tpg_enabled:
-                print(f'[Parameters]   - TPG: scale={async_task.tpg_scale}')
-            if async_task.nag_scale > 1.0:
-                print(f'[Parameters]   - NAG: scale={async_task.nag_scale}')
-        else:
-            print(f'[Parameters] No guidance methods active')
+        print(f'[Parameters] No guidance methods active')
         print(f'[Parameters] Steps = {async_task.steps} - {switch}')
 
         progressbar(async_task, current_progress, 'Initializing ...')
