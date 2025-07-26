@@ -122,7 +122,7 @@ def sample_hacked(model, noise, positive, negative, cfg, device, sampler, sigmas
 
     extra_args = {"cond":positive, "uncond":negative, "cond_scale": cfg, "model_options": model_options, "seed":seed}
 
-    if sampler.sampler_name == "negative_focus":
+    if sampler == "negative_focus":
         # Extract neg_text_emb from the negative conditioning
         # Assuming negative is a list of dictionaries, and the first one contains the main negative prompt
         if negative and 'model_conds' in negative[0] and 'c_crossattn' in negative[0]['model_conds']:
