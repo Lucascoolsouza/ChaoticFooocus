@@ -13,9 +13,17 @@ from ldm_patched.modules.sample import get_additional_models, get_models_from_co
 from ldm_patched.modules.samplers import resolve_areas_and_cond_masks, wrap_model, calculate_start_end_timesteps, \
     create_cond_with_same_area_if_none, pre_run_control, apply_empty_x_to_equal_area, encode_model_conds
 
+# Import guidance configuration functions
+from ldm_patched.k_diffusion.sampling import set_guidance_config, get_guidance_config
+
 
 current_refiner = None
 refiner_switch_step = -1
+
+def configure_guidance_samplers(tpg_scale=0.0, nag_scale=1.0, dag_scale=0.0):
+    """Configure guidance sampler parameters"""
+    set_guidance_config(tpg_scale=tpg_scale, nag_scale=nag_scale, dag_scale=dag_scale)
+    return get_guidance_config()
 
 
 @torch.no_grad()

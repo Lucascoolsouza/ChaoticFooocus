@@ -10,7 +10,7 @@ def test_guidance_samplers():
     # Test 1: Import guidance samplers
     try:
         from extras.guidance_samplers import (
-            sample_euler_tpg, sample_euler_nag, sample_euler_pag, sample_euler_guidance,
+            sample_euler_tpg, sample_euler_nag, sample_euler_dag, sample_euler_guidance,
             set_guidance_config, get_guidance_config
         )
         print("✓ Guidance samplers imported successfully")
@@ -20,11 +20,11 @@ def test_guidance_samplers():
     
     # Test 2: Test configuration
     try:
-        set_guidance_config(tpg_scale=3.0, nag_scale=1.5, pag_scale=2.0)
+        set_guidance_config(tpg_scale=3.0, nag_scale=1.5, dag_scale=2.0)
         config = get_guidance_config()
         assert config['tpg_scale'] == 3.0
         assert config['nag_scale'] == 1.5
-        assert config['pag_scale'] == 2.0
+        assert config['dag_scale'] == 2.0
         print("✓ Guidance configuration works")
     except Exception as e:
         print(f"✗ Guidance configuration failed: {e}")
@@ -35,7 +35,7 @@ def test_guidance_samplers():
         import ldm_patched.k_diffusion.sampling as k_sampling
         assert hasattr(k_sampling, 'sample_euler_tpg')
         assert hasattr(k_sampling, 'sample_euler_nag')
-        assert hasattr(k_sampling, 'sample_euler_pag')
+        assert hasattr(k_sampling, 'sample_euler_dag')
         assert hasattr(k_sampling, 'sample_euler_guidance')
         print("✓ Guidance samplers integrated into k_diffusion")
     except Exception as e:
@@ -47,7 +47,7 @@ def test_guidance_samplers():
         from modules.flags import KSAMPLER
         assert 'euler_tpg' in KSAMPLER
         assert 'euler_nag' in KSAMPLER
-        assert 'euler_pag' in KSAMPLER
+        assert 'euler_dag' in KSAMPLER
         assert 'euler_guidance' in KSAMPLER
         print("✓ Guidance samplers added to flags")
     except Exception as e:
@@ -67,7 +67,7 @@ def test_guidance_samplers():
     print("\nAvailable guidance samplers:")
     print("- euler_tpg: Euler with Token Perturbation Guidance")
     print("- euler_nag: Euler with Negative Attention Guidance") 
-    print("- euler_pag: Euler with Perturbed Attention Guidance")
+    print("- euler_dag: Euler with Dynamic Attention Guidance")
     print("- euler_guidance: Euler with combined guidance methods")
     
     return True

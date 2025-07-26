@@ -756,9 +756,27 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         tokenizer_g_on_device = add_tokenizer_compatibility(tokenizer_g_on_device)
 
         # Handle guidance by selecting appropriate sampler
-        guidance_active = (tpg_enabled and tpg_scale > 0) or (nag_scale > 1.0) or (dag_enabled and dag_scale > 0)
+        # Check if guidance is active either through parameters OR through sampler selection
+        guidance_samplers = ['euler_tpg', 'euler_nag', 'euler_dag', 'euler_guidance']
+        sampler_guidance_active = sampler_name in guidance_samplers
+        parameter_guidance_active = (tpg_enabled and tpg_scale > 0) or (nag_scale > 1.0) or (dag_enabled and dag_scale > 0)
+        guidance_active = parameter_guidance_active or sampler_guidance_active
         
         if guidance_active:
+            # If user selected a guidance sampler but didn't set parameters, use defaults
+            if sampler_guidance_active and not parameter_guidance_active:
+                print(f"[GUIDANCE] User selected guidance sampler '{sampler_name}' - using default parameters")
+                if sampler_name == 'euler_tpg':
+                    tpg_enabled, tpg_scale = True, 3.0
+                elif sampler_name == 'euler_nag':
+                    nag_scale = 1.5
+                elif sampler_name == 'euler_dag':
+                    dag_enabled, dag_scale = True, 2.5
+                elif sampler_name == 'euler_guidance':
+                    tpg_enabled, tpg_scale = True, 3.0
+                    nag_scale = 1.5
+                    dag_enabled, dag_scale = True, 2.5
+            
             # Set global guidance configuration
             try:
                 from extras.guidance_samplers import set_guidance_config
@@ -767,11 +785,16 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                     nag_scale=nag_scale,
                     dag_scale=dag_scale if dag_enabled else 0.0
                 )
+                print(f"[GUIDANCE] Configuration set: TPG={tpg_scale if tpg_enabled else 0.0}, NAG={nag_scale}, DAG={dag_scale if dag_enabled else 0.0}")
             except ImportError:
                 print("[GUIDANCE] Warning: guidance_samplers not available")
             
             # Determine which guidance sampler to use
-            if (tpg_enabled and tpg_scale > 0) and (nag_scale > 1.0) and (dag_enabled and dag_scale > 0):
+            if sampler_guidance_active:
+                # User explicitly selected a guidance sampler - use it
+                guidance_sampler = sampler_name
+                print(f"[GUIDANCE] Using user-selected guidance sampler: {sampler_name}")
+            elif (tpg_enabled and tpg_scale > 0) and (nag_scale > 1.0) and (dag_enabled and dag_scale > 0):
                 # All three guidance methods - use combined sampler
                 print(f"[GUIDANCE] Using combined guidance: TPG({tpg_scale}), NAG({nag_scale}), DAG({dag_scale})")
                 guidance_sampler = "euler_guidance"
