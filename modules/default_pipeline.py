@@ -758,15 +758,43 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
 
         # Select pipeline based on TPG/NAG/PAG enabled
         print(f"[DEFAULT_PIPELINE DEBUG] pag_enabled: {pag_enabled}, tpg_enabled: {tpg_enabled}, nag_scale: {nag_scale}")
-        if tpg_enabled:
+        if tpg_enabled and tpg_scale > 0:
             pipe_class = StableDiffusionXLTPGPipeline
-            print("[TPG] Using StableDiffusionXLTPGPipeline")
-        elif pag_enabled:
+            print(f"[TPG] Using StableDiffusionXLTPGPipeline with scale {tpg_scale}")
+        elif pag_enabled and pag_scale > 0:
             pipe_class = StableDiffusionXLPAGPipeline
-            print("[PAG] Using StableDiffusionXLPAGPipeline")
-        else:
+            print(f"[PAG] Using StableDiffusionXLPAGPipeline with scale {pag_scale}")
+        elif nag_scale > 1.0:
             pipe_class = NAGStableDiffusionXLPipeline
-            print("[NAG] Using NAGStableDiffusionXLPipeline")
+            print(f"[NAG] Using NAGStableDiffusionXLPipeline with scale {nag_scale}")
+        else:
+            # Fallback to regular ksampler if no special guidance is enabled
+            print("[DEFAULT] No special guidance enabled, using regular ksampler")
+            ksampler_imgs = core.ksampler(
+                model=final_unet,
+                positive=positive_cond,
+                negative=negative_cond,
+                latent=initial_latent,
+                seed=image_seed,
+                steps=steps,
+                cfg=cfg_scale,
+                sampler_name=sampler_name,
+                scheduler=scheduler_name,
+                denoise=denoise,
+                disable_preview=disable_preview,
+                refiner=final_refiner_unet,
+                refiner_switch=switch,
+                sigmas=minmax_sigmas,
+                callback_function=callback
+            )['samples']
+            
+            if ksampler_imgs is not None:
+                latent_dict = {'samples': ksampler_imgs}
+                imgs = core.decode_vae(target_vae, latent_dict)
+                imgs = core.pytorch_to_numpy(imgs)
+            else:
+                imgs = []
+            return imgs
 
         # Instantiate the selected pipeline with the components on the correct device
         pipe = pipe_class(
