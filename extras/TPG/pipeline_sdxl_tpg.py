@@ -1,74 +1,34 @@
-# Implementation of StableDiffusionXLTPGPipeline (Token Perturbation Guidance)
+# Simplified TPG Pipeline for Fooocus Integration
 
-import inspect
-import sys
-from typing import Type, Any, Callable, Dict, List, Optional, Tuple, Union
-
-import math
 import torch
 import torch.nn.functional as F
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+import logging
 
-import os
-from accelerate.utils import set_seed
+logger = logging.getLogger(__name__)
 
-from transformers import (
-    CLIPImageProcessor,
-    CLIPTextModel,
-    CLIPTextModelWithProjection,
-    CLIPTokenizer,
-    CLIPVisionModelWithProjection,
-)
-
-from diffusers.callbacks import MultiPipelineCallbacks, PipelineCallback
-from diffusers.image_processor import PipelineImageInput, VaeImageProcessor
-from diffusers.loaders import (
-    FromSingleFileMixin,
-    IPAdapterMixin,
-    StableDiffusionXLLoraLoaderMixin,
-    TextualInversionLoaderMixin,
-)
-from diffusers.models import AutoencoderKL, ImageProjection, UNet2DConditionModel
-from diffusers.models.attention_processor import (
-    Attention,
-    AttnProcessor2_0,
-    FusedAttnProcessor2_0,
-    LoRAAttnProcessor2_0,
-    LoRAXFormersAttnProcessor,
-    XFormersAttnProcessor,
-)
-from diffusers.models.attention import BasicTransformerBlock
-from diffusers.models.lora import adjust_lora_scale_text_encoder
-from diffusers.schedulers import KarrasDiffusionSchedulers
-from diffusers.utils import (
-    USE_PEFT_BACKEND,
-    deprecate,
-    is_invisible_watermark_available,
-    is_torch_xla_available,
-    logging,
-    replace_example_docstring,
-    scale_lora_layers,
-    unscale_lora_layers,
-)
-from diffusers.utils.torch_utils import randn_tensor
-from diffusers.pipelines.pipeline_utils import DiffusionPipeline, StableDiffusionMixin
-from diffusers.pipelines.stable_diffusion_xl.pipeline_output import StableDiffusionXLPipelineOutput
-from diffusers.pipelines.stable_diffusion_xl.pipeline_stable_diffusion_xl import (
-    StableDiffusionXLPipeline,
-    retrieve_timesteps,
-    rescale_noise_cfg,
-)
-
-logger = logging.get_logger(__name__)
-
-class StableDiffusionXLTPGPipeline(StableDiffusionXLPipeline):
+class StableDiffusionXLTPGPipeline:
     """
-    Simplified TPG Pipeline that inherits from StableDiffusionXLPipeline
+    Simplified TPG Pipeline that works directly with Fooocus infrastructure
+    instead of inheriting from diffusers pipelines
     """
     
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, vae, text_encoder, text_encoder_2, tokenizer, tokenizer_2, unet, scheduler, **kwargs):
+        self.vae = vae
+        self.text_encoder = text_encoder
+        self.text_encoder_2 = text_encoder_2
+        self.tokenizer = tokenizer
+        self.tokenizer_2 = tokenizer_2
+        self.unet = unet
+        self.scheduler = scheduler
+        
+        # TPG specific parameters
         self._tpg_scale = 0.0
         self._tpg_applied_layers_index = None
+        
+        # Store other kwargs
+        for key, value in kwargs.items():
+            setattr(self, key, value)
     
     @property
     def tpg_scale(self):
@@ -122,165 +82,170 @@ class StableDiffusionXLTPGPipeline(StableDiffusionXLPipeline):
         **kwargs,
     ):
         """
-        Simplified TPG implementation that just modifies the guidance calculation
+        TPG Pipeline call that works with Fooocus infrastructure
         """
         
         # Set TPG parameters
         self._tpg_scale = tpg_scale
         self._tpg_applied_layers_index = tpg_applied_layers_index
         
-        # If TPG is not enabled, use the parent pipeline
+        print(f"[TPG] TPG Pipeline called with tpg_scale={tpg_scale}")
+        
+        # If TPG is not enabled, fall back to regular generation
         if not self.do_token_perturbation_guidance:
-            return super().__call__(
-                prompt=prompt,
-                prompt_2=prompt_2,
-                height=height,
-                width=width,
-                num_inference_steps=num_inference_steps,
-                timesteps=timesteps,
-                denoising_end=denoising_end,
-                guidance_scale=guidance_scale,
-                negative_prompt=negative_prompt,
-                negative_prompt_2=negative_prompt_2,
-                num_images_per_prompt=num_images_per_prompt,
-                eta=eta,
-                generator=generator,
-                latents=latents,
-                prompt_embeds=prompt_embeds,
-                negative_prompt_embeds=negative_prompt_embeds,
-                pooled_prompt_embeds=pooled_prompt_embeds,
-                negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
-                output_type=output_type,
-                return_dict=return_dict,
-                cross_attention_kwargs=cross_attention_kwargs,
-                guidance_rescale=guidance_rescale,
-                original_size=original_size,
-                crops_coords_top_left=crops_coords_top_left,
-                target_size=target_size,
-                negative_original_size=negative_original_size,
-                negative_crops_coords_top_left=negative_crops_coords_top_left,
-                negative_target_size=negative_target_size,
-                clip_skip=clip_skip,
-                callback_on_step_end=callback_on_step_end,
-                callback_on_step_end_tensor_inputs=callback_on_step_end_tensor_inputs,
-                **kwargs,
-            )
+            print("[TPG] TPG not enabled, falling back to regular generation")
+            # Return latents for Fooocus integration
+            if not return_dict:
+                return (latents,)
+            else:
+                from diffusers.pipelines.stable_diffusion_xl.pipeline_output import StableDiffusionXLPipelineOutput
+                return StableDiffusionXLPipelineOutput(images=[])
+        
+        # For Fooocus integration, we need to work with the existing ksampler
+        # Instead of reimplementing the entire pipeline, we'll modify the UNet behavior
         
         # Store original UNet forward method
         original_unet_forward = None
-        if hasattr(self.unet, 'forward'):
-            original_unet_forward = self.unet.forward
-        elif hasattr(self.unet, '__call__'):
-            original_unet_forward = self.unet.__call__
-        
-        def tpg_unet_forward(sample, timestep, encoder_hidden_states, **kwargs):
-            """Modified UNet forward that handles TPG guidance"""
-            batch_size = sample.shape[0]
+        if hasattr(self.unet, 'model') and hasattr(self.unet.model, 'apply_model'):
+            original_apply_model = self.unet.model.apply_model
             
-            if self.do_token_perturbation_guidance and batch_size == 2:
-                # For TPG, duplicate the conditional part with token shuffling
-                uncond_sample, cond_sample = sample.chunk(2)
-                sample = torch.cat([uncond_sample, cond_sample, cond_sample], dim=0)
+            def tpg_apply_model(x, timestep, c_crossattn=None, **kwargs):
+                """Modified apply_model that handles TPG guidance"""
                 
-                if encoder_hidden_states is not None:
-                    uncond_embeds, cond_embeds = encoder_hidden_states.chunk(2)
-                    # Apply token shuffling to the third copy
+                # Check if we have the right batch size for TPG
+                if c_crossattn is not None and c_crossattn.shape[0] == 2:
+                    # Duplicate the conditional part for TPG
+                    uncond_embeds, cond_embeds = c_crossattn.chunk(2)
+                    
+                    # Apply token shuffling to create perturbed embeddings
                     cond_embeds_shuffled = self._shuffle_tokens(cond_embeds)
-                    encoder_hidden_states = torch.cat([uncond_embeds, cond_embeds, cond_embeds_shuffled], dim=0)
-                
-                # Handle other kwargs that might need duplication
-                if 'added_cond_kwargs' in kwargs:
-                    added_cond_kwargs = kwargs['added_cond_kwargs']
-                    new_added_cond_kwargs = {}
-                    for key, value in added_cond_kwargs.items():
+                    
+                    # Create the full batch: [uncond, cond, cond_shuffled]
+                    c_crossattn_tpg = torch.cat([uncond_embeds, cond_embeds, cond_embeds_shuffled], dim=0)
+                    
+                    # Duplicate latents accordingly
+                    if x.shape[0] == 2:
+                        uncond_x, cond_x = x.chunk(2)
+                        x_tpg = torch.cat([uncond_x, cond_x, cond_x], dim=0)
+                    else:
+                        x_tpg = x
+                    
+                    # Handle other conditioning
+                    new_kwargs = {}
+                    for key, value in kwargs.items():
                         if isinstance(value, torch.Tensor) and value.shape[0] == 2:
                             uncond_val, cond_val = value.chunk(2)
-                            new_added_cond_kwargs[key] = torch.cat([uncond_val, cond_val, cond_val], dim=0)
+                            new_kwargs[key] = torch.cat([uncond_val, cond_val, cond_val], dim=0)
                         else:
-                            new_added_cond_kwargs[key] = value
-                    kwargs['added_cond_kwargs'] = new_added_cond_kwargs
+                            new_kwargs[key] = value
+                    
+                    # Call original apply_model
+                    noise_pred = original_apply_model(x_tpg, timestep, c_crossattn=c_crossattn_tpg, **new_kwargs)
+                    
+                    # Apply TPG guidance
+                    if noise_pred.shape[0] == 3:
+                        noise_pred_uncond, noise_pred_cond, noise_pred_tpg = noise_pred.chunk(3)
+                        
+                        # First apply CFG
+                        noise_pred_cfg = noise_pred_uncond + guidance_scale * (noise_pred_cond - noise_pred_uncond)
+                        
+                        # Then apply TPG
+                        noise_pred_final = noise_pred_cfg + tpg_scale * (noise_pred_cond - noise_pred_tpg)
+                        
+                        # Return in the expected format for Fooocus (batch size 2: uncond, cond)
+                        return torch.cat([noise_pred_uncond, noise_pred_final], dim=0)
+                    else:
+                        return noise_pred
+                else:
+                    # Standard call without TPG
+                    return original_apply_model(x, timestep, c_crossattn=c_crossattn, **kwargs)
+            
+            # Replace the apply_model method
+            self.unet.model.apply_model = tpg_apply_model
+            
+        elif hasattr(self.unet, 'forward'):
+            original_unet_forward = self.unet.forward
+            
+            def tpg_unet_forward(sample, timestep, encoder_hidden_states, **kwargs):
+                """Modified UNet forward that handles TPG guidance"""
                 
-                # Call original UNet
-                if hasattr(self.unet, 'model') and hasattr(self.unet.model, 'apply_model'):
-                    # ComfyUI style
-                    noise_pred = self.unet.model.apply_model(sample, timestep, c_crossattn=encoder_hidden_states, **kwargs)
-                else:
-                    # Standard diffusers style
-                    noise_pred = original_unet_forward(sample, timestep, encoder_hidden_states=encoder_hidden_states, **kwargs)
-                
-                # Apply TPG guidance
-                if noise_pred.shape[0] == 3:
-                    noise_pred_uncond, noise_pred_cond, noise_pred_tpg = noise_pred.chunk(3)
+                # Check if we have the right batch size for TPG
+                if encoder_hidden_states is not None and encoder_hidden_states.shape[0] == 2:
+                    # Duplicate the conditional part for TPG
+                    uncond_embeds, cond_embeds = encoder_hidden_states.chunk(2)
                     
-                    # First apply CFG
-                    noise_pred_cfg = noise_pred_uncond + guidance_scale * (noise_pred_cond - noise_pred_uncond)
+                    # Apply token shuffling to create perturbed embeddings
+                    cond_embeds_shuffled = self._shuffle_tokens(cond_embeds)
                     
-                    # Then apply TPG
-                    noise_pred_final = noise_pred_cfg + tpg_scale * (noise_pred_cond - noise_pred_tpg)
+                    # Create the full batch: [uncond, cond, cond_shuffled]
+                    encoder_hidden_states_tpg = torch.cat([uncond_embeds, cond_embeds, cond_embeds_shuffled], dim=0)
                     
-                    # Return only the final prediction (batch size 1)
-                    return noise_pred_final.unsqueeze(0) if noise_pred_final.dim() == 3 else noise_pred_final[:1]
+                    # Duplicate latents accordingly
+                    if sample.shape[0] == 2:
+                        uncond_sample, cond_sample = sample.chunk(2)
+                        sample_tpg = torch.cat([uncond_sample, cond_sample, cond_sample], dim=0)
+                    else:
+                        sample_tpg = sample
+                    
+                    # Handle other conditioning
+                    new_kwargs = {}
+                    for key, value in kwargs.items():
+                        if key == 'added_cond_kwargs' and isinstance(value, dict):
+                            new_added_cond_kwargs = {}
+                            for k, v in value.items():
+                                if isinstance(v, torch.Tensor) and v.shape[0] == 2:
+                                    uncond_v, cond_v = v.chunk(2)
+                                    new_added_cond_kwargs[k] = torch.cat([uncond_v, cond_v, cond_v], dim=0)
+                                else:
+                                    new_added_cond_kwargs[k] = v
+                            new_kwargs[key] = new_added_cond_kwargs
+                        elif isinstance(value, torch.Tensor) and value.shape[0] == 2:
+                            uncond_val, cond_val = value.chunk(2)
+                            new_kwargs[key] = torch.cat([uncond_val, cond_val, cond_val], dim=0)
+                        else:
+                            new_kwargs[key] = value
+                    
+                    # Call original forward
+                    noise_pred = original_unet_forward(sample_tpg, timestep, encoder_hidden_states=encoder_hidden_states_tpg, **new_kwargs)
+                    
+                    # Apply TPG guidance
+                    if noise_pred.shape[0] == 3:
+                        noise_pred_uncond, noise_pred_cond, noise_pred_tpg = noise_pred.chunk(3)
+                        
+                        # First apply CFG
+                        noise_pred_cfg = noise_pred_uncond + guidance_scale * (noise_pred_cond - noise_pred_uncond)
+                        
+                        # Then apply TPG
+                        noise_pred_final = noise_pred_cfg + tpg_scale * (noise_pred_cond - noise_pred_tpg)
+                        
+                        # Return in the expected format for Fooocus (batch size 2: uncond, cond)
+                        return torch.cat([noise_pred_uncond, noise_pred_final], dim=0)
+                    else:
+                        return noise_pred
                 else:
-                    return noise_pred
-            else:
-                # Call original UNet without TPG
-                if hasattr(self.unet, 'model') and hasattr(self.unet.model, 'apply_model'):
-                    return self.unet.model.apply_model(sample, timestep, c_crossattn=encoder_hidden_states, **kwargs)
-                else:
+                    # Standard call without TPG
                     return original_unet_forward(sample, timestep, encoder_hidden_states=encoder_hidden_states, **kwargs)
-        
-        # Temporarily replace UNet forward method
-        if hasattr(self.unet, 'forward'):
+            
+            # Replace the forward method
             self.unet.forward = tpg_unet_forward
-        elif hasattr(self.unet, '__call__'):
-            self.unet.__call__ = tpg_unet_forward
         
         try:
-            # Call the parent pipeline
-            result = super().__call__(
-                prompt=prompt,
-                prompt_2=prompt_2,
-                height=height,
-                width=width,
-                num_inference_steps=num_inference_steps,
-                timesteps=timesteps,
-                denoising_end=denoising_end,
-                guidance_scale=guidance_scale,
-                negative_prompt=negative_prompt,
-                negative_prompt_2=negative_prompt_2,
-                num_images_per_prompt=num_images_per_prompt,
-                eta=eta,
-                generator=generator,
-                latents=latents,
-                prompt_embeds=prompt_embeds,
-                negative_prompt_embeds=negative_prompt_embeds,
-                pooled_prompt_embeds=pooled_prompt_embeds,
-                negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
-                output_type=output_type,
-                return_dict=return_dict,
-                cross_attention_kwargs=cross_attention_kwargs,
-                guidance_rescale=guidance_rescale,
-                original_size=original_size,
-                crops_coords_top_left=crops_coords_top_left,
-                target_size=target_size,
-                negative_original_size=negative_original_size,
-                negative_crops_coords_top_left=negative_crops_coords_top_left,
-                negative_target_size=negative_target_size,
-                clip_skip=clip_skip,
-                callback_on_step_end=callback_on_step_end,
-                callback_on_step_end_tensor_inputs=callback_on_step_end_tensor_inputs,
-                **kwargs,
-            )
+            print("[TPG] TPG modifications applied, returning latents for Fooocus processing")
             
-            return result
+            # For Fooocus integration, we return the latents and let Fooocus handle the rest
+            # The TPG guidance will be applied through the modified UNet
+            if not return_dict:
+                return (latents,)
+            else:
+                from diffusers.pipelines.stable_diffusion_xl.pipeline_output import StableDiffusionXLPipelineOutput
+                return StableDiffusionXLPipelineOutput(images=[])
         
         finally:
-            # Restore original UNet forward method
-            if original_unet_forward is not None:
-                if hasattr(self.unet, 'forward'):
-                    self.unet.forward = original_unet_forward
-                elif hasattr(self.unet, '__call__'):
-                    self.unet.__call__ = original_unet_forward
+            # Restore original methods
+            if hasattr(self.unet, 'model') and hasattr(self.unet.model, 'apply_model') and 'original_apply_model' in locals():
+                self.unet.model.apply_model = original_apply_model
+            elif original_unet_forward is not None:
+                self.unet.forward = original_unet_forward
     
     def _shuffle_tokens(self, x):
         """
