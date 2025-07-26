@@ -311,8 +311,11 @@ def calculate_sigmas_scheduler_hacked(model, scheduler_name, steps):
             n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
         )
 
-    
-        
+    elif scheduler_name == "dpmpp_unipc_restart":
+        sigmas = k_diffusion_sampling.get_sigmas_karras(
+            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
+        )
+
     else:
         raise TypeError(f"error invalid scheduler: {scheduler_name}")
 
