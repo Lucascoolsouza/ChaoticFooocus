@@ -524,7 +524,7 @@ class UNIPCBH2(Sampler):
 
 KSAMPLER_NAMES = ["euler", "euler_ancestral","euler_chaotic","euler_triangle_wave","euler_dreamy","euler_dreamy_pp","euler_tpg","euler_nag","euler_dag","euler_guidance","triangular","pixelart","dreamy","comic","fractal","heun", "heunpp2","dpm_2", "dpm_2_ancestral",
                   "lms", "dpm_fast", "dpm_adaptive", "dpmpp_2s_ancestral", "dpmpp_sde", "dpmpp_sde_gpu",
-                  "dpmpp_2m", "dpmpp_2m_sde", "dpmpp_2m_sde_gpu", "dpmpp_3m_sde", "dpmpp_3m_sde_gpu", "ddpm", "lcm", "tcd", "edm_playground_v2.5", "restart"]
+                  "dpmpp_2m", "dpmpp_2m_sde", "dpmpp_2m_sde_gpu", "dpmpp_3m_sde", "dpmpp_3m_sde_gpu", "ddpm", "lcm", "tcd", "edm_playground_v2.5", "restart", "negative_focus", "token_shuffle", "diverse_attention", "dpmpp_unipc_restart"]
 
 class KSAMPLER(Sampler):
     def __init__(self, sampler_function, extra_options={}, inpaint_options={}):
@@ -575,6 +575,14 @@ def ksampler(sampler_name, extra_options={}, inpaint_options={}):
                 sigma_min = sigmas[-2]
             return k_diffusion_sampling.sample_dpm_adaptive(model, noise, sigma_min, sigmas[0], extra_args=extra_args, callback=callback, disable=disable)
         sampler_function = dpm_adaptive_function
+    elif sampler_name == "negative_focus":
+        sampler_function = getattr(k_diffusion_sampling, "sample_negative_focus")
+    elif sampler_name == "token_shuffle":
+        sampler_function = getattr(k_diffusion_sampling, "sample_token_shuffle")
+    elif sampler_name == "diverse_attention":
+        sampler_function = getattr(k_diffusion_sampling, "sample_diverse_attention")
+    elif sampler_name == "dpmpp_unipc_restart":
+        sampler_function = getattr(k_diffusion_sampling, "sample_dpmpp_unipc_restart")
     else:
         sampler_function = getattr(k_diffusion_sampling, "sample_{}".format(sampler_name))
 

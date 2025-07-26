@@ -31,15 +31,6 @@ CIVITAI_NO_KARRAS = ["euler", "euler_ancestral", "heun", "dpm_fast", "dpm_adapti
 # fooocus: a1111 (Civitai)
 KSAMPLER = {
     "euler": "Euler",
-    "euler_chaotic": "Euler Chaotic",
-    "euler_triangle_wave": "Euler Triangle Wave",
-    "euler_dreamy": "Euler Dreamy",
-    "euler_dreamy_pp": "Euler Dreamy++",
-    "triangular": "Triangular",
-    "pixelart": "Pixel Art",
-    "dreamy": "Dreamy",
-    "comic": "Comic",
-    "fractal": "Fractal",
     "euler_ancestral": "Euler a",
     "heun": "Heun",
     "heunpp2": "Heun++2",
@@ -79,13 +70,8 @@ KSAMPLER_NAMES = list(KSAMPLER.keys())
 # ! = overcooked, !! = error, !!! = black output, ? = cool unrelated aesthetic
 SCHEDULER_NAMES = ["normal", "karras", "exponential", "sgm_uniform", "simple",
                     "ddim_uniform", "lcm", "turbo", "align_your_steps", "tcd",
-                    "edm_playground_v2.5","comic_panel","sinusoidal", "chaotic", "zigzag",
-                    "jitter", "upscale", "mini_dalle", "grid","pixel_art",
-                    "golden_ratio","dream","piecewise","trow_random_blsht",
-                    "smokeywindy","attention_context","claylike","extreme_closeup_detail",
-                    "rhythmic_beats","chaotic_swirl","dropout_spikes","inception_ramp","double_cosine",
-                    "color_rainbow","rgb_split","hsv_cycle","spiral","quantum","organic",
-                    "negative_focus", "token_shuffle", "diverse_attention", "dpmpp_unipc_restart"]
+                    "edm_playground_v2.5","negative_focus", "token_shuffle", 
+                    "diverse_attention", "dpmpp_unipc_restart"]
 
 SAMPLER_NAMES = KSAMPLER_NAMES + list(SAMPLER_EXTRA.keys())
 
