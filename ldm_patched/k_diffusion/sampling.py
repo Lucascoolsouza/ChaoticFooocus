@@ -1777,8 +1777,7 @@ def set_guidance_config(tpg_scale=0.0, nag_scale=1.0):
     global _guidance_config
     _guidance_config.update({
         'tpg_scale': tpg_scale,
-        'nag_scale': nag_scale,
-        
+        'nag_scale': nag_scale
     })
     print(f"[GUIDANCE] Config updated: TPG={tpg_scale}, NAG={nag_scale}")
 
@@ -1992,7 +1991,7 @@ def sample_euler_nag(model, x, sigmas, extra_args=None, callback=None, disable=N
 
 @torch.no_grad()
 def sample_euler_guidance(model, x, sigmas, extra_args=None, callback=None, disable=None,
-                         tpg_scale=None, nag_scale=None, dag_scale=None,
+                         tpg_scale=None, nag_scale=None,
                          s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
     """Euler method with combined TPG, NAG, and DAG guidance"""
     extra_args = {} if extra_args is None else extra_args
@@ -2003,8 +2002,7 @@ def sample_euler_guidance(model, x, sigmas, extra_args=None, callback=None, disa
         tpg_scale = _guidance_config.get('tpg_scale', 0.0)
     if nag_scale is None:
         nag_scale = _guidance_config.get('nag_scale', 1.0)
-    if dag_scale is None:
-        dag_scale = _guidance_config.get('dag_scale', 0.0)
+    
     
     total_steps = len(sigmas) - 1
     
@@ -2014,8 +2012,7 @@ def sample_euler_guidance(model, x, sigmas, extra_args=None, callback=None, disa
         active_methods.append(f"TPG({tpg_scale})")
     if nag_scale > 1.0:
         active_methods.append(f"NAG({nag_scale})")
-    if dag_scale > 0:
-        active_methods.append(f"DAG({dag_scale})")
+    
     
     if active_methods:
         print(f"[GUIDANCE] Using combined guidance: {', '.join(active_methods)}")
@@ -2034,7 +2031,7 @@ def sample_euler_guidance(model, x, sigmas, extra_args=None, callback=None, disa
         
         # Apply guidance if we have conditioning and any guidance is enabled
         if ('cond' in extra_args and len(extra_args['cond']) > 0 and 
-            (tpg_scale > 0 or nag_scale > 1.0 or dag_scale > 0)):
+            if (tpg_scale > 0 or nag_scale > 1.0):):
             
             try:
                 guidance_sum = torch.zeros_like(denoised)
