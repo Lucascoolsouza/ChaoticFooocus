@@ -109,28 +109,17 @@ class AsyncTask:
         self.tpg_scale = args.pop()
         self.tpg_applied_layers_index = args.pop()
 
-        self.dag_applied_layers = args.pop()
-        self.dag_scale = args.pop()
         self.dag_enabled = args.pop()
-        # Ensure dag_enabled is a boolean
-        if isinstance(self.dag_enabled, str):
-            self.dag_enabled = bool(self.dag_enabled)
+        self.dag_scale = args.pop()
+        self.dag_applied_layers = args.pop()
         if not self.dag_applied_layers:
             self.dag_applied_layers = "mid,up"
         print(f"[ASYNC_WORKER DEBUG] DAG Enabled: {self.dag_enabled}, DAG Scale: {self.dag_scale}, DAG Applied Layers: {self.dag_applied_layers}")
         
         self.save_final_enhanced_image_only = args.pop() if not args_manager.args.disable_image_log else False
-
-        if not args_manager.args.disable_metadata:
-            self.save_metadata_to_images = args.pop()
-            raw_metadata_scheme_value = args.pop()
-            if self.save_metadata_to_images and raw_metadata_scheme_value is not False and raw_metadata_scheme_value is not None:
-                self.metadata_scheme = MetadataScheme(raw_metadata_scheme_value)
-            else:
-                self.metadata_scheme = MetadataScheme.FOOOCUS
-        else:
-            self.save_metadata_to_images = False
-            self.metadata_scheme = MetadataScheme.FOOOCUS
+        self.save_metadata_to_images = args.pop() if not args_manager.args.disable_metadata else False
+        self.metadata_scheme = MetadataScheme(
+            args.pop()) if not args_manager.args.disable_metadata else MetadataScheme.FOOOCUS
 
         # Detail daemon parameters (popped in reverse order from webui.py)
         print(f"[DEBUG] Args remaining before detail daemon: {len(args)}")
