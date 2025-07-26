@@ -15,8 +15,14 @@ from extras.expansion import FooocusExpansion
 from ldm_patched.modules.model_base import SDXL, SDXLRefiner
 from modules.sample_hijack import clip_separate
 from modules.util import get_file_from_folder_list, get_enabled_loras
+<<<<<<< HEAD
 # Guidance samplers are now integrated into k_diffusion sampling
 # No need for separate sampler classes
+=======
+from extras.nag.pipeline_sdxl_nag import NAGStableDiffusionXLPipeline, safe_decode
+from extras.TPG.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
+from extras.PAG.pipeline_sdxl_pag import StableDiffusionXLPAGPipeline
+>>>>>>> parent of a9a7293 (SAMPLERS)
 
 
 model_base = core.StableDiffusionModel()
@@ -755,6 +761,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         tokenizer_l_on_device = add_tokenizer_compatibility(tokenizer_l_on_device)
         tokenizer_g_on_device = add_tokenizer_compatibility(tokenizer_g_on_device)
 
+<<<<<<< HEAD
         # Handle guidance by selecting appropriate sampler
         # Check if guidance is active either through parameters OR through sampler selection
         guidance_samplers = ['euler_tpg', 'euler_nag', 'euler_dag', 'euler_guidance']
@@ -813,6 +820,141 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             guidance_sampler = sampler_name
         
         # Use sampler (with or without guidance)
+=======
+        # Select pipeline based on TPG/NAG/PAG enabled
+        print(f"[DEFAULT_PIPELINE DEBUG] pag_enabled: {pag_enabled}, tpg_enabled: {tpg_enabled}, nag_scale: {nag_scale}")
+        if tpg_enabled and tpg_scale > 0:
+            pipe_class = StableDiffusionXLTPGPipeline
+            print(f"[TPG] Using StableDiffusionXLTPGPipeline with scale {tpg_scale}")
+        elif pag_enabled and pag_scale > 0:
+            pipe_class = StableDiffusionXLPAGPipeline
+            print(f"[PAG] Using StableDiffusionXLPAGPipeline with scale {pag_scale}")
+        elif nag_scale > 1.0:
+            pipe_class = NAGStableDiffusionXLPipeline
+            print(f"[NAG] Using NAGStableDiffusionXLPipeline with scale {nag_scale}")
+        else:
+            # Fallback to regular ksampler if no special guidance is enabled
+            print("[DEFAULT] No special guidance enabled, using regular ksampler")
+            # Skip the complex pipeline setup and use regular ksampler
+            pass  # This will fall through to the regular ksampler below
+
+        # Instantiate the selected pipeline with the components on the correct device
+        pipe = pipe_class(
+            vae=vae_on_device,
+            text_encoder=text_encoder_l_on_device,
+            text_encoder_2=text_encoder_g_on_device,
+            tokenizer=tokenizer_l_on_device,
+            tokenizer_2=tokenizer_g_on_device,
+            unet=unet_on_device,
+            scheduler=scheduler_on_device
+        )
+        print(f"Pipeline instantiated. Its internal device should now be correctly set.")
+        
+        # Define a wrapper for the callback to decode latents for preview
+        def pipe_callback(pipe, step, timestep, callback_kwargs):
+            import numpy as np # Added import for numpy
+            if callback is not None and not disable_preview:
+                latents_for_preview = callback_kwargs["latents"]
+                
+                # Ensure VAE is on the correct device for decoding
+                vae_device = pipe.vae.device
+                latents_on_vae_device = latents_for_preview.to(vae_device)
+
+                # Unscale and decode for preview
+                scaling_factor = getattr(pipe.vae.config, 'scaling_factor', 0.13025)
+                decoded_latents_tensor = pipe.vae.decode(latents_on_vae_device / scaling_factor)
+                
+                # Convert to PIL Image, then to uint8 HWC numpy array
+                preview_img = safe_decode(latents_for_preview[:1], pipe.vae, width=width, height=height)
+                preview_np = preview_img
+
+                # Call the original callback with the decoded latent
+                # The original callback expects (step, x0, x, total_steps, y)
+                # Here, x0 is the decoded image tensor, x is the latent, total_steps is steps, y is not used
+                callback(step, preview_np, latents_for_preview, steps, decoded_latents_tensor)
+                return {"latents": latents_for_preview}
+
+        # Prepare common pipeline arguments
+        pipeline_args = {
+            "prompt": original_prompt,
+            "negative_prompt": original_negative_prompt,
+            "prompt_embeds": prompt_embeds,
+            "pooled_prompt_embeds": pooled_prompt_embeds,
+            "negative_prompt_embeds": negative_prompt_embeds,
+            "negative_pooled_prompt_embeds": negative_pooled_prompt_embeds,
+            "height": height,
+            "width": width,
+            "num_inference_steps": steps,
+            "guidance_scale": cfg_scale,
+            "generator": torch.Generator(device="cpu").manual_seed(image_seed),
+            "latents": initial_latent["samples"],
+            "callback_on_step_end": pipe_callback,
+            "callback_on_step_end_tensor_inputs": ["latents"],
+            "return_dict": False,
+        }
+
+        # Add NAG specific arguments if NAG is enabled
+        if nag_scale > 1.0:
+            pipeline_args.update({
+                "nag_scale": nag_scale,
+                "nag_tau": nag_tau,
+                "nag_alpha": nag_alpha,
+                "nag_negative_prompt": final_nag_negative_prompt,
+                "nag_end": nag_end,
+            })
+
+        # Add TPG specific arguments if TPG is enabled
+        if tpg_enabled:
+            pipeline_args.update({
+                "tpg_scale": tpg_scale,
+                "tpg_applied_layers_index": tpg_applied_layers_index,
+            })
+        
+        # Add PAG specific arguments if PAG is enabled
+        if pag_enabled:
+            pipeline_args.update({
+                "pag_scale": pag_scale,
+                "pag_applied_layers": pag_applied_layers,
+            })
+
+        # Call the selected pipeline
+        output = pipe(**pipeline_args)
+        
+        print(f"Using {'TPG' if tpg_enabled else ('PAG' if pag_enabled else 'NAG')} pipeline for generation")
+        print(f"[DEBUG] Pipeline output type: {type(output)}")
+        print(f"[DEBUG] Pipeline output content (first 100 chars): {str(output)[:100]}")
+        
+        # ---------- after pipeline call ----------
+        # Pipeline returns a tuple with latents when return_dict=False
+        if isinstance(output, tuple):
+            latents = output[0]  # Extract latents from tuple
+            print(f"[DEBUG] Extracted latents type: {type(latents)}")
+            print(f"[DEBUG] Extracted latents shape: {latents.shape}")
+            latent_dict = {'samples': latents}
+            imgs = core.pytorch_to_numpy(core.decode_vae(target_vae, latent_dict))
+        elif isinstance(output, Image.Image):
+            # already decoded → convert to numpy HWC uint8 for Fooocus
+            imgs = [np.asarray(output.convert("RGB"), dtype=np.uint8)] # skip decode & pytorch_to_numpy
+        elif isinstance(output, np.ndarray) and output.ndim == 3:
+            # returned uint8 HWC numpy
+            imgs = [output]
+        else:
+            # old path: still latents (B, C, H, W) tensor
+            latent_dict = {'samples': output}
+            # Use tiled VAE decoding for better memory efficiency
+            imgs = core.pytorch_to_numpy(core.decode_vae(target_vae, latent_dict, tiled=True))
+        
+        print(f"[DEBUG] imgs after processing pipeline output: {type(imgs)}")
+        if len(imgs) > 0:
+            print(f"[DEBUG] First image in imgs: {type(imgs[0])}, shape: {imgs[0].shape}")
+        print("Final deliverable:", type(imgs[0]), getattr(imgs[0], 'size', '-'))
+        
+        # Skip the regular ksampler since we used NAG/TPG/PAG pipeline
+    
+    # Use regular ksampler if no special guidance is enabled
+    if not (nag_scale > 1.0 or (tpg_enabled and tpg_scale > 0) or (pag_enabled and pag_scale > 0)):
+        print("[DEFAULT] Using regular ksampler")
+>>>>>>> parent of a9a7293 (SAMPLERS)
         ksampler_imgs = core.ksampler(
             model=final_unet,
             positive=positive_cond,
