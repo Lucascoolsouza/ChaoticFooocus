@@ -133,13 +133,13 @@ def sample_hacked(model, noise, positive, negative, cfg, device, sampler, sigmas
             print("Warning: neg_text_emb not found for negative_focus sampler. Using empty tensor.")
             extra_args["neg_text_emb"] = torch.empty(1, 1, 768) # Placeholder, adjust dimensions as needed
 
-    if sampler.sampler_name == "token_shuffle":
+    if sampler == "token_shuffle":
         # For token_shuffle, the 'cond' in extra_args is already the positive conditioning
         # No specific extraction needed here, as 'cond' is already set to 'positive'
         extra_args["shuffle_start"] = 0.5
         extra_args["shuffle_prob"] = 0.3
 
-    if sampler.sampler_name == "diverse_attention":
+    if sampler == "diverse_attention":
         extra_args["attn_dropout"] = 0.1  # Default value from sample_diverse_attention
         extra_args["attn_temp"] = 0.7     # Default value from sample_diverse_attention
         extra_args["diversity_start"] = 0.4 # Default value from sample_diverse_attention
