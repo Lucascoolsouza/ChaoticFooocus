@@ -290,7 +290,6 @@ class StableDiffusionXLPAGPipeline(StableDiffusionXLPipeline):
                 elif hasattr(self.unet, '__call__'):
                     self.unet.__call__ = original_unet_forward
             
-        finally:
             # Always disable PAG after generation to clean up
             if pag_scale > 0:
                 print("[PAG DEBUG] Disabling PAG after generation.")

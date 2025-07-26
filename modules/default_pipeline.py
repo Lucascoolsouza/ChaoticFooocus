@@ -770,31 +770,8 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         else:
             # Fallback to regular ksampler if no special guidance is enabled
             print("[DEFAULT] No special guidance enabled, using regular ksampler")
-            ksampler_imgs = core.ksampler(
-                model=final_unet,
-                positive=positive_cond,
-                negative=negative_cond,
-                latent=initial_latent,
-                seed=image_seed,
-                steps=steps,
-                cfg=cfg_scale,
-                sampler_name=sampler_name,
-                scheduler=scheduler_name,
-                denoise=denoise,
-                disable_preview=disable_preview,
-                refiner=final_refiner_unet,
-                refiner_switch=switch,
-                sigmas=minmax_sigmas,
-                callback_function=callback
-            )['samples']
-            
-            if ksampler_imgs is not None:
-                latent_dict = {'samples': ksampler_imgs}
-                imgs = core.decode_vae(target_vae, latent_dict)
-                imgs = core.pytorch_to_numpy(imgs)
-            else:
-                imgs = []
-            return imgs
+            # Skip the complex pipeline setup and use regular ksampler
+            pass  # This will fall through to the regular ksampler below
 
         # Instantiate the selected pipeline with the components on the correct device
         pipe = pipe_class(
@@ -908,8 +885,10 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         print("Final deliverable:", type(imgs[0]), getattr(imgs[0], 'size', '-'))
         
         # Skip the regular ksampler since we used NAG/TPG/PAG pipeline
-    else:
-        # Fallback to regular ksampler if no special guidance is enabled
+    
+    # Use regular ksampler if no special guidance is enabled
+    if not (nag_scale > 1.0 or (tpg_enabled and tpg_scale > 0) or (pag_enabled and pag_scale > 0)):
+        print("[DEFAULT] Using regular ksampler")
         ksampler_imgs = core.ksampler(
             model=final_unet,
             positive=positive_cond,
@@ -932,10 +911,6 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         if ksampler_imgs is not None:
             latent_dict = {'samples': ksampler_imgs}
             imgs = core.decode_vae(target_vae, latent_dict)
-            
-            # Detail daemon is now applied via sigma manipulation during sampling
-            
-            # Convert to numpy arrays for saving
             imgs = core.pytorch_to_numpy(imgs)
         else:
             imgs = []

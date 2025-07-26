@@ -2,7 +2,7 @@
 
 import inspect
 import sys
-from typing import Type,Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Type, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import math
 import torch
@@ -37,13 +37,6 @@ from diffusers.models.attention_processor import (
     XFormersAttnProcessor,
 )
 from diffusers.models.attention import BasicTransformerBlock
-# Import ComfyUI/LDM attention modules
-try:
-    from ldm_patched.ldm.modules.attention import CrossAttention
-    COMFYUI_AVAILABLE = True
-except ImportError:
-    CrossAttention = None
-    COMFYUI_AVAILABLE = False
 from diffusers.models.lora import adjust_lora_scale_text_encoder
 from diffusers.schedulers import KarrasDiffusionSchedulers
 from diffusers.utils import (
@@ -59,1058 +52,50 @@ from diffusers.utils import (
 from diffusers.utils.torch_utils import randn_tensor
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline, StableDiffusionMixin
 from diffusers.pipelines.stable_diffusion_xl.pipeline_output import StableDiffusionXLPipelineOutput
+from diffusers.pipelines.stable_diffusion_xl.pipeline_stable_diffusion_xl import (
+    StableDiffusionXLPipeline,
+    retrieve_timesteps,
+    rescale_noise_cfg,
+)
 
+logger = logging.get_logger(__name__)
 
-logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
-
-def make_tpg_block(block_class: Type[torch.nn.Module], do_cfg=True) -> Type[torch.nn.Module]:
-    
-    # Check if this is a ComfyUI CrossAttention, ldm_patched BasicTransformerBlock, or Diffusers BasicTransformerBlock
-    is_cross_attention = COMFYUI_AVAILABLE and issubclass(block_class, CrossAttention)
-    is_ldm_patched_block = 'ldm_patched' in str(block_class) and 'BasicTransformerBlock' in str(block_class)
-    
-    if is_cross_attention:
-        # For ComfyUI CrossAttention modules, we need a different approach
-        class ModifiedCrossAttention(block_class):
-            def forward(self, x, context=None, mask=None, **kwargs):
-                # For CrossAttention, we need to handle the token shuffling differently
-                # This is a simplified version - you may need to adjust based on the exact interface
-                
-                if do_cfg and context is not None:
-                    try:
-                        # Split context for CFG + TPG
-                        if context.shape[0] == 3:  # uncond, cond, tpg
-                            context_uncond, context_org, context_tpg = context.chunk(3)
-                            context_org = torch.cat([context_uncond, context_org])
-                            
-                            # Shuffle tokens in TPG context
-                            context_tpg = self.shuffle_tokens(context_tpg)
-                            context = torch.cat([context_org, context_tpg], dim=0)
-                    except Exception as e:
-                        logger.warning(f"TPG context processing failed: {e}")
-                        # Fall back to original behavior
-                        pass
-                
-                return super().forward(x, context=context, mask=mask, **kwargs)
-            
-            def shuffle_tokens(self, x):
-                """Shuffle tokens for TPG"""
-                try:
-                    if len(x.shape) >= 2:
-                        b, n = x.shape[:2]
-                        permutation = torch.randperm(n, device=x.device)
-                        return x[:, permutation]
-                    return x
-                except Exception as e:
-                    logger.warning(f"Token shuffling failed: {e}")
-                    return x
-        
-        return ModifiedCrossAttention
-    
-    elif is_ldm_patched_block:
-        # For ldm_patched BasicTransformerBlock with signature (x, context=None, transformer_options={})
-        class ModifiedLDMTransformerBlock(block_class):
-            
-            def forward(self, x, context=None, transformer_options={}):
-                
-                if do_cfg and context is not None:
-                    try:
-                        # Handle CFG + TPG case
-                        if context.shape[0] == 3:  # uncond, cond, tpg
-                            context_uncond, context_org, context_tpg = context.chunk(3)
-                            context_org = torch.cat([context_uncond, context_org])
-                            
-                            # Shuffle tokens in TPG context
-                            context_tpg = self.shuffle_tokens(context_tpg)
-                            context = torch.cat([context_org, context_tpg], dim=0)
-                        elif context.shape[0] == 2:  # TPG only
-                            context_org, context_tpg = context.chunk(2)
-                            context_tpg = self.shuffle_tokens(context_tpg)
-                            context = torch.cat([context_org, context_tpg], dim=0)
-                    except Exception as e:
-                        logger.warning(f"TPG context processing failed: {e}")
-                        # Fall back to original behavior
-                        pass
-                
-                return super().forward(x, context=context, transformer_options=transformer_options)
-            
-            def shuffle_tokens(self, x):
-                """Shuffle tokens for TPG"""
-                try:
-                    if len(x.shape) >= 2:
-                        b, n = x.shape[:2]
-                        permutation = torch.randperm(n, device=x.device)
-                        return x[:, permutation]
-                    return x
-                except Exception as e:
-                    logger.warning(f"Token shuffling failed: {e}")
-                    return x
-        
-        return ModifiedLDMTransformerBlock
-    
-    else:
-        # Original BasicTransformerBlock approach
-        class ModifiedBasicTransformerBlock(block_class):
-            
-            def forward(
-                self,
-                hidden_states,
-                attention_mask=None,
-                encoder_hidden_states=None,
-                encoder_attention_mask=None,
-                timestep=None,
-                cross_attention_kwargs=None,
-                class_labels=None,
-            ) -> torch.Tensor:
-
-                batch_size, num_tokens, channels = hidden_states.shape
-
-                try:
-                    if do_cfg:
-                        hidden_states_uncond, hidden_states_org, hidden_states_tpg = hidden_states.chunk(3)
-                        hidden_states_org = torch.cat([hidden_states_uncond, hidden_states_org])
-                        encoder_hidden_states_uncond, encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(3)
-                        encoder_hidden_states_org = torch.cat([encoder_hidden_states_uncond, encoder_hidden_states_org])
-                    else:
-                        hidden_states_org, hidden_states_tpg = hidden_states.chunk(2)
-                        encoder_hidden_states_org, encoder_hidden_states_tpg = encoder_hidden_states.chunk(2)
-                except Exception as e:
-                    logger.error(f"Error in TPG block chunking: {e}")
-                    logger.error(f"Hidden states shape: {hidden_states.shape}")
-                    logger.error(f"Encoder hidden states shape: {encoder_hidden_states.shape}")
-                    logger.error(f"do_cfg: {do_cfg}")
-                    raise
-
-                hidden_states_tpg = self.shuffle_tokens(hidden_states_tpg)
-                hidden_states = torch.cat((hidden_states_org, hidden_states_tpg), dim=0)
-                
-                # Reconstruct encoder_hidden_states for the combined batch
-                encoder_hidden_states = torch.cat([encoder_hidden_states_org, encoder_hidden_states_tpg], dim=0)
-                
-                hidden_states = super().forward(
-                    hidden_states=hidden_states,
-                    attention_mask=attention_mask,
-                    encoder_hidden_states=encoder_hidden_states,
-                    encoder_attention_mask=encoder_attention_mask,
-                    timestep=timestep,
-                    cross_attention_kwargs=cross_attention_kwargs,
-                    class_labels=class_labels
-                )
-
-                return hidden_states
-
-            def shuffle_tokens(self, x):
-                """
-                Randomly shuffle the order of input tokens.
-
-                Args:
-                    x (torch.Tensor): Input tensor with shape (batch_size, num_tokens, channels) (b, n, c)
-
-                Returns:
-                    torch.Tensor: Shuffled tensor with the same shape (b, n, c)
-                """
-                try:
-                    b, n, c = x.shape
-                    # Generate a random permutation of indices for the token dimension
-                    permutation = torch.randperm(n, device=x.device)
-                    # Shuffle tokens across the token dimension using the same permutation for all batches
-                    x_shuffled = x[:, permutation]
-                    return x_shuffled
-                except Exception as e:
-                    logger.error(f"Error in shuffle_tokens: {e}")
-                    logger.error(f"Input tensor shape: {x.shape}")
-                    raise
-
-        return ModifiedBasicTransformerBlock
-
-EXAMPLE_DOC_STRING = """
-    Examples:
-        ```py
-        >>> import torch
-        >>> from diffusers import StableDiffusionXLPipeline
-
-        >>> pipe = StableDiffusionXLPipeline.from_pretrained(
-        ...     "stabilityai/stable-diffusion-xl-base-1.0", torch_dtype=torch.float16
-        ... )
-        >>> pipe = pipe.to("cuda")
-
-        >>> prompt = "a photo of an astronaut riding a horse on mars"
-        >>> image = pipe(prompt).images[0]
-        ```
-"""
-
-if is_invisible_watermark_available():
-    from diffusers.pipelines.stable_diffusion_xl.watermark import StableDiffusionXLWatermarker
-
-if is_torch_xla_available():
-    import torch_xla.core.xla_model as xm  # type: ignore
-
-    XLA_AVAILABLE = True
-else:
-    XLA_AVAILABLE = False
-
-# Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.rescale_noise_cfg
-def rescale_noise_cfg(noise_cfg, noise_pred_text, guidance_rescale=0.0):
+class StableDiffusionXLTPGPipeline(StableDiffusionXLPipeline):
     """
-    Rescale `noise_cfg` according to `guidance_rescale`. Based on findings of [Common Diffusion Noise Schedules and
-    Sample Steps are Flawed](https://arxiv.org/pdf/2305.08891.pdf). See Section 3.4
+    Simplified TPG Pipeline that inherits from StableDiffusionXLPipeline
     """
-    std_text = noise_pred_text.std(dim=list(range(1, noise_pred_text.ndim)), keepdim=True)
-    std_cfg = noise_cfg.std(dim=list(range(1, noise_cfg.ndim)), keepdim=True)
-    # rescale the results from guidance (fixes overexposure)
-    noise_pred_rescaled = noise_cfg * (std_text / std_cfg)
-    # mix with the original results from guidance by factor guidance_rescale to avoid "plain looking" images
-    noise_cfg = guidance_rescale * noise_pred_rescaled + (1 - guidance_rescale) * noise_cfg
-    return noise_cfg
-
-
-# Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.retrieve_timesteps
-def retrieve_timesteps(
-    scheduler,
-    num_inference_steps: Optional[int] = None,
-    device: Optional[Union[str, torch.device]] = None,
-    timesteps: Optional[List[int]] = None,
-    **kwargs,
-):
-    """
-    Calls the scheduler's `set_timesteps` method and retrieves timesteps from the scheduler after the call. Handles
-    custom timesteps. Any kwargs will be supplied to `scheduler.set_timesteps`.
-
-    Args:
-        scheduler (`SchedulerMixin`):
-            The scheduler to get timesteps from.
-        num_inference_steps (`int`):
-            The number of diffusion steps used when generating samples with a pre-trained model. If used, `timesteps`
-            must be `None`.
-        device (`str` or `torch.device`, *optional*):
-            The device to which the timesteps should be moved to. If `None`, the timesteps are not moved.
-        timesteps (`List[int]`, *optional*):
-            Custom timesteps used to override the timestep spacing strategy of the scheduler. If `timesteps` is passed,
-            `num_inference_steps` and `sigmas` must be `None`.
-
-    Returns:
-        `Tuple[torch.Tensor, int]`: A tuple where the first element is the timestep schedule from the scheduler and the
-        second element is the number of inference steps.
-    """
-    if timesteps is not None:
-        accepts_timesteps = "timesteps" in set(inspect.signature(scheduler.set_timesteps).parameters.keys())
-        if not accepts_timesteps:
-            raise ValueError(
-                f"The current scheduler class {scheduler.__class__}'s `set_timesteps` does not support custom"
-                f" timestep schedules. Please check whether you are using the correct scheduler."
-            )
-        scheduler.set_timesteps(timesteps=timesteps, device=device, **kwargs)
-        timesteps = scheduler.timesteps
-        num_inference_steps = len(timesteps)
-    else:
-        scheduler.set_timesteps(num_inference_steps, device=device, **kwargs)
-        timesteps = scheduler.timesteps
-    return timesteps, num_inference_steps
-
-
-class StableDiffusionXLTPGPipeline(
-    DiffusionPipeline,
-    StableDiffusionMixin,
-    FromSingleFileMixin,
-    StableDiffusionXLLoraLoaderMixin,
-    TextualInversionLoaderMixin,
-    IPAdapterMixin,
-):
-    r"""
-    Pipeline for text-to-image generation using Stable Diffusion XL.
-
-    This model inherits from [`DiffusionPipeline`]. Check the superclass documentation for the generic methods the
-    library implements for all the pipelines (such as downloading or saving, running on a particular device, etc.)
-
-    The pipeline also inherits the following loading methods:
-        - [`~loaders.TextualInversionLoaderMixin.load_textual_inversion`] for loading textual inversion embeddings
-        - [`~loaders.FromSingleFileMixin.from_single_file`] for loading `.ckpt` files
-        - [`~loaders.StableDiffusionXLLoraLoaderMixin.load_lora_weights`] for loading LoRA weights
-        - [`~loaders.StableDiffusionXLLoraLoaderMixin.save_lora_weights`] for saving LoRA weights
-        - [`~loaders.IPAdapterMixin.load_ip_adapter`] for loading IP Adapters
-
-    Args:
-        vae ([`AutoencoderKL`]):
-            Variational Auto-Encoder (VAE) Model to encode and decode images to and from latent representations.
-        text_encoder ([`CLIPTextModel`]):
-            Frozen text-encoder. Stable Diffusion XL uses the text portion of
-            [CLIP](https://huggingface.co/docs/transformers/model_doc/clip#transformers.CLIPTextModel), specifically
-            the [clip-vit-large-patch14](https://huggingface.co/openai/clip-vit-large-patch14) variant.
-        text_encoder_2 ([` CLIPTextModelWithProjection`]):
-            Second frozen text-encoder. Stable Diffusion XL uses the text and pool portion of
-            [CLIP](https://huggingface.co/docs/transformers/model_doc/clip#transformers.CLIPTextModelWithProjection),
-            specifically the
-            [laion/CLIP-ViT-bigG-14-laion2B-39B-b160k](https://huggingface.co/laion/CLIP-ViT-bigG-14-laion2B-39B-b160k)
-            variant.
-        tokenizer (`CLIPTokenizer`):
-            Tokenizer of class
-            [CLIPTokenizer](https://huggingface.co/docs/transformers/v4.21.0/en/model_doc/clip#transformers.CLIPTokenizer).
-        tokenizer_2 (`CLIPTokenizer`):
-            Second Tokenizer of class
-            [CLIPTokenizer](https://huggingface.co/docs/transformers/v4.21.0/en/model_doc/clip#transformers.CLIPTokenizer).
-        unet ([`UNet2DConditionModel`]): Conditional U-Net architecture to denoise the encoded image latents.
-        scheduler ([`SchedulerMixin`]):
-            A scheduler to be used in combination with `unet` to denoise the encoded image latents. Can be one of
-            [`DDIMScheduler`], [`LMSDiscreteScheduler`], or [`PNDMScheduler`].
-        force_zeros_for_empty_prompt (`bool`, *optional*, defaults to `"True"`):
-            Whether the negative prompt embeddings shall be forced to always be set to 0. Also see the config of
-            `stabilityai/stable-diffusion-xl-base-1-0`.
-        add_watermarker (`bool`, *optional*):
-            Whether to use the [invisible_watermark library](https://github.com/ShieldMnt/invisible-watermark/) to
-            watermark output images. If not defined, it will default to True if the package is installed, otherwise no
-            watermarker will be used.
-    """
-
-    model_cpu_offload_seq = "text_encoder->text_encoder_2->image_encoder->unet->vae"
-    _optional_components = [
-        "tokenizer",
-        "tokenizer_2",
-        "text_encoder",
-        "text_encoder_2",
-        "image_encoder",
-        "feature_extractor",
-    ]
-    _callback_tensor_inputs = [
-        "latents",
-        "prompt_embeds",
-        "negative_prompt_embeds",
-        "add_text_embeds",
-        "add_time_ids",
-        "negative_pooled_prompt_embeds",
-        "negative_add_time_ids",
-    ]
-
-    def __init__(
-        self,
-        vae: AutoencoderKL,
-        text_encoder: CLIPTextModel,
-        text_encoder_2: CLIPTextModelWithProjection,
-        tokenizer: CLIPTokenizer,
-        tokenizer_2: CLIPTokenizer,
-        unet: UNet2DConditionModel,
-        scheduler: KarrasDiffusionSchedulers,
-        image_encoder: CLIPVisionModelWithProjection = None,
-        feature_extractor: CLIPImageProcessor = None,
-        force_zeros_for_empty_prompt: bool = True,
-        add_watermarker: Optional[bool] = None,
-    ):
-        super().__init__()
-
-        self.register_modules(
-            vae=vae,
-            text_encoder=text_encoder,
-            text_encoder_2=text_encoder_2,
-            tokenizer=tokenizer,
-            tokenizer_2=tokenizer_2,
-            unet=unet,
-            scheduler=scheduler,
-            image_encoder=image_encoder,
-            feature_extractor=feature_extractor,
-        )
-        self.register_to_config(force_zeros_for_empty_prompt=force_zeros_for_empty_prompt)
-        # Calculate VAE scale factor with fallback
-        if hasattr(self.vae.config, 'block_out_channels'):
-            self.vae_scale_factor = 2 ** (len(self.vae.config.block_out_channels) - 1)
-        else:
-            # Default scale factor for SDXL VAE
-            self.vae_scale_factor = 8
-        self.image_processor = VaeImageProcessor(vae_scale_factor=self.vae_scale_factor)
-
-        # Set default sample size with fallback
-        if hasattr(self.unet.config, 'sample_size'):
-            self.default_sample_size = self.unet.config.sample_size
-        else:
-            # Default sample size for SDXL
-            self.default_sample_size = 128
-
-        add_watermarker = add_watermarker if add_watermarker is not None else is_invisible_watermark_available()
-
-        if add_watermarker:
-            self.watermark = StableDiffusionXLWatermarker()
-        else:
-            self.watermark = None
-
-    def encode_prompt(
-        self,
-        prompt: str,
-        prompt_2: Optional[str] = None,
-        device: Optional[torch.device] = None,
-        num_images_per_prompt: int = 1,
-        do_classifier_free_guidance: bool = True,
-        negative_prompt: Optional[str] = None,
-        negative_prompt_2: Optional[str] = None,
-        prompt_embeds: Optional[torch.FloatTensor] = None,
-        negative_prompt_embeds: Optional[torch.FloatTensor] = None,
-        pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
-        negative_pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
-        lora_scale: Optional[float] = None,
-        clip_skip: Optional[int] = None,
-    ):
-        r"""
-        Encodes the prompt into text encoder hidden states.
-
-        Args:
-            prompt (`str` or `List[str]`, *optional*):
-                prompt to be encoded
-            prompt_2 (`str` or `List[str]`, *optional*):
-                The prompt or prompts to be sent to the `tokenizer_2` and `text_encoder_2`. If not defined, `prompt` is
-                used in both text-encoders
-            device: (`torch.device`):
-                torch device
-            num_images_per_prompt (`int`):
-                number of images that should be generated per prompt
-            do_classifier_free_guidance (`bool`):
-                whether to use classifier free guidance or not
-            negative_prompt (`str` or `List[str]`, *optional*):
-                The prompt or prompts not to guide the image generation. If not defined, one has to pass
-                `negative_prompt_embeds` instead. Ignored when not using guidance (i.e., ignored if `guidance_scale` is
-                less than `1`).
-            negative_prompt_2 (`str` or `List[str]`, *optional*):
-                The prompt or prompts not to guide the image generation to be sent to `tokenizer_2` and
-                `text_encoder_2`. If not defined, `negative_prompt` is used in both text-encoders
-            prompt_embeds (`torch.FloatTensor`, *optional*):
-                Pre-generated text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt weighting. If not
-                provided, text embeddings will be generated from `prompt` input argument.
-            negative_prompt_embeds (`torch.FloatTensor`, *optional*):
-                Pre-generated negative text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt
-                weighting. If not provided, negative_prompt_embeds will be generated from `negative_prompt` input
-                argument.
-            pooled_prompt_embeds (`torch.FloatTensor`, *optional*):
-                Pre-generated pooled text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt weighting.
-                If not provided, pooled text embeddings will be generated from `prompt` input argument.
-            negative_pooled_prompt_embeds (`torch.FloatTensor`, *optional*):
-                Pre-generated negative pooled text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt
-                weighting. If not provided, pooled negative_prompt_embeds will be generated from `negative_prompt`
-                input argument.
-            lora_scale (`float`, *optional*):
-                A lora scale that will be applied to all LoRA layers of the text encoder if LoRA layers are loaded.
-            clip_skip (`int`, *optional*):
-                Number of layers to be skipped from CLIP while computing the prompt embeddings. A value of 1 means that
-                the output of the pre-final layer will be used for computing the prompt embeddings.
-        """
-        device = device or self._execution_device
-
-        # set lora scale so that monkey patched LoRA
-        # function of text encoder can correctly access it
-        if lora_scale is not None and isinstance(self, StableDiffusionXLLoraLoaderMixin):
-            self._lora_scale = lora_scale
-
-            # dynamically adjust the LoRA scale
-            if self.text_encoder is not None:
-                if not USE_PEFT_BACKEND:
-                    adjust_lora_scale_text_encoder(self.text_encoder, lora_scale)
-                else:
-                    scale_lora_layers(self.text_encoder, lora_scale)
-
-            if self.text_encoder_2 is not None:
-                if not USE_PEFT_BACKEND:
-                    adjust_lora_scale_text_encoder(self.text_encoder_2, lora_scale)
-                else:
-                    scale_lora_layers(self.text_encoder_2, lora_scale)
-
-        prompt = [prompt] if isinstance(prompt, str) else prompt
-
-        if prompt is not None:
-            batch_size = len(prompt)
-        else:
-            batch_size = prompt_embeds.shape[0]
-
-        # Define tokenizers and text encoders
-        tokenizers = [self.tokenizer, self.tokenizer_2] if self.tokenizer is not None else [self.tokenizer_2]
-        text_encoders = (
-            [self.text_encoder, self.text_encoder_2] if self.text_encoder is not None else [self.text_encoder_2]
-        )
-
-        if prompt_embeds is None:
-            prompt_2 = prompt_2 or prompt
-            prompt_2 = [prompt_2] if isinstance(prompt_2, str) else prompt_2
-
-            # textual inversion: process multi-vector tokens if necessary
-            prompt_embeds_list = []
-            prompts = [prompt, prompt_2]
-            for prompt, tokenizer, text_encoder in zip(prompts, tokenizers, text_encoders):
-                if isinstance(self, TextualInversionLoaderMixin):
-                    prompt = self.maybe_convert_prompt(prompt, tokenizer)
-
-                text_inputs = tokenizer(
-                    prompt,
-                    padding="max_length",
-                    max_length=tokenizer.model_max_length,
-                    truncation=True,
-                    return_tensors="pt",
-                )
-
-                text_input_ids = text_inputs.input_ids
-                untruncated_ids = tokenizer(prompt, padding="longest", return_tensors="pt").input_ids
-
-                if untruncated_ids.shape[-1] >= text_input_ids.shape[-1] and not torch.equal(
-                    text_input_ids, untruncated_ids
-                ):
-                    removed_text = tokenizer.batch_decode(untruncated_ids[:, tokenizer.model_max_length - 1 : -1])
-                    logger.warning(
-                        "The following part of your input was truncated because CLIP can only handle sequences up to"
-                        f" {tokenizer.model_max_length} tokens: {removed_text}"
-                    )
-
-                prompt_embeds = text_encoder(text_input_ids.to(device), output_hidden_states=True)
-
-                # We are only ALWAYS interested in the pooled output of the final text encoder
-                pooled_prompt_embeds = prompt_embeds[0]
-                if clip_skip is None:
-                    prompt_embeds = prompt_embeds.hidden_states[-2]
-                else:
-                    # "2" because SDXL always indexes from the penultimate layer.
-                    prompt_embeds = prompt_embeds.hidden_states[-(clip_skip + 2)]
-
-                prompt_embeds_list.append(prompt_embeds)
-
-            prompt_embeds = torch.concat(prompt_embeds_list, dim=-1)
-
-        # get unconditional embeddings for classifier free guidance
-        zero_out_negative_prompt = negative_prompt is None and self.config.force_zeros_for_empty_prompt
-        if do_classifier_free_guidance and negative_prompt_embeds is None and zero_out_negative_prompt:
-            negative_prompt_embeds = torch.zeros_like(prompt_embeds)
-            negative_pooled_prompt_embeds = torch.zeros_like(pooled_prompt_embeds)
-        elif do_classifier_free_guidance and negative_prompt_embeds is None:
-            negative_prompt = negative_prompt or ""
-            negative_prompt_2 = negative_prompt_2 or negative_prompt
-
-            # normalize str to list
-            negative_prompt = batch_size * [negative_prompt] if isinstance(negative_prompt, str) else negative_prompt
-            negative_prompt_2 = (
-                batch_size * [negative_prompt_2] if isinstance(negative_prompt_2, str) else negative_prompt_2
-            )
-
-            uncond_tokens: List[str]
-            if prompt is not None and type(prompt) is not type(negative_prompt):
-                raise TypeError(
-                    f"`negative_prompt` should be the same type to `prompt`, but got {type(negative_prompt)} !="
-                    f" {type(prompt)}."
-                )
-            elif batch_size != len(negative_prompt):
-                raise ValueError(
-                    f"`negative_prompt`: {negative_prompt} has batch size {len(negative_prompt)}, but `prompt`:"
-                    f" {prompt} has batch size {batch_size}. Please make sure that passed `negative_prompt` matches"
-                    " the batch size of `prompt`."
-                )
-            else:
-                uncond_tokens = [negative_prompt, negative_prompt_2]
-
-            negative_prompt_embeds_list = []
-            for negative_prompt, tokenizer, text_encoder in zip(uncond_tokens, tokenizers, text_encoders):
-                if isinstance(self, TextualInversionLoaderMixin):
-                    negative_prompt = self.maybe_convert_prompt(negative_prompt, tokenizer)
-
-                max_length = prompt_embeds.shape[1]
-                uncond_input = tokenizer(
-                    negative_prompt,
-                    padding="max_length",
-                    max_length=max_length,
-                    truncation=True,
-                    return_tensors="pt",
-                )
-
-                negative_prompt_embeds = text_encoder(
-                    uncond_input.input_ids.to(device),
-                    output_hidden_states=True,
-                )
-                # We are only ALWAYS interested in the pooled output of the final text encoder
-                negative_pooled_prompt_embeds = negative_prompt_embeds[0]
-                negative_prompt_embeds = negative_prompt_embeds.hidden_states[-2]
-
-                negative_prompt_embeds_list.append(negative_prompt_embeds)
-
-            negative_prompt_embeds = torch.concat(negative_prompt_embeds_list, dim=-1)
-
-        if self.text_encoder_2 is not None:
-            prompt_embeds = prompt_embeds.to(dtype=self.text_encoder_2.dtype, device=device)
-        else:
-            prompt_embeds = prompt_embeds.to(dtype=self.unet.dtype, device=device)
-
-        bs_embed, seq_len, _ = prompt_embeds.shape
-        # duplicate text embeddings for each generation per prompt, using mps friendly method
-        prompt_embeds = prompt_embeds.repeat(1, num_images_per_prompt, 1)
-        prompt_embeds = prompt_embeds.view(bs_embed * num_images_per_prompt, seq_len, -1)
-
-        if do_classifier_free_guidance:
-            # duplicate unconditional embeddings for each generation per prompt, using mps friendly method
-            seq_len = negative_prompt_embeds.shape[1]
-
-            if self.text_encoder_2 is not None:
-                negative_prompt_embeds = negative_prompt_embeds.to(dtype=self.text_encoder_2.dtype, device=device)
-            else:
-                negative_prompt_embeds = negative_prompt_embeds.to(dtype=self.unet.dtype, device=device)
-
-            negative_prompt_embeds = negative_prompt_embeds.repeat(1, num_images_per_prompt, 1)
-            negative_prompt_embeds = negative_prompt_embeds.view(batch_size * num_images_per_prompt, seq_len, -1)
-
-        pooled_prompt_embeds = pooled_prompt_embeds.repeat(1, num_images_per_prompt).view(
-            bs_embed * num_images_per_prompt, -1
-        )
-        if do_classifier_free_guidance:
-            negative_pooled_prompt_embeds = negative_pooled_prompt_embeds.repeat(1, num_images_per_prompt).view(
-                bs_embed * num_images_per_prompt, -1
-            )
-
-        if self.text_encoder is not None:
-            if isinstance(self, StableDiffusionXLLoraLoaderMixin) and USE_PEFT_BACKEND:
-                # Retrieve the original scale by scaling back the LoRA layers
-                unscale_lora_layers(self.text_encoder, lora_scale)
-
-        if self.text_encoder_2 is not None:
-            if isinstance(self, StableDiffusionXLLoraLoaderMixin) and USE_PEFT_BACKEND:
-                # Retrieve the original scale by scaling back the LoRA layers
-                unscale_lora_layers(self.text_encoder_2, lora_scale)
-
-        return prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds
-
-    # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.StableDiffusionPipeline.encode_image
-    def encode_image(self, image, device, num_images_per_prompt, output_hidden_states=None):
-        dtype = next(self.image_encoder.parameters()).dtype
-
-        if not isinstance(image, torch.Tensor):
-            image = self.feature_extractor(image, return_tensors="pt").pixel_values
-
-        image = image.to(device=device, dtype=dtype)
-        if output_hidden_states:
-            image_enc_hidden_states = self.image_encoder(image, output_hidden_states=True).hidden_states[-2]
-            image_enc_hidden_states = image_enc_hidden_states.repeat_interleave(num_images_per_prompt, dim=0)
-            uncond_image_enc_hidden_states = self.image_encoder(
-                torch.zeros_like(image), output_hidden_states=True
-            ).hidden_states[-2]
-            uncond_image_enc_hidden_states = uncond_image_enc_hidden_states.repeat_interleave(
-                num_images_per_prompt, dim=0
-            )
-            return image_enc_hidden_states, uncond_image_enc_hidden_states
-        else:
-            image_embeds = self.image_encoder(image).image_embeds
-            image_embeds = image_embeds.repeat_interleave(num_images_per_prompt, dim=0)
-            uncond_image_embeds = torch.zeros_like(image_embeds)
-
-            return image_embeds, uncond_image_embeds
-
-    # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.StableDiffusionPipeline.prepare_ip_adapter_image_embeds
-    def prepare_ip_adapter_image_embeds(
-        self, ip_adapter_image, ip_adapter_image_embeds, device, num_images_per_prompt, do_classifier_free_guidance
-    ):
-        if ip_adapter_image_embeds is None:
-            if not isinstance(ip_adapter_image, list):
-                ip_adapter_image = [ip_adapter_image]
-
-            if len(ip_adapter_image) != len(self.unet.encoder_hid_proj.image_projection_layers):
-                raise ValueError(
-                    f"`ip_adapter_image` must have same length as the number of IP Adapters. Got {len(ip_adapter_image)} images and {len(self.unet.encoder_hid_proj.image_projection_layers)} IP Adapters."
-                )
-
-            image_embeds = []
-            for single_ip_adapter_image, image_proj_layer in zip(
-                                ip_adapter_image, self.unet.encoder_hid_proj.image_projection_layers
-            ):
-                output_hidden_state = not isinstance(image_proj_layer, ImageProjection)
-                single_image_embeds, single_negative_image_embeds = self.encode_image(
-                    single_ip_adapter_image, device, 1, output_hidden_state
-                )
-                single_image_embeds = torch.stack([single_image_embeds] * num_images_per_prompt, dim=0)
-                single_negative_image_embeds = torch.stack(
-                    [single_negative_image_embeds] * num_images_per_prompt, dim=0
-                )
-
-                if do_classifier_free_guidance:
-                    single_image_embeds = torch.cat([single_negative_image_embeds, single_image_embeds])
-                    single_image_embeds = single_image_embeds.to(device)
-
-                image_embeds.append(single_image_embeds)
-        else:
-            repeat_dims = [1]
-            image_embeds = []
-            for single_image_embeds in ip_adapter_image_embeds:
-                if do_classifier_free_guidance:
-                    single_negative_image_embeds, single_image_embeds = single_image_embeds.chunk(2)
-                    single_image_embeds = single_image_embeds.repeat(
-                        num_images_per_prompt, *(repeat_dims * len(single_image_embeds.shape[1:]))
-                    )
-                    single_negative_image_embeds = single_negative_image_embeds.repeat(
-                        num_images_per_prompt, *(repeat_dims * len(single_negative_image_embeds.shape[1:]))
-                    )
-                    single_image_embeds = torch.cat([single_negative_image_embeds, single_image_embeds])
-                else:
-                    single_image_embeds = single_image_embeds.repeat(
-                        num_images_per_prompt, *(repeat_dims * len(single_image_embeds.shape[1:]))
-                    )
-                image_embeds.append(single_image_embeds)
-
-        return image_embeds
-
-    # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.StableDiffusionPipeline.prepare_extra_step_kwargs
-    def prepare_extra_step_kwargs(self, generator, eta):
-        # prepare extra kwargs for the scheduler step, since not all schedulers have the same signature
-        # eta (η) is only used with the DDIMScheduler, it will be ignored for other schedulers.
-        # eta corresponds to η in DDIM paper: https://arxiv.org/abs/2010.02502
-        # and should be between [0, 1]
-
-        accepts_eta = "eta" in set(inspect.signature(self.scheduler.step).parameters.keys())
-        extra_step_kwargs = {}
-        if accepts_eta:
-            extra_step_kwargs["eta"] = eta
-
-        # check if the scheduler accepts generator
-        accepts_generator = "generator" in set(inspect.signature(self.scheduler.step).parameters.keys())
-        if accepts_generator:
-            extra_step_kwargs["generator"] = generator
-        return extra_step_kwargs
-
-    def check_inputs(
-        self,
-        prompt,
-        prompt_2,
-        height,
-        width,
-        callback_steps,
-        negative_prompt=None,
-        negative_prompt_2=None,
-        prompt_embeds=None,
-        negative_prompt_embeds=None,
-        pooled_prompt_embeds=None,
-        negative_pooled_prompt_embeds=None,
-        ip_adapter_image=None,
-        ip_adapter_image_embeds=None,
-        callback_on_step_end_tensor_inputs=None,
-    ):
-        if height % 8 != 0 or width % 8 != 0:
-            raise ValueError(f"`height` and `width` have to be divisible by 8 but are {height} and {width}.")
-
-        if callback_steps is not None and (not isinstance(callback_steps, int) or callback_steps <= 0):
-            raise ValueError(
-                f"`callback_steps` has to be a positive integer but is {callback_steps} of type"
-                f" {type(callback_steps)}."
-            )
-
-        if callback_on_step_end_tensor_inputs is not None and not all(
-            k in self._callback_tensor_inputs for k in callback_on_step_end_tensor_inputs
-        ):
-            raise ValueError(
-                f"`callback_on_step_end_tensor_inputs` has to be in {self._callback_tensor_inputs}, but found {[k for k in callback_on_step_end_tensor_inputs if k not in self._callback_tensor_inputs]}"
-            )
-
-        if prompt is not None and prompt_embeds is not None:
-            raise ValueError(
-                f"Cannot forward both `prompt`: {prompt} and `prompt_embeds`: {prompt_embeds}. Please make sure to"
-                " only forward one of the two."
-            )
-        elif prompt_2 is not None and prompt_embeds is not None:
-            raise ValueError(
-                f"Cannot forward both `prompt_2`: {prompt_2} and `prompt_embeds`: {prompt_embeds}. Please make sure to"
-                " only forward one of the two."
-            )
-        elif prompt is None and prompt_embeds is None:
-            raise ValueError(
-                "Provide either `prompt` or `prompt_embeds`. Cannot leave both `prompt` and `prompt_embeds` undefined."
-            )
-        elif prompt is not None and (not isinstance(prompt, str) and not isinstance(prompt, list)):
-            raise ValueError(f"`prompt` has to be of type `str` or `list` but is {type(prompt)}")
-        elif prompt_2 is not None and (not isinstance(prompt_2, str) and not isinstance(prompt_2, list)):
-            raise ValueError(f"`prompt_2` has to be of type `str` or `list` but is {type(prompt_2)}")
-
-        if negative_prompt is not None and negative_prompt_embeds is not None:
-            raise ValueError(
-                f"Cannot forward both `negative_prompt`: {negative_prompt} and `negative_prompt_embeds`:"
-                f" {negative_prompt_embeds}. Please make sure to only forward one of the two."
-            )
-        elif negative_prompt_2 is not None and negative_prompt_embeds is not None:
-            raise ValueError(
-                f"Cannot forward both `negative_prompt_2`: {negative_prompt_2} and `negative_prompt_embeds`:"
-                f" {negative_prompt_embeds}. Please make sure to only forward one of the two."
-            )
-
-        if prompt_embeds is not None and negative_prompt_embeds is not None:
-            if prompt_embeds.shape != negative_prompt_embeds.shape:
-                raise ValueError(
-                    "`prompt_embeds` and `negative_prompt_embeds` must have the same shape when passed directly, but"
-                    f" got: `prompt_embeds` {prompt_embeds.shape} != `negative_prompt_embeds`"
-                    f" {negative_prompt_embeds.shape}."
-                )
-
-        if prompt_embeds is not None and pooled_prompt_embeds is None:
-            raise ValueError(
-                "If `prompt_embeds` are provided, `pooled_prompt_embeds` also have to be passed. Make sure to generate `pooled_prompt_embeds` from the same text encoder that was used to generate `prompt_embeds`."
-            )
-
-        if negative_prompt_embeds is not None and negative_pooled_prompt_embeds is None:
-            raise ValueError(
-                "If `negative_prompt_embeds` are provided, `negative_pooled_prompt_embeds` also have to be passed. Make sure to generate `negative_pooled_prompt_embeds` from the same text encoder that was used to generate `negative_prompt_embeds`."
-            )
-
-        if ip_adapter_image is not None and ip_adapter_image_embeds is not None:
-            raise ValueError(
-                "Provide either `ip_adapter_image` or `ip_adapter_image_embeds`. Cannot leave both `ip_adapter_image` and `ip_adapter_image_embeds` defined."
-            )
-
-        if ip_adapter_image_embeds is not None:
-            if not isinstance(ip_adapter_image_embeds, list):
-                raise ValueError(
-                    f"`ip_adapter_image_embeds` has to be of type `list` but is {type(ip_adapter_image_embeds)}"
-                )
-            elif ip_adapter_image_embeds[0].ndim not in [3, 4]:
-                raise ValueError(
-                    f"`ip_adapter_image_embeds` has to be a list of 3D or 4D tensors but is {ip_adapter_image_embeds[0].ndim}D"
-                )
-
-    # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.StableDiffusionPipeline.prepare_latents
-    def prepare_latents(self, batch_size, num_channels_latents, height, width, dtype, device, generator, latents=None):
-        shape = (
-            batch_size,
-            num_channels_latents,
-            int(height) // self.vae_scale_factor,
-            int(width) // self.vae_scale_factor,
-        )
-        if isinstance(generator, list) and len(generator) != batch_size:
-            raise ValueError(
-                f"You have passed a list of generators of length {len(generator)}, but requested an effective batch"
-                f" size of {batch_size}. Make sure the batch size matches the length of the generators."
-            )
-
-        if latents is None:
-            latents = randn_tensor(shape, generator=generator, device=device, dtype=dtype)
-        else:
-            latents = latents.to(device)
-
-        # scale the initial noise by the standard deviation required by the scheduler
-        latents = latents * self.scheduler.init_noise_sigma
-        return latents
-
-    def _get_add_time_ids(
-        self, original_size, crops_coords_top_left, target_size, dtype, text_encoder_projection_dim=None
-    ):
-        add_time_ids = list(original_size + crops_coords_top_left + target_size)
-
-        if hasattr(self.unet.model, 'add_embedding') and self.unet.model.add_embedding is not None:
-            passed_add_embed_dim = (
-                            self.unet.config.addition_time_embed_dim * len(add_time_ids) + text_encoder_projection_dim
-            )
-            expected_add_embed_dim = self.unet.model.add_embedding.linear_1.in_features
-
-            if expected_add_embed_dim != passed_add_embed_dim:
-                raise ValueError(
-                    f"Model expects an added time embedding vector of length {expected_add_embed_dim}, but a vector of {passed_add_embed_dim} was created. The model has an incorrect config. Please check `unet.config.time_embedding_type` and `text_encoder_2.config.projection_dim`."
-                )
-        else:
-            logger.warning("The UNet model does not have an 'add_embedding' attribute or it is None. Skipping time embedding check.")
-
-        add_time_ids = torch.tensor([add_time_ids], dtype=dtype)
-        return add_time_ids
-
-    def upcast_vae(self):
-        dtype = self.vae.dtype
-        self.vae.to(dtype=torch.float32)
-        use_torch_2_0_or_xformers = isinstance(
-            self.vae.decoder.mid_block.attentions[0].processor,
-            (
-                AttnProcessor2_0,
-                XFormersAttnProcessor,
-                LoRAXFormersAttnProcessor,
-                LoRAAttnProcessor2_0,
-                FusedAttnProcessor2_0,
-            ),
-        )
-        # if xformers or torch_2_0 is used attention block does not need
-        # to be in float32 which can save lots of memory
-        if use_torch_2_0_or_xformers:
-            self.vae.post_quant_conv.to(dtype)
-            self.vae.decoder.conv_in.to(dtype)
-            self.vae.decoder.mid_block.to(dtype)
-
-    # Copied from diffusers.pipelines.latent_consistency_models.pipeline_latent_consistency_text2img.LatentConsistencyModelPipeline.get_guidance_scale_embedding
-    def get_guidance_scale_embedding(
-        self, w: torch.Tensor, embedding_dim: int = 512, dtype: torch.dtype = torch.float32
-    ) -> torch.FloatTensor:
-        """
-        See https://github.com/google-research/vdm/blob/dc27b98a554f65cdc654b800da5aa1846545d41b/model_vdm.py#L298
-
-        Args:
-            w (`torch.Tensor`):
-                Generate embedding vectors with a specified guidance scale to subsequently enrich timestep embeddings.
-            embedding_dim (`int`, *optional*, defaults to 512):
-                Dimension of the embeddings to generate.
-            dtype (`torch.dtype`, *optional*, defaults to `torch.float32`):
-                Data type of the generated embeddings.
-
-        Returns:
-            `torch.FloatTensor`: Embedding vectors with shape `(len(w), embedding_dim)`.
-        """
-        assert len(w.shape) == 1
-        w = w * 1000.0
-
-        half_dim = embedding_dim // 2
-        emb = torch.log(torch.tensor(10000.0)) / (half_dim - 1)
-        emb = torch.exp(torch.arange(half_dim, dtype=dtype) * -emb)
-        emb = w.to(dtype)[:, None] * emb[None, :]
-        emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=1)
-        if embedding_dim % 2 == 1:  # zero pad
-            emb = torch.nn.functional.pad(emb, (0, 1))
-        assert emb.shape == (w.shape[0], embedding_dim)
-        return emb
-
-    @staticmethod
-    def _shuffle_tokens(x):
-        """
-        Randomly shuffle the order of input tokens.
-
-        Args:
-            x (torch.Tensor): Input tensor with shape (batch_size, num_tokens, channels) (b, n, c)
-
-        Returns:
-            torch.Tensor: Shuffled tensor with the same shape (b, n, c)
-        """
-        b, n, c = x.shape
-        # Generate a random permutation of indices for the token dimension
-        permutation = torch.randperm(n, device=x.device)
-        # Shuffle tokens across the token dimension using the same permutation for all batches
-        x_shuffled = x[:, permutation]
-        return x_shuffled
-
-    def pred_z0(self, sample, model_output, timestep):
-        alpha_prod_t = self.scheduler.alphas_cumprod[timestep]
-        if not isinstance(alpha_prod_t, torch.Tensor):
-            alpha_prod_t = torch.tensor(alpha_prod_t, device=sample.device, dtype=sample.dtype)
-        else:
-            alpha_prod_t = alpha_prod_t.to(sample.device)
-
-        beta_prod_t = 1 - alpha_prod_t
-        if self.scheduler.config.prediction_type == "epsilon":
-            pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
-        elif self.scheduler.config.prediction_type == "sample":
-            pred_original_sample = model_output
-        elif self.scheduler.config.prediction_type == "v_prediction":
-            pred_original_sample = (alpha_prod_t**0.5) * sample - (beta_prod_t**0.5) * model_output
-            # predict V
-            model_output = (alpha_prod_t**0.5) * model_output + (beta_prod_t**0.5) * sample
-        else:
-            raise ValueError(
-                f"prediction_type given as {self.scheduler.config.prediction_type} must be one of `epsilon`, `sample`,"
-                " or `v_prediction`"
-            )
-
-        return pred_original_sample
     
-    def pred_x0(self, latents, noise_pred, t, generator, device, prompt_embeds, output_type):
-        pred_z0 = self.pred_z0(latents, noise_pred, t)
-        pred_x0 = self.vae.decode(
-            pred_z0 / self.vae.config.scaling_factor,
-            return_dict=False,
-            generator=generator
-        )[0]
-        #pred_x0, ____ = self.run_safety_checker(pred_x0, device, prompt_embeds.dtype)
-        do_denormalize = [True] * pred_x0.shape[0]
-        pred_x0 = self.image_processor.postprocess(pred_x0, output_type=output_type, do_denormalize=do_denormalize)
-        
-        return pred_x0
-        
-    @property
-    def guidance_scale(self):
-        return self._guidance_scale
-
-    @property
-    def guidance_rescale(self):
-        return self._guidance_rescale
-
-    @property
-    def clip_skip(self):
-        return self._clip_skip
-
-    # here `guidance_scale` is defined analog to the guidance weight `w` of equation (2)
-    # of the Imagen paper: https://arxiv.org/pdf/2205.11487.pdf . `guidance_scale = 1`
-    # corresponds to doing no classifier free guidance.
-    @property
-    def do_classifier_free_guidance(self):
-        return self._guidance_scale > 1 and self.unet.config.time_cond_proj_dim is None
-
-    @property
-    def cross_attention_kwargs(self):
-        return self._cross_attention_kwargs
-
-    @property
-    def denoising_end(self):
-        return self._denoising_end
-
-    @property
-    def num_timesteps(self):
-        return self._num_timesteps
-
-    @property
-    def interrupt(self):
-        return self._interrupt
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._tpg_scale = 0.0
+        self._tpg_applied_layers_index = None
     
     @property
     def tpg_scale(self):
         return self._tpg_scale
-
+    
     @property
     def do_token_perturbation_guidance(self):
         return self._tpg_scale > 0
     
     @property
     def tpg_applied_layers_index(self):
-        # Provide default fallback if None
         if self._tpg_applied_layers_index is None:
             return ["d6", "d7", "d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15", "d16", "d17", "d18", "d19", "d20", "d21", "d22", "d23"]
         return self._tpg_applied_layers_index
-
-    def _create_modified_layer(self, original_layer, layer_name):
-        """Helper method to create a modified TPG layer with proper device handling"""
-        try:
-            # Store original device and dtype
-            original_device = next(original_layer.parameters()).device
-            original_dtype = next(original_layer.parameters()).dtype
-            
-            # Create modified class
-            modified_class = make_tpg_block(original_layer.__class__, do_cfg=self.do_classifier_free_guidance)
-            
-            # Create new instance using __new__ to avoid initialization issues
-            modified_layer = modified_class.__new__(modified_class)
-            modified_layer.__dict__.update(original_layer.__dict__)
-            
-            # Add shuffle_tokens method
-            modified_layer.shuffle_tokens = self._create_shuffle_tokens_method()
-            
-            # Ensure correct device placement
-            modified_layer.to(device=original_device, dtype=original_dtype)
-            
-            return modified_layer
-            
-        except Exception as e:
-            logger.error(f"Failed to create modified layer for {layer_name}: {e}")
-            # Return original layer if modification fails
-            return original_layer
-
-    def _create_shuffle_tokens_method(self):
-        """Create a shuffle_tokens method that can be bound to transformer blocks"""
-        def shuffle_tokens(x):
-            """Shuffle tokens for TPG"""
-            try:
-                if len(x.shape) >= 2:
-                    b, n = x.shape[:2]
-                    permutation = torch.randperm(n, device=x.device)
-                    return x[:, permutation]
-                return x
-            except Exception as e:
-                logger.warning(f"Token shuffling failed: {e}")
-                return x
-        return shuffle_tokens
-
-    @torch.no_grad()
-    @replace_example_docstring(EXAMPLE_DOC_STRING)
+    
     def __call__(
         self,
         prompt: Union[str, List[str]] = None,
         prompt_2: Optional[Union[str, List[str]]] = None,
         height: Optional[int] = None,
-        width: Optional[int] = None, # defaults to self.unet.config.sample_size * self.vae_scale_factor):
+        width: Optional[int] = None,
         num_inference_steps: int = 50,
         timesteps: List[int] = None,
         denoising_end: Optional[float] = None,
-        guidance_scale: float = 0.0,
-        tpg_scale: float = 3.0,
-        tpg_applied_layers_index: List[str] = ["d6", "d7", "d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15", "d16", "d17", "d18", "d19", "d20", "d21", "d22", "d23"],
+        guidance_scale: float = 5.0,
+        tpg_scale: float = 0.0,
+        tpg_applied_layers_index: List[str] = None,
         negative_prompt: Optional[Union[str, List[str]]] = None,
         negative_prompt_2: Optional[Union[str, List[str]]] = None,
         num_images_per_prompt: Optional[int] = 1,
@@ -1121,8 +106,6 @@ class StableDiffusionXLTPGPipeline(
         negative_prompt_embeds: Optional[torch.FloatTensor] = None,
         pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
         negative_pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
-        ip_adapter_image: Optional[PipelineImageInput] = None,
-        ip_adapter_image_embeds: Optional[List[torch.FloatTensor]] = None,
         output_type: Optional[str] = "pil",
         return_dict: bool = True,
         cross_attention_kwargs: Optional[Dict[str, Any]] = None,
@@ -1138,870 +121,183 @@ class StableDiffusionXLTPGPipeline(
         callback_on_step_end_tensor_inputs: List[str] = ["latents"],
         **kwargs,
     ):
-        r"""
-        Function invoked when calling the pipeline for generation.
-
-        Args:
-            prompt (`str` or `List[str]`, *optional*):
-                The prompt or prompts to guide the image generation. If not defined, one has to pass `prompt_embeds`.
-                instead.
-            prompt_2 (`str` or `List[str]`, *optional*):
-                The prompt or prompts to be sent to the `tokenizer_2` and `text_encoder_2`. If not defined, `prompt` is
-                used in both text-encoders
-            height (`int`, *optional*, defaults to self.unet.config.sample_size * self.vae_scale_factor):
-                The height in pixels of the generated image. This is set to 1024 by default for the best results.
-                Anything below 512 pixels won't work well for
-                [stabilityai/stable-diffusion-xl-base-1.0](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)
-                and checkpoints that are not specifically fine-tuned on low resolutions.
-            width (`int`, *optional*, defaults to self.unet.config.sample_size * self.vae_scale_factor):
-                The width in pixels of the generated image. This is set to 1024 by default for the best results.
-                Anything below 512 pixels won't work well for
-                [stabilityai/stable-diffusion-xl-base-1.0](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)
-                and checkpoints that are not specifically fine-tuned on low resolutions.
-            num_inference_steps (`int`, *optional*, defaults to 50):
-                The number of denoising steps. More denoising steps usually lead to a higher quality image at the
-                expense of slower inference.
-            timesteps (`List[int]`, *optional*):
-                Custom timesteps to use for the denoising process with schedulers which support a `timesteps` argument
-                in their `set_timesteps` method. If not defined, the default behavior when `num_inference_steps` is
-                passed will be used. Must be in descending order.
-            denoising_end (`float`, *optional*):
-                When specified, determines the fraction (between 0.0 and 1.0) of the total denoising process to be
-                completed before it is intentionally prematurely terminated. As a result, the returned sample will
-                still retain a substantial amount of noise as determined by the discrete timesteps selected by the
-                scheduler. The denoising_end parameter should ideally be utilized when this pipeline forms a part of a
-                "Mixture of Denoisers" multi-pipeline setup, as elaborated in [**Refining the Image
-                Output**](https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/stable_diffusion_xl#refining-the-image-output)
-            guidance_scale (`float`, *optional*, defaults to 5.0):
-                Guidance scale as defined in [Classifier-Free Diffusion Guidance](https://arxiv.org/abs/2207.12598).
-                `guidance_scale` is defined as `w` of equation 2. of [Imagen
-                Paper](https://arxiv.org/pdf/2205.11487.pdf). Guidance scale is enabled by setting `guidance_scale >
-                1`. Higher guidance scale encourages to generate images that are closely linked to the text `prompt`,
-                usually at the expense of lower image quality.
-            negative_prompt (`str` or `List[str]`, *optional*):
-                The prompt or prompts not to guide the image generation. If not defined, one has to pass
-                `negative_prompt_embeds` instead. Ignored when not using guidance (i.e., ignored if `guidance_scale` is
-                less than `1`).
-            negative_prompt_2 (`str` or `List[str]`, *optional*):
-                The prompt or prompts not to guide the image generation to be sent to `tokenizer_2` and
-                `text_encoder_2`. If not defined, `negative_prompt` is used in both text-encoders
-            num_images_per_prompt (`int`, *optional*, defaults to 1):
-                The number of images to generate per prompt.
-            eta (`float`, *optional*, defaults to 0.0):
-                Corresponds to parameter eta (η) in the DDIM paper: https://arxiv.org/abs/2010.02502. Only applies to
-                [`schedulers.DDIMScheduler`], will be ignored for others.
-            generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
-                One or a list of [torch generator(s)](https://pytorch.org/docs/stable/generated/torch.Generator.html)
-                to make generation deterministic.
-            latents (`torch.FloatTensor`, *optional*):
-                Pre-generated noisy latents, sampled from a Gaussian distribution, to be used as inputs for image
-                generation. Can be used to tweak the same generation with different prompts. If not provided, a latents
-                tensor will ge generated by sampling using the supplied random `generator`.
-            prompt_embeds (`torch.FloatTensor`, *optional*):
-                Pre-generated text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt weighting. If not
-                provided, text embeddings will be generated from `prompt` input argument.
-            negative_prompt_embeds (`torch.FloatTensor`, *optional*):
-                Pre-generated negative text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt
-                weighting. If not provided, negative_prompt_embeds will be generated from `negative_prompt` input
-                argument.
-            pooled_prompt_embeds (`torch.FloatTensor`, *optional*):
-                Pre-generated pooled text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt weighting.
-                If not provided, pooled text embeddings will be generated from `prompt` input argument.
-            negative_pooled_prompt_embeds (`torch.FloatTensor`, *optional*):
-                Pre-generated negative pooled text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt
-                weighting. If not provided, pooled negative_prompt_embeds will be generated from `negative_prompt`
-                input argument.
-            ip_adapter_image: (`PipelineImageInput`, *optional*): Optional image input to work with IP Adapters.
-            ip_adapter_image_embeds (`List[torch.FloatTensor]`, *optional*):
-                Pre-generated image embeddings for IP-Adapter. It should be a list of length same as number of
-                IP-adapters. Each element should be a tensor of shape `(batch_size, num_images, emb_dim)`. It should
-                contain the negative image embedding if `do_classifier_free_guidance` is set to `True`. If not
-                provided, embeddings are computed from the `ip_adapter_image` input argument.
-            output_type (`str`, *optional*, defaults to `"pil"`):
-                The output format of the generate image. Choose between
-                [PIL](https://pillow.readthedocs.io/en/stable/): `PIL.Image.Image` or `np.array`.
-            return_dict (`bool`, *optional*, defaults to `True`):
-                Whether or not to return a [`~pipelines.stable_diffusion_xl.StableDiffusionXLPipelineOutput`] instead
-                of a plain tuple.
-            cross_attention_kwargs (`dict`, *optional*):
-                A kwargs dictionary that if specified is passed along to the `AttentionProcessor` as defined under
-                `self.processor` in
-                [diffusers.models.attention_processor](https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/attention_processor.py).
-            guidance_rescale (`float`, *optional*, defaults to 0.0):
-                Guidance rescale factor proposed by [Common Diffusion Noise Schedules and Sample Steps are
-                Flawed](https://arxiv.org/pdf/2305.08891.pdf) `guidance_scale` is defined as `φ` in equation 16. of
-                [Common Diffusion Noise Schedules and Sample Steps are Flawed](https://arxiv.org/pdf/2305.08891.pdf).
-                Guidance rescale factor should fix overexposure when using zero terminal SNR.
-            original_size (`Tuple[int]`, *optional*, defaults to (1024, 1024)):
-                If `original_size` is not the same as `target_size` the image will appear to be down- or upsampled.
-                `original_size` defaults to `(height, width)` if not specified. Part of SDXL's micro-conditioning as
-                explained in section 2.2 of
-                [https://huggingface.co/papers/2307.01952](https://huggingface.co/papers/2307.01952).
-            crops_coords_top_left (`Tuple[int]`, *optional*, defaults to (0, 0)):
-                `crops_coords_top_left` can be used to generate an image that appears to be "cropped" from the position
-                `crops_coords_top_left` downwards. Favorable, well-centered images are usually achieved by setting
-                `crops_coords_top_left` to (0, 0). Part of SDXL's micro-conditioning as explained in section 2.2 of
-                [https://huggingface.co/papers/2307.01952](https://huggingface.co/papers/2307.01952).
-            target_size (`Tuple[int]`, *optional*, defaults to (1024, 1024)):
-                For most cases, `target_size` should be set to the desired height and width of the generated image. If
-                not specified it will default to `(height, width)`. Part of SDXL's micro-conditioning as explained in
-                section 2.2 of [https://huggingface.co/papers/2307.01952](https://huggingface.co/papers/2307.01952).
-            negative_original_size (`Tuple[int]`, *optional*, defaults to (1024, 1024)):
-                To negatively condition the generation process based on a specific image resolution. Part of SDXL's
-                micro-conditioning as explained in section 2.2 of
-                [https://huggingface.co/papers/2307.01952](https://huggingface.co/papers/2307.01952). For more
-                information, refer to this issue thread: https://github.com/huggingface/diffusers/issues/4208.
-            negative_crops_coords_top_left (`Tuple[int]`, *optional*, defaults to (0, 0)):
-                To negatively condition the generation process based on a specific crop coordinates. Part of SDXL's
-                micro-conditioning as explained in section 2.2 of
-                [https://huggingface.co/papers/2307.01952](https://huggingface.co/papers/2307.01952). For more
-                information, refer to this issue thread: https://github.com/huggingface/diffusers/issues/4208.
-            negative_target_size (`Tuple[int]`, *optional*, defaults to (1024, 1024)):
-                To negatively condition the generation process based on a target image resolution. It should be as same
-                as the `target_size` for most cases. Part of SDXL's micro-conditioning as explained in section 2.2 of
-                [https://huggingface.co/papers/2307.01952](https://huggingface.co/papers/2307.01952). For more
-                information, refer to this issue thread: https://github.com/huggingface/diffusers/issues/4208.
-            callback_on_step_end (`Callable`, *optional*):
-                A function that calls at the end of each denoising steps during the inference. The function is called
-                with the following arguments: `callback_on_step_end(self: DiffusionPipeline, step: int, timestep: int,
-                callback_kwargs: Dict)`. `callback_kwargs` will include a list of all tensors as specified by
-                `callback_on_step_end_tensor_inputs`.
-            callback_on_step_end_tensor_inputs (`List`, *optional*):
-                The list of tensor inputs for the `callback_on_step_end` function. The tensors specified in the list
-                will be passed as `callback_kwargs` argument. You will only be able to include variables listed in the
-                `._callback_tensor_inputs` attribute of your pipeline class.
-
-        Examples:
-
-        Returns:
-            [`~pipelines.stable_diffusion_xl.StableDiffusionXLPipelineOutput`] or `tuple`:
-            [`~pipelines.stable_diffusion_xl.StableDiffusionXLPipelineOutput`] if `return_dict` is True, otherwise a
-            `tuple`. When returning a tuple, the first element is a list with the generated images.
         """
-
-        callback = kwargs.pop("callback", None)
-        callback_steps = kwargs.pop("callback_steps", None)
-
-        if callback is not None:
-            deprecate(
-                "callback",
-                "1.0.0",
-                "Passing `callback` as an input argument to `__call__` is deprecated, consider use `callback_on_step_end`",
-            )
-        if callback_steps is not None:
-            deprecate(
-                "callback_steps",
-                "1.0.0",
-                "Passing `callback_steps` as an input argument to `__call__` is deprecated, consider use `callback_on_step_end`",
-            )
-
-        # 0. Default height and width to unet
-        height = height or self.default_sample_size * self.vae_scale_factor
-        width = width or self.default_sample_size * self.vae_scale_factor
-
-        original_size = original_size or (height, width)
-        target_size = target_size or (height, width)
-
-        # Ensure the UNet model is on the correct device
-        if isinstance(self.unet, torch.nn.Module): # Check if self.unet is a direct nn.Module
-            self.unet.to(self._execution_device)
-        elif hasattr(self.unet, 'model') and isinstance(self.unet.model, torch.nn.Module): # Check if it's a wrapper with a .model attribute
-            self.unet.model.to(self._execution_device)
-        else:
-            # Fallback or raise an error if the UNet structure is unexpected
-            raise TypeError("UNet model structure is not recognized for device placement.")
-
-        # 1. Check inputs. Raise error if not correct
-        self.check_inputs(
-            prompt,
-            prompt_2,
-            height,
-            width,
-            callback_steps,
-            negative_prompt,
-            negative_prompt_2,
-            prompt_embeds,
-            negative_prompt_embeds,
-            pooled_prompt_embeds,
-            negative_pooled_prompt_embeds,
-            ip_adapter_image,
-            ip_adapter_image_embeds,
-            callback_on_step_end_tensor_inputs,
-        )
-        logger.debug("Inputs checked.")
-
-        self._guidance_scale = guidance_scale
-        self._guidance_rescale = guidance_rescale
-        self._clip_skip = clip_skip
-        self._cross_attention_kwargs = cross_attention_kwargs
-        self._denoising_end = denoising_end
-        self._interrupt = False
-
+        Simplified TPG implementation that just modifies the guidance calculation
+        """
+        
+        # Set TPG parameters
         self._tpg_scale = tpg_scale
         self._tpg_applied_layers_index = tpg_applied_layers_index
-
-        # 2. Define call parameters
-        if prompt is not None and isinstance(prompt, str):
-            batch_size = 1
-        elif prompt is not None and isinstance(prompt, list):
-            batch_size = len(prompt)
-        else:
-            batch_size = prompt_embeds.shape[0]
-
-        device = self._execution_device
-
-        # Determine the actual UNet model to call and ensure it's on the correct device
-        actual_unet_model = None
-        if hasattr(self.unet, 'model') and isinstance(self.unet.model, torch.nn.Module):
-            actual_unet_model = self.unet.model
-        elif isinstance(self.unet, torch.nn.Module):
-            actual_unet_model = self.unet
-        else:
-            raise TypeError("Neither self.unet nor self.unet.model is a callable torch.nn.Module.")
-
-        # 3. Encode input prompt
-        lora_scale = (
-            self.cross_attention_kwargs.get("scale", None) if self.cross_attention_kwargs is not None else None
-        )
-
-        (
-            prompt_embeds,
-            negative_prompt_embeds,
-            pooled_prompt_embeds,
-            negative_pooled_prompt_embeds,
-        ) = self.encode_prompt(
-            prompt=prompt,
-            prompt_2=prompt_2,
-            device=device,
-            num_images_per_prompt=num_images_per_prompt,
-            do_classifier_free_guidance=self.do_classifier_free_guidance,
-            negative_prompt=negative_prompt,
-            negative_prompt_2=negative_prompt_2,
-            prompt_embeds=prompt_embeds,
-            negative_prompt_embeds=negative_prompt_embeds,
-            pooled_prompt_embeds=pooled_prompt_embeds,
-            negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
-            lora_scale=lora_scale,
-            clip_skip=self.clip_skip,
-        )
-        logger.debug("Prompt encoded.")
-
-        # 4. Prepare timesteps
-        timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps)
-        logger.debug(f"Timesteps: {timesteps}")
-
-        # 5. Prepare latent variables
-        num_channels_latents = self.unet.config.in_channels
-        latents = self.prepare_latents(
-            batch_size * num_images_per_prompt,
-            num_channels_latents,
-            height,
-            width,
-            prompt_embeds.dtype,
-            device,
-            generator,
-            latents,
-        )
-        logger.debug(f"Device of latents: {latents.device}")
-        logger.debug(f"Device of prompt_embeds: {prompt_embeds.device}")
-        logger.debug(f"Device of UNet model: {next(actual_unet_model.parameters()).device}")
-        logger.debug("Latents prepared.")
-
-        # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
-        extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
-        logger.debug("Extra step kwargs prepared.")
-
-        # 7. Prepare added time ids & embeddings
-        add_text_embeds = pooled_prompt_embeds
-        if self.text_encoder_2 is None:
-            text_encoder_projection_dim = int(pooled_prompt_embeds.shape[-1])
-        else:
-            text_encoder_projection_dim = self.text_encoder_2.config.projection_dim
-
-        add_time_ids = self._get_add_time_ids(
-            original_size,
-            crops_coords_top_left,
-            target_size,
-            dtype=prompt_embeds.dtype,
-            text_encoder_projection_dim=text_encoder_projection_dim,
-        )
-        if negative_original_size is not None and negative_target_size is not None:
-            negative_add_time_ids = self._get_add_time_ids(
-                negative_original_size,
-                negative_crops_coords_top_left,
-                negative_target_size,
-                dtype=prompt_embeds.dtype,
-                text_encoder_projection_dim=text_encoder_projection_dim,
-            )
-        else:
-            negative_add_time_ids = add_time_ids
-
-        #cfg
-        if self.do_classifier_free_guidance and not self.do_token_perturbation_guidance:
-            prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
-            add_text_embeds = torch.cat([negative_pooled_prompt_embeds, add_text_embeds], dim=0)
-            add_time_ids = torch.cat([negative_add_time_ids, add_time_ids], dim=0)
-        #tpg
-        elif not self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
-            prompt_embeds = torch.cat([prompt_embeds, prompt_embeds], dim=0)
-            add_text_embeds = torch.cat([add_text_embeds, add_text_embeds], dim=0)
-            add_time_ids = torch.cat([add_time_ids, add_time_ids], dim=0)
-        #both
-        elif self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
-            prompt_embeds = torch.cat([negative_prompt_embeds, prompt_embeds, prompt_embeds], dim=0)
-            add_text_embeds = torch.cat([negative_pooled_prompt_embeds, add_text_embeds, add_text_embeds], dim=0)
-            add_time_ids = torch.cat([negative_add_time_ids, add_time_ids, add_time_ids], dim=0)
-
-        prompt_embeds = prompt_embeds.to(device)
-        add_text_embeds = add_text_embeds.to(device)
-        add_time_ids = add_time_ids.to(device).repeat(batch_size * num_images_per_prompt, 1)
-        logger.debug("Added time IDs and embeddings prepared.")
-
-        if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
-            image_embeds = self.prepare_ip_adapter_image_embeds(
-                ip_adapter_image,
-                ip_adapter_image_embeds,
-                device,
-                batch_size * num_images_per_prompt,
-                self.do_classifier_free_guidance,
-            )
-            logger.debug("IP Adapter image embeds prepared.")
-
-        # 8. Denoising loop
-        num_warmup_steps = max(len(timesteps) - num_inference_steps * self.scheduler.order, 0)
-
-        # 8.1 Apply denoising_end
-        if (
-            self.denoising_end is not None
-            and isinstance(self.denoising_end, float)
-            and self.denoising_end > 0
-            and self.denoising_end < 1
-        ):
-            discrete_timestep_cutoff = int(
-                round(
-                    self.scheduler.config.num_train_timesteps
-                    - (self.denoising_end * self.scheduler.config.num_train_timesteps)
-                )
-            )
-            num_inference_steps = len(list(filter(lambda ts: ts >= discrete_timestep_cutoff, timesteps)))
-            timesteps = timesteps[:num_inference_steps]
-        logger.debug("Denoising end applied.")
-
-        # 9. Optionally get Guidance Scale Embedding
-        timestep_cond = None
-        if self.unet.config.time_cond_proj_dim is not None:
-            guidance_scale_tensor = torch.tensor(self.guidance_scale - 1).repeat(batch_size * num_images_per_prompt)
-            timestep_cond = self.get_guidance_scale_embedding(
-                guidance_scale_tensor, embedding_dim=self.unet.config.time_cond_proj_dim
-            ).to(device=device, dtype=latents.dtype)
-        logger.debug("Guidance scale embedding obtained.")
-
-        # 10. Create down mid and up layer lists
-        down_layers = []
-        mid_layers = []
-        up_layers = []
         
-        if self.do_token_perturbation_guidance:
-            logger.info("TPG is enabled, searching for transformer layers...")
-            
-            # SAFETY: Add environment variable to completely disable TPG
-            import os
-            if os.environ.get('DISABLE_TPG', '').lower() in ['true', '1', 'yes']:
-                logger.warning("TPG disabled by DISABLE_TPG environment variable")
-                self._tpg_scale = 0.0
-            else:
-                # Try different UNet access patterns for ldm_patched models
-                unet_to_search = None
-                if hasattr(self.unet, 'model') and self.unet.model is not None:
-                    # For ldm_patched ModelPatcher, we need to go deeper to diffusion_model
-                    if hasattr(self.unet.model, 'diffusion_model'):
-                        unet_to_search = self.unet.model.diffusion_model
-                        logger.debug("Using self.unet.model.diffusion_model for layer search")
-                    else:
-                        unet_to_search = self.unet.model
-                        logger.debug("Using self.unet.model for layer search")
-                elif hasattr(self.unet, 'diffusion_model') and self.unet.diffusion_model is not None:
-                    unet_to_search = self.unet.diffusion_model
-                    logger.debug("Using self.unet.diffusion_model for layer search")
-                else:
-                    unet_to_search = self.unet
-                    logger.debug("Using self.unet directly for layer search")
-            
-                try:
-                    # Debug: Print all module names and types
-                    logger.debug("Searching for BasicTransformerBlock modules...")
-                    all_transformer_blocks = []
-                    
-                    # First, let's see what modules we have
-                    logger.debug("All modules in UNet:")
-                    module_count = 0
-                    for name, module in unet_to_search.named_modules():
-                        if module_count < 20:  # Limit output
-                            logger.debug(f"  {name}: {type(module).__name__}")
-                        module_count += 1
-                        
-                        # Check for both Diffusers and ComfyUI/LDM attention modules
-                        is_transformer_block = False
-                        if isinstance(module, BasicTransformerBlock):
-                            is_transformer_block = True
-                            logger.debug(f"Found Diffusers BasicTransformerBlock: {name}")
-                        elif COMFYUI_AVAILABLE and isinstance(module, CrossAttention):
-                            is_transformer_block = True
-                            logger.debug(f"Found CrossAttention: {name}")
-                        elif hasattr(module, '__class__') and 'BasicTransformerBlock' in str(module.__class__):
-                            # Catch ldm_patched BasicTransformerBlock
-                            is_transformer_block = True
-                            logger.debug(f"Found ldm_patched BasicTransformerBlock: {name}")
-                        elif 'transformer_blocks' in name and hasattr(module, 'forward') and hasattr(module, 'attn1'):
-                            # This looks like an ldm_patched transformer block
-                            is_transformer_block = True
-                            logger.debug(f"Found ldm_patched transformer block: {name}")
-                        
-                        if is_transformer_block:
-                            all_transformer_blocks.append((name, module))
-                            
-                            # More flexible layer type detection for both Diffusers and ComfyUI
-                            name_parts = name.split(".")
-                            layer_type = None
-                            
-                            # Try different naming patterns
-                            if "down_blocks" in name or "input_blocks" in name or "down" in name_parts[0]:
-                                layer_type = "down"
-                            elif "mid_block" in name or "middle_block" in name or "mid" in name_parts[0]:
-                                layer_type = "mid"
-                            elif "up_blocks" in name or "output_blocks" in name or "up" in name_parts[0]:
-                                layer_type = "up"
-                            else:
-                                # Fallback: try original logic
-                                layer_type = name_parts[0].split("_")[0]
-                            
-                            if layer_type == "down":
-                                down_layers.append(module)
-                            elif layer_type == "mid":
-                                mid_layers.append(module)
-                            elif layer_type == "up":
-                                up_layers.append(module)
-                            else:
-                                logger.warning(f"Unknown layer type for {name}: {layer_type}")
-                    
-                    if module_count >= 20:
-                        logger.debug(f"  ... and {module_count - 20} more modules")
-                    
-                    logger.debug(f"Found {len(all_transformer_blocks)} total BasicTransformerBlock modules")
-                    logger.debug(f"Categorized as: {len(down_layers)} down, {len(mid_layers)} mid, {len(up_layers)} up")
-                    
-                    # If no layers found, disable TPG
-                    if len(down_layers) == 0 and len(mid_layers) == 0 and len(up_layers) == 0:
-                        logger.warning("No compatible attention modules (BasicTransformerBlock or CrossAttention) found! Disabling TPG.")
-                        logger.info("Your model uses a different attention architecture. TPG requires transformer-based attention layers.")
-                        self._tpg_scale = 0.0
-                        # Continue without TPG
-                        
-                except Exception as e:
-                    logger.error(f"Error during layer detection: {e}")
-                    logger.warning("Disabling TPG due to layer detection error")
-                    self._tpg_scale = 0.0
-                    
-        # change attention layer in UNet if use tpg
-        if self.do_token_perturbation_guidance and self.tpg_scale > 0:
-            logger.info("=== STARTING TPG LAYER MODIFICATION ===")
-            drop_layers = self.tpg_applied_layers_index
-            logger.info(f"TPG will modify {len(drop_layers)} layers: {drop_layers}")
-            
-            # Check if we have any layers to modify
-            total_layers = len(down_layers) + len(mid_layers) + len(up_layers)
-            if total_layers == 0:
-                logger.warning("No transformer layers found for TPG modification. Disabling TPG.")
-                self._tpg_scale = 0.0
-            else:
-                modified_count = 0
-                for drop_layer in drop_layers:
-                    try:
-                        if drop_layer[0] == "d":
-                            layer_idx = int(drop_layer[1:])
-                            if layer_idx < len(down_layers):
-                                modified_layer = self._create_modified_layer(down_layers[layer_idx], f"down_layer_{layer_idx}")
-                                down_layers[layer_idx] = modified_layer
-                                modified_count += 1
-
-                        elif drop_layer[0] == "m":
-                            layer_idx = int(drop_layer[1:])
-                            if layer_idx < len(mid_layers):
-                                modified_layer = self._create_modified_layer(mid_layers[layer_idx], f"mid_layer_{layer_idx}")
-                                mid_layers[layer_idx] = modified_layer
-                                modified_count += 1
-
-                        elif drop_layer[0] == "u":
-                            layer_idx = int(drop_layer[1:])
-                            if layer_idx < len(up_layers):
-                                modified_layer = self._create_modified_layer(up_layers[layer_idx], f"up_layer_{layer_idx}")
-                                up_layers[layer_idx] = modified_layer
-                                modified_count += 1
-
-                    except Exception as e:
-                        logger.warning(f"Error processing layer {drop_layer}: {e}")
-                        continue
-                
-                logger.info(f"Successfully modified {modified_count}/{len(drop_layers)} layers for TPG")
-                
-                # If no layers were successfully modified, disable TPG
-                if modified_count == 0:
-                    logger.warning("No layers were successfully modified. Disabling TPG.")
-                    self._tpg_scale = 0.0
-        logger.debug("TPG layer lists and attention layer changes (if TPG active) processed.")
-
-        self._num_timesteps = len(timesteps)
-        logger.info(f"Starting denoising loop with {num_inference_steps} steps")
-        logger.info(f"CFG enabled: {self.do_classifier_free_guidance}, TPG enabled: {self.do_token_perturbation_guidance}")
+        # If TPG is not enabled, use the parent pipeline
+        if not self.do_token_perturbation_guidance:
+            return super().__call__(
+                prompt=prompt,
+                prompt_2=prompt_2,
+                height=height,
+                width=width,
+                num_inference_steps=num_inference_steps,
+                timesteps=timesteps,
+                denoising_end=denoising_end,
+                guidance_scale=guidance_scale,
+                negative_prompt=negative_prompt,
+                negative_prompt_2=negative_prompt_2,
+                num_images_per_prompt=num_images_per_prompt,
+                eta=eta,
+                generator=generator,
+                latents=latents,
+                prompt_embeds=prompt_embeds,
+                negative_prompt_embeds=negative_prompt_embeds,
+                pooled_prompt_embeds=pooled_prompt_embeds,
+                negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
+                output_type=output_type,
+                return_dict=return_dict,
+                cross_attention_kwargs=cross_attention_kwargs,
+                guidance_rescale=guidance_rescale,
+                original_size=original_size,
+                crops_coords_top_left=crops_coords_top_left,
+                target_size=target_size,
+                negative_original_size=negative_original_size,
+                negative_crops_coords_top_left=negative_crops_coords_top_left,
+                negative_target_size=negative_target_size,
+                clip_skip=clip_skip,
+                callback_on_step_end=callback_on_step_end,
+                callback_on_step_end_tensor_inputs=callback_on_step_end_tensor_inputs,
+                **kwargs,
+            )
         
-        with self.progress_bar(total=num_inference_steps) as progress_bar:
-            for i, t in enumerate(timesteps):
-                logger.info(f"=== STEP {i+1}/{len(timesteps)} - Timestep {t} ===")
-                if self.interrupt:
-                    logger.info("Interrupted, breaking loop")
-                    continue
-
-                # expand the latents if we are doing classifier free guidance
-                logger.debug("Preparing latent model input...")
+        # Store original UNet forward method
+        original_unet_forward = None
+        if hasattr(self.unet, 'forward'):
+            original_unet_forward = self.unet.forward
+        elif hasattr(self.unet, '__call__'):
+            original_unet_forward = self.unet.__call__
+        
+        def tpg_unet_forward(sample, timestep, encoder_hidden_states, **kwargs):
+            """Modified UNet forward that handles TPG guidance"""
+            batch_size = sample.shape[0]
+            
+            if self.do_token_perturbation_guidance and batch_size == 2:
+                # For TPG, duplicate the conditional part with token shuffling
+                uncond_sample, cond_sample = sample.chunk(2)
+                sample = torch.cat([uncond_sample, cond_sample, cond_sample], dim=0)
                 
-                # Determine latent input based on guidance types
-                if self.do_classifier_free_guidance and not self.do_token_perturbation_guidance:
-                    # CFG only
-                    logger.debug("Using CFG only - duplicating latents")
-                    latent_model_input = torch.cat([latents] * 2)
-                elif not self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
-                    # TPG only
-                    logger.debug("Using TPG only - duplicating latents")
-                    latent_model_input = torch.cat([latents] * 2)
-                elif self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
-                    # Both CFG and TPG
-                    logger.debug("Using both CFG and TPG - triplicating latents")
-                    latent_model_input = torch.cat([latents] * 3)
+                if encoder_hidden_states is not None:
+                    uncond_embeds, cond_embeds = encoder_hidden_states.chunk(2)
+                    # Apply token shuffling to the third copy
+                    cond_embeds_shuffled = self._shuffle_tokens(cond_embeds)
+                    encoder_hidden_states = torch.cat([uncond_embeds, cond_embeds, cond_embeds_shuffled], dim=0)
+                
+                # Handle other kwargs that might need duplication
+                if 'added_cond_kwargs' in kwargs:
+                    added_cond_kwargs = kwargs['added_cond_kwargs']
+                    new_added_cond_kwargs = {}
+                    for key, value in added_cond_kwargs.items():
+                        if isinstance(value, torch.Tensor) and value.shape[0] == 2:
+                            uncond_val, cond_val = value.chunk(2)
+                            new_added_cond_kwargs[key] = torch.cat([uncond_val, cond_val, cond_val], dim=0)
+                        else:
+                            new_added_cond_kwargs[key] = value
+                    kwargs['added_cond_kwargs'] = new_added_cond_kwargs
+                
+                # Call original UNet
+                if hasattr(self.unet, 'model') and hasattr(self.unet.model, 'apply_model'):
+                    # ComfyUI style
+                    noise_pred = self.unet.model.apply_model(sample, timestep, c_crossattn=encoder_hidden_states, **kwargs)
                 else:
-                    # No guidance
-                    logger.debug("No guidance - using latents as-is")
-                    latent_model_input = latents
-
-                latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
-                logger.debug(f"Latent model input shape: {latent_model_input.shape}")
-
-                # predict the noise residual
-                added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
-                if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
-                    added_cond_kwargs["image_embeds"] = image_embeds
-
-                logger.info(f"About to call UNet model at step {i+1}/{len(timesteps)}")
-                logger.info(f"UNet input shapes - latent: {latent_model_input.shape}, prompt_embeds: {prompt_embeds.shape}")
-                logger.info(f"TPG enabled: {self.do_token_perturbation_guidance}, CFG enabled: {self.do_classifier_free_guidance}")
-                logger.info(f"Added cond kwargs: {list(added_cond_kwargs.keys())}")
-                logger.info(f"UNet model type: {type(actual_unet_model)}")
+                    # Standard diffusers style
+                    noise_pred = original_unet_forward(sample, timestep, encoder_hidden_states=encoder_hidden_states, **kwargs)
                 
-                import time
-                import sys
-                start_time = time.time()
-                
-                # Add a flush to ensure logs are written immediately
-                sys.stdout.flush()
-                
-                try:
-                    if hasattr(actual_unet_model, 'apply_model'): # This is for ComfyUI wrapped models
-                        # ComfyUI wrapped model - convert Diffusers conditioning to ComfyUI format
-                        comfy_kwargs = {}
-                        if "text_embeds" in added_cond_kwargs and "time_ids" in added_cond_kwargs:
-                            pooled_output = added_cond_kwargs["text_embeds"]
-                            time_ids = added_cond_kwargs["time_ids"]
-
-                            target_batch_size = latent_model_input.shape[0]
-                            if pooled_output.shape[0] != target_batch_size:
-                                if pooled_output.shape[0] < target_batch_size:
-                                    repeat_factor = target_batch_size // pooled_output.shape[0]
-                                    remainder = target_batch_size % pooled_output.shape[0]
-                                    pooled_output = torch.cat([pooled_output.repeat(repeat_factor, 1)] + 
-                                                            ([pooled_output[:remainder]] if remainder > 0 else []), dim=0)
-                                else:
-                                    pooled_output = pooled_output[:target_batch_size]
-                            
-                            if time_ids.shape[0] != target_batch_size:
-                                if time_ids.shape[0] < target_batch_size:
-                                    repeat_factor = target_batch_size // time_ids.shape[0]
-                                    remainder = target_batch_size % time_ids.shape[0]
-                                    time_ids = torch.cat([time_ids.repeat(repeat_factor, 1)] + 
-                                                       ([time_ids[:remainder]] if remainder > 0 else []), dim=0)
-                                else:
-                                    time_ids = time_ids[:target_batch_size]
-                            
-                            if time_ids.shape[-1] >= 6:
-                                height = int(time_ids[0, 0].item())
-                                width = int(time_ids[0, 1].item())
-                                crop_h = int(time_ids[0, 2].item())
-                                crop_w = int(time_ids[0, 3].item())
-                                target_height = int(time_ids[0, 4].item())
-                                target_width = int(time_ids[0, 5].item())
-                                
-                                comfy_kwargs.update({
-                                    "pooled_output": pooled_output,
-                                    "width": width,
-                                    "height": height,
-                                    "crop_w": crop_w,
-                                    "crop_h": crop_h,
-                                    "target_width": target_width,
-                                    "target_height": target_height,
-                                    "device": latent_model_input.device,
-                                })
-                        
-                        target_batch_size = latent_model_input.shape[0]
-                        if prompt_embeds.shape[0] != target_batch_size:
-                            if prompt_embeds.shape[0] < target_batch_size:
-                                repeat_factor = target_batch_size // prompt_embeds.shape[0]
-                                remainder = target_batch_size % prompt_embeds.shape[0]
-                                prompt_embeds = torch.cat([prompt_embeds.repeat(repeat_factor, 1, 1)] + 
-                                                        ([prompt_embeds[:remainder]] if remainder > 0 else []), dim=0)
-                            else:
-                                prompt_embeds = prompt_embeds[:target_batch_size]
-                        
-                        logger.info("Calling ComfyUI UNet (apply_model)...")
-                        sys.stdout.flush()
-                        
-                        noise_pred = actual_unet_model.apply_model(
-                            latent_model_input,
-                            t,
-                            c_crossattn=prompt_embeds,
-                            **comfy_kwargs,
-                        )
-                    else:
-                        logger.info("Calling standard Diffusers UNet...")
-                        sys.stdout.flush()
-                        
-                        # Standard Diffusers UNet
-                        noise_pred = actual_unet_model(
-                            latent_model_input,
-                            t,
-                            encoder_hidden_states=prompt_embeds,
-                            timestep_cond=timestep_cond,
-                            cross_attention_kwargs=self.cross_attention_kwargs,
-                            added_cond_kwargs=added_cond_kwargs,
-                            return_dict=False,
-                        )[0]
+                # Apply TPG guidance
+                if noise_pred.shape[0] == 3:
+                    noise_pred_uncond, noise_pred_cond, noise_pred_tpg = noise_pred.chunk(3)
                     
-                    end_time = time.time()
-                    logger.info(f"UNet call completed successfully at step {i+1} (took {end_time - start_time:.2f}s)")
-                    sys.stdout.flush()
-                    
-                except Exception as e:
-                    logger.error(f"Error during UNet forward pass: {e}")
-                    logger.error(f"Latent input shape: {latent_model_input.shape}")
-                    logger.error(f"Prompt embeds shape: {prompt_embeds.shape}")
-                    logger.error(f"Timestep: {t}")
-                    raise
-                logger.info(f"Noise prediction shape: {noise_pred.shape}")
-                sys.stdout.flush()
-
-                # perform guidance
-                logger.debug(f"Performing guidance - CFG: {self.do_classifier_free_guidance}, TPG: {self.do_token_perturbation_guidance}")
-                # cfg
-                if self.do_classifier_free_guidance and not self.do_token_perturbation_guidance:
-                    logger.debug("Applying CFG only")
-                    noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-                    noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
-                # TPG guidance
-                elif not self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
-                    logger.debug("Applying TPG only")
-                    noise_pred_org, noise_pred_tpg = noise_pred.chunk(2)
-                    noise_pred = noise_pred_org + self.tpg_scale * (noise_pred_org - noise_pred_tpg)
-                # Both CFG and TPG
-                elif self.do_classifier_free_guidance and self.do_token_perturbation_guidance:
-                    logger.debug("Applying both CFG and TPG")
-                    noise_pred_uncond, noise_pred_text, noise_pred_tpg = noise_pred.chunk(3)
                     # First apply CFG
-                    noise_pred_cfg = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
+                    noise_pred_cfg = noise_pred_uncond + guidance_scale * (noise_pred_cond - noise_pred_uncond)
+                    
                     # Then apply TPG
-                    noise_pred = noise_pred_cfg + self.tpg_scale * (noise_pred_text - noise_pred_tpg)
-
-                if self.do_classifier_free_guidance and self.guidance_rescale > 0.0:
-                    # Based on 3.4. in https://arxiv.org/pdf/2305.08891.pdf
-                    noise_pred = rescale_noise_cfg(noise_pred, noise_pred_text, guidance_rescale=self.guidance_rescale)
-
-                # compute the previous noisy sample x_t -> x_t-1
-                latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
-
-                if callback_on_step_end is not None:
-                    callback_kwargs = {}
-                    for k in callback_on_step_end_tensor_inputs:
-                        callback_kwargs[k] = locals()[k]
-                    callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)
-
-                    latents = callback_outputs.pop("latents", latents)
-                    prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
-                    negative_prompt_embeds = callback_outputs.pop("negative_prompt_embeds", negative_prompt_embeds)
-                    add_text_embeds = callback_outputs.pop("add_text_embeds", add_text_embeds)
-                    negative_pooled_prompt_embeds = callback_outputs.pop(
-                        "negative_pooled_prompt_embeds", negative_pooled_prompt_embeds
-                    )
-                    add_time_ids = callback_outputs.pop("add_time_ids", add_time_ids)
-                    negative_add_time_ids = callback_outputs.pop("negative_add_time_ids", negative_add_time_ids)
-
-                # call the callback, if provided
-                if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
-                    progress_bar.update()
-
-                if XLA_AVAILABLE:
-                    xm.mark_step()
-
-        if not output_type == "latent":
-            # make sure the VAE is in float32 mode, as it overflows in float16
-            needs_upcasting = self.vae.dtype == torch.float16 and self.vae.config.force_upcast
-
-            if needs_upcasting:
-                self.upcast_vae()
-                latents = latents.to(next(iter(self.vae.post_quant_conv.parameters())).dtype)
-
-            # unscale/denormalize the latents
-            # denormalize with the mean and std if available and not None
-            has_latents_mean = hasattr(self.vae.config, "latents_mean") and self.vae.config.latents_mean is not None
-            has_latents_std = hasattr(self.vae.config, "latents_std") and self.vae.config.latents_std is not None
-            if has_latents_mean and has_latents_std:
-                latents_mean = (
-                    torch.tensor(self.vae.config.latents_mean).view(1, 4, 1, 1).to(latents.device, latents.dtype)
-                )
-                latents_std = (
-                    torch.tensor(self.vae.config.latents_std).view(1, 4, 1, 1).to(latents.device, latents.dtype)
-                )
-                latents = latents * latents_std / self.vae.config.scaling_factor + latents_mean
+                    noise_pred_final = noise_pred_cfg + tpg_scale * (noise_pred_cond - noise_pred_tpg)
+                    
+                    # Return only the final prediction (batch size 1)
+                    return noise_pred_final.unsqueeze(0) if noise_pred_final.dim() == 3 else noise_pred_final[:1]
+                else:
+                    return noise_pred
             else:
-                latents = latents / self.vae.config.scaling_factor
-
-            image = self.vae.decode(latents, return_dict=False, generator=generator)[0]
-
-            # cast back to fp16 if needed
-            if needs_upcasting:
-                self.vae.to(dtype=torch.float16)
-        else:
-            image = latents
-
-        if not output_type == "latent":
-            # apply watermark if available
-            if self.watermark is not None:
-                image = self.watermark.apply_watermark(image)
-
-            image = self.image_processor.postprocess(image, output_type=output_type)
-
-        # Offload all models
-        self.maybe_free_model_hooks()
-
-        if not return_dict:
-            return (image,)
-
-        return StableDiffusionXLPipelineOutput(images=image)
-
-                if callback_on_step_end is not None:
-                    callback_kwargs = {}
-                    for k in callback_on_step_end_tensor_inputs:
-                        callback_kwargs[k] = locals()[k]
-                    callback_outputs = callback_on_step_end(self, i, t, callback_kwargs)
-
-                    latents = callback_outputs.pop("latents", latents)
-                    prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
-                    negative_prompt_embeds = callback_outputs.pop("negative_prompt_embeds", negative_prompt_embeds)
-                    add_text_embeds = callback_outputs.pop("add_text_embeds", add_text_embeds)
-                    negative_pooled_prompt_embeds = callback_outputs.pop(
-                        "negative_pooled_prompt_embeds", negative_pooled_prompt_embeds
-                    )
-                    add_time_ids = callback_outputs.pop("add_time_ids", add_time_ids)
-                    negative_add_time_ids = callback_outputs.pop("negative_add_time_ids", negative_add_time_ids)
-
-                # call the callback, if provided
-                if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
-                    logger.debug(f"Updating progress bar at step {i}")
-                    progress_bar.update()
-                    if callback is not None and i % callback_steps == 0:
-                        step_idx = i // getattr(self.scheduler, "order", 1)
-                        callback(step_idx, t, latents)
-
-                if XLA_AVAILABLE:
-                    xm.mark_step()
-
-        logger.debug("Denoising loop completed, starting VAE decoding")
-        if not output_type == "latent":
-            # make sure the VAE is in float32 mode, as it overflows in float16
-            needs_upcasting = self.vae.dtype == torch.float16 and self.vae.config.force_upcast
-
-            if needs_upcasting:
-                logger.debug("Upcasting VAE to float32")
-                self.upcast_vae()
-                latents = latents.to(next(iter(self.vae.post_quant_conv.parameters())).dtype)
-            elif latents.dtype != self.vae.dtype:
-                if torch.backends.mps.is_available():
-                    # some platforms (eg. apple mps) misbehave due to a pytorch bug: https://github.com/pytorch/pytorch/pull/99272
-                    self.vae = self.vae.to(latents.dtype)
-
-            # unscale/denormalize the latents
-            # denormalize with the mean and std if available and not None
-            has_latents_mean = hasattr(self.vae.config, "latents_mean") and self.vae.config.latents_mean is not None
-            has_latents_std = hasattr(self.vae.config, "latents_std") and self.vae.config.latents_std is not None
-            if has_latents_mean and has_latents_std:
-                latents_mean = (
-                    torch.tensor(self.vae.config.latents_mean).view(1, 4, 1, 1).to(latents.device, latents.dtype)
-                )
-                latents_std = (
-                    torch.tensor(self.vae.config.latents_std).view(1, 4, 1, 1).to(latents.device, latents.dtype)
-                )
-                latents = latents * latents_std / self.vae.config.scaling_factor + latents_mean
-            else:
-                latents = latents / self.vae.config.scaling_factor
-
-            logger.debug("Calling VAE decode")
-            image = self.vae.decode(latents, return_dict=False)[0]
-            logger.debug("VAE decode completed")
-
-            # cast back to fp16 if needed
-            if needs_upcasting:
-                self.vae.to(dtype=torch.float16)
-        else:
-            image = latents
-
-        if not output_type == "latent":
-            # apply watermark if available
-            if self.watermark is not None:
-                image = self.watermark.apply_watermark(image)
-
-            image = self.image_processor.postprocess(image, output_type=output_type)
-
-        # Offload all models
-        self.maybe_free_model_hooks()
-
-        if self.do_token_perturbation_guidance:
-            logger.debug("Restoring original layer forward methods")
-            drop_layers = self.tpg_applied_layers_index
-            for drop_layer in drop_layers:
-                try:
-                    if drop_layer[0] == "d":
-                        # Restore the original layer
-                        layer_idx = int(drop_layer[1:])
-                        if hasattr(down_layers[layer_idx], '_original_layer'):
-                            down_layers[layer_idx] = down_layers[layer_idx]._original_layer
-
-                    elif drop_layer[0] == "m":
-                        # Restore the original layer
-                        layer_idx = int(drop_layer[1:])
-                        if hasattr(mid_layers[layer_idx], '_original_layer'):
-                            mid_layers[layer_idx] = mid_layers[layer_idx]._original_layer
-
-                    elif drop_layer[0] == "u":
-                        # Restore the original layer
-                        layer_idx = int(drop_layer[1:])
-                        if hasattr(up_layers[layer_idx], '_original_layer'):
-                            up_layers[layer_idx] = up_layers[layer_idx]._original_layer
-
-                    else:
-                        raise ValueError(f"Invalid layer type: {drop_layer[0]}")
-                except IndexError:
-                    raise ValueError(
-                        f"Invalid layer index: {drop_layer}. Available layers: {len(down_layers)} down layers, {len(mid_layers)} mid layers, {len(up_layers)} up layers."
-                    )
-            logger.debug("Layer restoration completed")
-
-
-        if not return_dict:
-            return (image,)
-
-        return StableDiffusionXLPipelineOutput(images=image)
+                # Call original UNet without TPG
+                if hasattr(self.unet, 'model') and hasattr(self.unet.model, 'apply_model'):
+                    return self.unet.model.apply_model(sample, timestep, c_crossattn=encoder_hidden_states, **kwargs)
+                else:
+                    return original_unet_forward(sample, timestep, encoder_hidden_states=encoder_hidden_states, **kwargs)
+        
+        # Temporarily replace UNet forward method
+        if hasattr(self.unet, 'forward'):
+            self.unet.forward = tpg_unet_forward
+        elif hasattr(self.unet, '__call__'):
+            self.unet.__call__ = tpg_unet_forward
+        
+        try:
+            # Call the parent pipeline
+            result = super().__call__(
+                prompt=prompt,
+                prompt_2=prompt_2,
+                height=height,
+                width=width,
+                num_inference_steps=num_inference_steps,
+                timesteps=timesteps,
+                denoising_end=denoising_end,
+                guidance_scale=guidance_scale,
+                negative_prompt=negative_prompt,
+                negative_prompt_2=negative_prompt_2,
+                num_images_per_prompt=num_images_per_prompt,
+                eta=eta,
+                generator=generator,
+                latents=latents,
+                prompt_embeds=prompt_embeds,
+                negative_prompt_embeds=negative_prompt_embeds,
+                pooled_prompt_embeds=pooled_prompt_embeds,
+                negative_pooled_prompt_embeds=negative_pooled_prompt_embeds,
+                output_type=output_type,
+                return_dict=return_dict,
+                cross_attention_kwargs=cross_attention_kwargs,
+                guidance_rescale=guidance_rescale,
+                original_size=original_size,
+                crops_coords_top_left=crops_coords_top_left,
+                target_size=target_size,
+                negative_original_size=negative_original_size,
+                negative_crops_coords_top_left=negative_crops_coords_top_left,
+                negative_target_size=negative_target_size,
+                clip_skip=clip_skip,
+                callback_on_step_end=callback_on_step_end,
+                callback_on_step_end_tensor_inputs=callback_on_step_end_tensor_inputs,
+                **kwargs,
+            )
+            
+            return result
+        
+        finally:
+            # Restore original UNet forward method
+            if original_unet_forward is not None:
+                if hasattr(self.unet, 'forward'):
+                    self.unet.forward = original_unet_forward
+                elif hasattr(self.unet, '__call__'):
+                    self.unet.__call__ = original_unet_forward
+    
+    def _shuffle_tokens(self, x):
+        """
+        Randomly shuffle the order of input tokens.
+        
+        Args:
+            x (torch.Tensor): Input tensor with shape (batch_size, num_tokens, channels)
+        
+        Returns:
+            torch.Tensor: Shuffled tensor with the same shape
+        """
+        try:
+            if len(x.shape) >= 2:
+                b, n = x.shape[:2]
+                permutation = torch.randperm(n, device=x.device)
+                return x[:, permutation]
+            return x
+        except Exception as e:
+            logger.warning(f"Token shuffling failed: {e}")
+            return x

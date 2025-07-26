@@ -930,7 +930,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 if XLA_AVAILABLE:
                     xm.mark_step()
 
-        # For Fooocus integration, always return latents
+        # Always return latents for Fooocus integration
         if not return_dict:
             # Ensure we return the right batch size (should be 1 for single image)
             if latents.shape[0] > 1:
