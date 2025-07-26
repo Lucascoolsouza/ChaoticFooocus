@@ -112,9 +112,9 @@ class AsyncTask:
         self.dag_enabled = args.pop()
         self.dag_scale = args.pop()
         self.dag_applied_layers = args.pop()
-        if not self.pag_applied_layers:
-            self.pag_applied_layers = "mid,up"
-        print(f"[ASYNC_WORKER DEBUG] PAG Enabled: {self.pag_enabled}, PAG Scale: {self.pag_scale}, PAG Applied Layers: {self.pag_applied_layers}")
+        if not self.dag_applied_layers:
+            self.dag_applied_layers = "mid,up"
+        print(f"[ASYNC_WORKER DEBUG] DAG Enabled: {self.dag_enabled}, DAG Scale: {self.dag_scale}, DAG Applied Layers: {self.dag_applied_layers}")
         
         self.save_final_enhanced_image_only = args.pop() if not args_manager.args.disable_image_log else False
         self.save_metadata_to_images = args.pop() if not args_manager.args.disable_metadata else False
