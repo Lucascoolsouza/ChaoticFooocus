@@ -107,20 +107,12 @@ class AsyncTask:
         self.tpg_enabled = args.pop()
         self.tpg_scale = args.pop()
         self.tpg_applied_layers_index = args.pop()
-        # Handle DAG parameters with proper defaults
-        dag_params = []
-        for _ in range(3):
-            try:
-                dag_params.append(args.pop())
-            except IndexError:
-                dag_params.append(None)
-
-        # Assign in correct order (reverse of popping)
-        self.dag_applied_layers = dag_params[0] if dag_params[0] is not None else "mid,up"
-        self.dag_scale = dag_params[1] if dag_params[1] is not None else 2.5
-        self.dag_enabled = dag_params[2] if dag_params[2] is not None else False
-
-        print(f"[DAG INIT] Enabled: {self.dag_enabled}, Scale: {self.dag_scale}, Layers: {self.dag_applied_layers}")
+        self.dag_enabled = args.pop()
+        self.dag_scale = args.pop()
+        self.dag_applied_layers = args.pop()
+        if not self.dag_applied_layers:
+            self.dag_applied_layers = "mid,up"
+        print(f"[ASYNC_WORKER DEBUG] DAG Enabled: {self.dag_enabled}, DAG Scale: {self.dag_scale}, DAG Applied Layers: {self.dag_applied_layers}")
         
         self.save_final_enhanced_image_only = args.pop() if not args_manager.args.disable_image_log else False
         self.save_metadata_to_images = args.pop() if not args_manager.args.disable_metadata else False
