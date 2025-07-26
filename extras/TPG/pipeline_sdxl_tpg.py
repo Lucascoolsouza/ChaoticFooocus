@@ -1604,11 +1604,8 @@ class StableDiffusionXLTPGPipeline(
         # change attention layer in UNet if use tpg
         if self.do_token_perturbation_guidance and self.tpg_scale > 0:
             logger.info("=== STARTING TPG LAYER MODIFICATION ===")
-            import sys
-            sys.stdout.flush()
             drop_layers = self.tpg_applied_layers_index
             logger.info(f"TPG will modify {len(drop_layers)} layers: {drop_layers}")
-            sys.stdout.flush()
             
             # Check if we have any layers to modify
             total_layers = len(down_layers) + len(mid_layers) + len(up_layers)
@@ -1616,96 +1613,40 @@ class StableDiffusionXLTPGPipeline(
                 logger.warning("No transformer layers found for TPG modification. Disabling TPG.")
                 self._tpg_scale = 0.0
             else:
-                logger.info(f"Modifying {len(drop_layers)} layers for TPG")
-                sys.stdout.flush()
-                
-                for i, drop_layer in enumerate(drop_layers):
-                    logger.info(f"Processing layer {i+1}/{len(drop_layers)}: {drop_layer}")
-                    sys.stdout.flush()
+                modified_count = 0
+                for drop_layer in drop_layers:
                     try:
                         if drop_layer[0] == "d":
-                            logger.info(f"  Modifying down layer: {drop_layer}")
-                            sys.stdout.flush()
                             layer_idx = int(drop_layer[1:])
                             if layer_idx < len(down_layers):
-                                # Store original layer for later restoration
-                                if not hasattr(down_layers[layer_idx], '_original_layer'):
-                                    down_layers[layer_idx]._original_layer = down_layers[layer_idx]
-                                
-                                # Create modified layer using helper method
                                 modified_layer = self._create_modified_layer(down_layers[layer_idx], f"down_layer_{layer_idx}")
-                                
-                                # Replace the layer
                                 down_layers[layer_idx] = modified_layer
-                                
-                                logger.info(f"    ✓ Down layer {drop_layer} modified successfully")
-                                sys.stdout.flush()
-                            else:
-                                logger.warning(f"Skipping invalid down layer index: {layer_idx} (available: 0-{len(down_layers)-1})")
+                                modified_count += 1
 
                         elif drop_layer[0] == "m":
                             layer_idx = int(drop_layer[1:])
                             if layer_idx < len(mid_layers):
-                                # Store original layer for later restoration
-                                if not hasattr(mid_layers[layer_idx], '_original_layer'):
-                                    mid_layers[layer_idx]._original_layer = mid_layers[layer_idx]
-                                
-                                # Store original device before modification
-                                original_device = next(mid_layers[layer_idx].parameters()).device
-                                
-                                # Create modified layer class and replace the layer
-                                modified_class = make_tpg_block(mid_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
-                                # Create new instance with same parameters
-                                modified_layer = modified_class.__new__(modified_class)
-                                modified_layer.__dict__.update(mid_layers[layer_idx].__dict__)
-                                modified_layer.shuffle_tokens = self._create_shuffle_tokens_method()
-                                
-                                # Ensure the modified layer and all its submodules are on the same device as the original
-                                modified_layer.to(original_device)
-                                # Also ensure all parameters and buffers are on the correct device
-                                for param in modified_layer.parameters():
-                                    param.data = param.data.to(original_device)
-                                for buffer in modified_layer.buffers():
-                                    buffer.data = buffer.data.to(original_device)
-                                
+                                modified_layer = self._create_modified_layer(mid_layers[layer_idx], f"mid_layer_{layer_idx}")
                                 mid_layers[layer_idx] = modified_layer
-                            else:
-                                logger.warning(f"Skipping invalid mid layer index: {layer_idx} (available: 0-{len(mid_layers)-1})")
+                                modified_count += 1
 
                         elif drop_layer[0] == "u":
                             layer_idx = int(drop_layer[1:])
                             if layer_idx < len(up_layers):
-                                # Store original layer for later restoration
-                                if not hasattr(up_layers[layer_idx], '_original_layer'):
-                                    up_layers[layer_idx]._original_layer = up_layers[layer_idx]
-                                
-                                # Store original device before modification
-                                original_device = next(up_layers[layer_idx].parameters()).device
-                                
-                                # Create modified layer class and replace the layer
-                                modified_class = make_tpg_block(up_layers[layer_idx].__class__, do_cfg=self.do_classifier_free_guidance)
-                                # Create new instance with same parameters
-                                modified_layer = modified_class.__new__(modified_class)
-                                modified_layer.__dict__.update(up_layers[layer_idx].__dict__)
-                                modified_layer.shuffle_tokens = self._create_shuffle_tokens_method()
-                                
-                                # Ensure the modified layer and all its submodules are on the same device as the original
-                                modified_layer.to(original_device)
-                                # Also ensure all parameters and buffers are on the correct device
-                                for param in modified_layer.parameters():
-                                    param.data = param.data.to(original_device)
-                                for buffer in modified_layer.buffers():
-                                    buffer.data = buffer.data.to(original_device)
-                                
+                                modified_layer = self._create_modified_layer(up_layers[layer_idx], f"up_layer_{layer_idx}")
                                 up_layers[layer_idx] = modified_layer
-                            else:
-                                logger.warning(f"Skipping invalid up layer index: {layer_idx} (available: 0-{len(up_layers)-1})")
+                                modified_count += 1
 
-                        else:
-                            logger.warning(f"Invalid layer type: {drop_layer[0]}")
-                    except (IndexError, ValueError) as e:
+                    except Exception as e:
                         logger.warning(f"Error processing layer {drop_layer}: {e}")
                         continue
+                
+                logger.info(f"Successfully modified {modified_count}/{len(drop_layers)} layers for TPG")
+                
+                # If no layers were successfully modified, disable TPG
+                if modified_count == 0:
+                    logger.warning("No layers were successfully modified. Disabling TPG.")
+                    self._tpg_scale = 0.0
         logger.debug("TPG layer lists and attention layer changes (if TPG active) processed.")
 
         self._num_timesteps = len(timesteps)
