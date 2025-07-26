@@ -236,7 +236,7 @@ def sample_hacked(model, noise, positive, negative, cfg, device, sampler, sigmas
         "fractal": k_diffusion_sampling.sample_fractal,
     }
 
-    current_sampler_function = sampler_functions.get(sampler)
+    current_sampler_function = sampler_functions.get(sampler.sampler_name)
     if current_sampler_function is None:
         raise ValueError(f"Unknown sampler: {sampler}")
 
