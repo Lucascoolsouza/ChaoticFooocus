@@ -1124,7 +1124,7 @@ with shared.gradio_root:
         if not args_manager.args.disable_metadata:
             ctrls += [save_metadata_to_images, metadata_scheme]
         else:
-            ctrls += [gr.State(modules.flags.MetadataScheme.FOOOCUS.value), gr.State(modules.flags.MetadataScheme.FOOOCUS.value)]
+            ctrls += [gr.State(False), gr.State(modules.flags.MetadataScheme.FOOOCUS.value)]
             
         ctrls += [detail_daemon_enabled, detail_daemon_amount, detail_daemon_start, detail_daemon_end, 
                   detail_daemon_bias, detail_daemon_base_multiplier, detail_daemon_start_offset, detail_daemon_end_offset, 
