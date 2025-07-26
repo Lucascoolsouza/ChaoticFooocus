@@ -1012,7 +1012,7 @@ with shared.gradio_root:
                         dag_applied_layers = gr.Textbox(label='DAG Applied Layers', show_label=True,
                                                         placeholder="e.g., mid,up", lines=1,
                                                         info='Comma-separated list of layer types to apply DAG. e.g., mid,up')
-                        dag_ctrls = [dag_applied_layers, dag_scale, dag_enabled]
+                        dag_ctrls = [dag_enabled, dag_scale, dag_applied_layers]
 
                 def dev_mode_checked(r):
                     return gr.update(visible=r)
