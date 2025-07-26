@@ -177,6 +177,72 @@ class StableDiffusionXLPAGPipeline(StableDiffusionXLPipeline):
             print(f"[PAG DEBUG] Enabling PAG with scale={pag_scale}, layers={pag_applied_layers}")
             self.enable_pag(pag_scale=pag_scale, pag_applied_layers=pag_applied_layers)
         
+        # Store original UNet forward method
+        original_unet_forward = None
+        if hasattr(self.unet, 'forward'):
+            original_unet_forward = self.unet.forward
+        elif hasattr(self.unet, '__call__'):
+            original_unet_forward = self.unet.__call__
+        
+        def pag_unet_forward(sample, timestep, encoder_hidden_states, **kwargs):
+            """Modified UNet forward that handles PAG guidance"""
+            if pag_scale > 0 and encoder_hidden_states.shape[0] == 2:
+                # Duplicate the conditional part for PAG
+                uncond_embeds, cond_embeds = encoder_hidden_states.chunk(2)
+                encoder_hidden_states = torch.cat([uncond_embeds, cond_embeds, cond_embeds], dim=0)
+                
+                # Duplicate latents accordingly
+                if sample.shape[0] == 2:
+                    uncond_sample, cond_sample = sample.chunk(2)
+                    sample = torch.cat([uncond_sample, cond_sample, cond_sample], dim=0)
+                
+                # Handle other kwargs that might need duplication
+                if 'added_cond_kwargs' in kwargs:
+                    added_cond_kwargs = kwargs['added_cond_kwargs']
+                    new_added_cond_kwargs = {}
+                    for key, value in added_cond_kwargs.items():
+                        if isinstance(value, torch.Tensor) and value.shape[0] == 2:
+                            uncond_val, cond_val = value.chunk(2)
+                            new_added_cond_kwargs[key] = torch.cat([uncond_val, cond_val, cond_val], dim=0)
+                        else:
+                            new_added_cond_kwargs[key] = value
+                    kwargs['added_cond_kwargs'] = new_added_cond_kwargs
+                
+                # Call original UNet
+                if hasattr(self.unet, 'model') and hasattr(self.unet.model, 'apply_model'):
+                    # ComfyUI style
+                    noise_pred = self.unet.model.apply_model(sample, timestep, c_crossattn=encoder_hidden_states, **kwargs)
+                else:
+                    # Standard diffusers style
+                    noise_pred = original_unet_forward(sample, timestep, encoder_hidden_states=encoder_hidden_states, **kwargs)
+                
+                # Apply PAG guidance
+                if noise_pred.shape[0] == 3:
+                    noise_pred_uncond, noise_pred_cond, noise_pred_perturb = noise_pred.chunk(3)
+                    
+                    # First apply CFG
+                    noise_pred_cfg = noise_pred_uncond + guidance_scale * (noise_pred_cond - noise_pred_uncond)
+                    
+                    # Then apply PAG
+                    noise_pred_final = noise_pred_cfg + pag_scale * (noise_pred_cond - noise_pred_perturb)
+                    
+                    # Return only the final prediction (batch size 1)
+                    return noise_pred_final.unsqueeze(0) if noise_pred_final.dim() == 3 else noise_pred_final[:1]
+                else:
+                    return noise_pred
+            else:
+                # Call original UNet without PAG
+                if hasattr(self.unet, 'model') and hasattr(self.unet.model, 'apply_model'):
+                    return self.unet.model.apply_model(sample, timestep, c_crossattn=encoder_hidden_states, **kwargs)
+                else:
+                    return original_unet_forward(sample, timestep, encoder_hidden_states=encoder_hidden_states, **kwargs)
+        
+        # Temporarily replace UNet forward method
+        if hasattr(self.unet, 'forward'):
+            self.unet.forward = pag_unet_forward
+        elif hasattr(self.unet, '__call__'):
+            self.unet.__call__ = pag_unet_forward
+        
         try:
             # Call the parent pipeline
             result = super().__call__(
@@ -215,6 +281,14 @@ class StableDiffusionXLPAGPipeline(StableDiffusionXLPipeline):
             )
             
             return result
+        
+        finally:
+            # Restore original UNet forward method
+            if original_unet_forward is not None:
+                if hasattr(self.unet, 'forward'):
+                    self.unet.forward = original_unet_forward
+                elif hasattr(self.unet, '__call__'):
+                    self.unet.__call__ = original_unet_forward
             
         finally:
             # Always disable PAG after generation to clean up
