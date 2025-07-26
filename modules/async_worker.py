@@ -104,11 +104,9 @@ class AsyncTask:
         self.nag_alpha = args.pop()
         self.nag_negative_prompt = args.pop()
         self.nag_end = args.pop()
-
         self.tpg_enabled = args.pop()
         self.tpg_scale = args.pop()
         self.tpg_applied_layers_index = args.pop()
-
         self.dag_enabled = args.pop()
         self.dag_scale = args.pop()
         self.dag_applied_layers = args.pop()
