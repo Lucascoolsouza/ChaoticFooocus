@@ -2238,7 +2238,7 @@ def sample_dpmpp_sde_gpu_token_shuffle(model, x, sigmas, extra_args=None, callba
 
 @torch.no_grad()
 def sample_euler_pixel_art(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., 
-                          pixel_scale=4, color_levels=16, sharpen_strength=0.5, quantize_strength=0.8):
+                          pixel_scale=2, color_levels=32, sharpen_strength=0.2, quantize_strength=0.3):
     """Euler sampler with pixel art effects.
     
     This sampler applies pixelation, color quantization, and sharpening effects
@@ -2331,10 +2331,7 @@ def sample_euler_pixel_art(model, x, sigmas, extra_args=None, callback=None, dis
         # Calculate step ratio for progressive effects
         step_ratio = i / (len(sigmas) - 1)
         
-        # Apply pixel art effects before denoising
-        x = apply_pixel_art_effects(x, step_ratio)
-        
-        # Standard Euler denoising step
+        # Standard Euler denoising step (no effects during sampling to avoid blank images)
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         d = to_d(x, sigmas[i], denoised)
         
@@ -2344,8 +2341,8 @@ def sample_euler_pixel_art(model, x, sigmas, extra_args=None, callback=None, dis
         dt = sigmas[i + 1] - sigmas[i]
         x = x + d * dt
         
-        # Apply pixel art effects after the step as well (but lighter)
-        if i < len(sigmas) - 2:  # Don't apply on final step
+        # Only apply very light pixel art effects in the final few steps
+        if i >= len(sigmas) - 3 and step_ratio > 0.9:  # Only final 2-3 steps
             x = apply_pixel_art_effects(x, step_ratio)
     
     return x
