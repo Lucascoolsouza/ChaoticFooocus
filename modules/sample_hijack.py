@@ -122,38 +122,39 @@ def sample_hacked(model, noise, positive, negative, cfg, device, sampler, sigmas
 
     extra_args = {"cond":positive, "uncond":negative, "cond_scale": cfg, "model_options": model_options, "seed":seed}
 
-    if sampler == "negative_focus":
-        # Extract neg_text_emb from the negative conditioning
-        # Assuming negative is a list of dictionaries, and the first one contains the main negative prompt
-        if negative and 'model_conds' in negative[0] and 'c_crossattn' in negative[0]['model_conds']:
-            extra_args["neg_text_emb"] = negative[0]['model_conds']['c_crossattn'].cond
-        else:
-            # Handle case where neg_text_emb might not be available or structured differently
-            # For now, raise an error or set a default/empty tensor
-            print("Warning: neg_text_emb not found for negative_focus sampler. Using empty tensor.")
-            extra_args["neg_text_emb"] = torch.empty(1, 1, 768) # Placeholder, adjust dimensions as needed
+    if isinstance(sampler, ldm_patched.modules.samplers.KSAMPLER):
+        if sampler.sampler_function.__name__ == "sample_negative_focus":
+            # Extract neg_text_emb from the negative conditioning
+            # Assuming negative is a list of dictionaries, and the first one contains the main negative prompt
+            if negative and 'model_conds' in negative[0] and 'c_crossattn' in negative[0]['model_conds']:
+                extra_args["neg_text_emb"] = negative[0]['model_conds']['c_crossattn'].cond
+            else:
+                # Handle case where neg_text_emb might not be available or structured differently
+                # For now, raise an error or set a default/empty tensor
+                print("Warning: neg_text_emb not found for negative_focus sampler. Using empty tensor.")
+                extra_args["neg_text_emb"] = torch.empty(1, 1, 768) # Placeholder, adjust dimensions as needed
 
-    if sampler == "token_shuffle":
-        # For token_shuffle, the 'cond' in extra_args is already the positive conditioning
-        # No specific extraction needed here, as 'cond' is already set to 'positive'
-        extra_args["shuffle_start"] = 0.5
-        extra_args["shuffle_prob"] = 0.3
+        elif sampler.sampler_function.__name__ == "sample_token_shuffle":
+            # For token_shuffle, the 'cond' in extra_args is already the positive conditioning
+            # No specific extraction needed here, as 'cond' is already set to 'positive'
+            extra_args["shuffle_start"] = 0.5
+            extra_args["shuffle_prob"] = 0.3
 
-    if sampler == "diverse_attention":
-        extra_args["attn_dropout"] = 0.1  # Default value from sample_diverse_attention
-        extra_args["attn_temp"] = 0.7     # Default value from sample_diverse_attention
-        extra_args["diversity_start"] = 0.4 # Default value from sample_diverse_attention
+        elif sampler.sampler_function.__name__ == "sample_diverse_attention":
+            extra_args["attn_dropout"] = 0.1  # Default value from sample_diverse_attention
+            extra_args["attn_temp"] = 0.7     # Default value from sample_diverse_attention
+            extra_args["diversity_start"] = 0.4 # Default value from sample_diverse_attention
 
-    if sampler == "dpmpp_unipc_restart":
-        extra_args["restart_list"] = None # Default value from sample_dpmpp_unipc_restart
-        extra_args["unipc_order"] = 3
-        extra_args["unipc_rtol"] = 0.05
-        extra_args["unipc_atol"] = 0.0078
-        extra_args["unipc_h_init"] = 0.05
-        extra_args["unipc_pcoeff"] = 0.0
-        extra_args["unipc_icoeff"] = 1.0
-        extra_args["unipc_dcoeff"] = 0.0
-        extra_args["unipc_accept_safety"] = 0.81
+        elif sampler.sampler_function.__name__ == "sample_dpmpp_unipc_restart":
+            extra_args["restart_list"] = None # Default value from sample_dpmpp_unipc_restart
+            extra_args["unipc_order"] = 3
+            extra_args["unipc_rtol"] = 0.05
+            extra_args["unipc_atol"] = 0.0078
+            extra_args["unipc_h_init"] = 0.05
+            extra_args["unipc_pcoeff"] = 0.0
+            extra_args["unipc_icoeff"] = 1.0
+            extra_args["unipc_dcoeff"] = 0.0
+            extra_args["unipc_accept_safety"] = 0.81
 
     if current_refiner is not None and hasattr(current_refiner.model, 'extra_conds'):
         positive_refiner = clip_separate_after_preparation(positive, target_model=current_refiner.model)
