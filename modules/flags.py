@@ -31,7 +31,6 @@ CIVITAI_NO_KARRAS = ["euler", "euler_ancestral", "heun", "dpm_fast", "dpm_adapti
 # fooocus: a1111 (Civitai)
 KSAMPLER = {
     "euler": "Euler",
-<<<<<<< HEAD
     "euler_chaotic": "Euler Chaotic",
     "euler_triangle_wave": "Euler Triangle Wave",
     "euler_dreamy": "Euler Dreamy",
@@ -45,20 +44,9 @@ KSAMPLER = {
     "dreamy": "Dreamy",
     "comic": "Comic",
     "fractal": "Fractal",
-=======
-    "euler_chaotic": "euler_chaotic",
-    "euler_triangle_wave": "euler_triangle_wave",
-    "euler_dreamy": "euler_dreamy",
-    "euler_dreamy_pp": "euler_dreamy_pp",
-    "triangular":"triangular",
-    "pixelart":"pixelart",
-    "dreamy":"dreamy",
-    "comic":"comic",
-    "fractal":"fractal",
->>>>>>> parent of a9a7293 (SAMPLERS)
     "euler_ancestral": "Euler a",
     "heun": "Heun",
-    "heunpp2": "",
+    "heunpp2": "Heun++2",
     "dpm_2": "DPM2",
     "dpm_2_ancestral": "DPM2 a",
     "lms": "LMS",
@@ -70,9 +58,9 @@ KSAMPLER = {
     "dpmpp_2m": "DPM++ 2M",
     "dpmpp_2m_sde": "DPM++ 2M SDE",
     "dpmpp_2m_sde_gpu": "DPM++ 2M SDE",
-    "dpmpp_3m_sde": "",
-    "dpmpp_3m_sde_gpu": "",
-    "ddpm": "",
+    "dpmpp_3m_sde": "DPM++ 3M SDE",
+    "dpmpp_3m_sde_gpu": "DPM++ 3M SDE",
+    "ddpm": "DDPM",
     "lcm": "LCM",
     "tcd": "TCD",
     "restart": "Restart",
