@@ -15,9 +15,8 @@ from extras.expansion import FooocusExpansion
 from ldm_patched.modules.model_base import SDXL, SDXLRefiner
 from modules.sample_hijack import clip_separate
 from modules.util import get_file_from_folder_list, get_enabled_loras
-from extras.TPG.tpg_sampler import tpg_sampler
-from extras.nag.nag_sampler import nag_sampler
-from extras.PAG.pag_sampler import pag_sampler
+# Guidance samplers are now integrated into k_diffusion sampling
+# No need for separate sampler classes
 
 
 model_base = core.StableDiffusionModel()
@@ -756,67 +755,58 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         tokenizer_l_on_device = add_tokenizer_compatibility(tokenizer_l_on_device)
         tokenizer_g_on_device = add_tokenizer_compatibility(tokenizer_g_on_device)
 
-        # Handle special guidance with samplers
-        guidance_active = False
+        # Handle guidance by selecting appropriate sampler
+        guidance_active = (tpg_enabled and tpg_scale > 0) or (nag_scale > 1.0) or (pag_enabled and pag_scale > 0)
         
-        # Activate TPG if enabled
-        if tpg_enabled and tpg_scale > 0:
-            print(f"[TPG] Activating TPG sampler with scale {tpg_scale}")
-            tpg_sampler.tpg_scale = tpg_scale
-            tpg_sampler.tpg_applied_layers_index = tpg_applied_layers_index
-            tpg_sampler.activate(final_unet)
-            guidance_active = True
-        
-        # Activate NAG if enabled
-        if nag_scale > 1.0:
-            print(f"[NAG] Activating NAG sampler with scale {nag_scale}")
-            nag_sampler.nag_scale = nag_scale
-            nag_sampler.activate(final_unet)
-            guidance_active = True
-        
-        # Activate PAG if enabled
-        if pag_enabled and pag_scale > 0:
-            print(f"[PAG] Activating PAG sampler with scale {pag_scale}")
-            pag_sampler.pag_scale = pag_scale
-            pag_sampler.pag_applied_layers = pag_applied_layers
-            pag_sampler.activate(final_unet)
-            guidance_active = True
-        
-        try:
-            # Use regular ksampler with guidance modifications
-            ksampler_imgs = core.ksampler(
-                model=final_unet,
-                positive=positive_cond,
-                negative=negative_cond,
-                latent=initial_latent,
-                seed=image_seed,
-                steps=steps,
-                cfg=cfg_scale,
-                sampler_name=sampler_name,
-                scheduler=scheduler_name,
-                denoise=denoise,
-                disable_preview=disable_preview,
-                refiner=final_refiner_unet,
-                refiner_switch=switch,
-                sigmas=minmax_sigmas,
-                callback_function=callback
-            )['samples']
-            
-            # Convert latents to images
-            if ksampler_imgs is not None:
-                latent_dict = {'samples': ksampler_imgs}
-                imgs = core.decode_vae(target_vae, latent_dict)
-                imgs = core.pytorch_to_numpy(imgs)
+        if guidance_active:
+            # Determine which guidance sampler to use
+            if (tpg_enabled and tpg_scale > 0) and (nag_scale > 1.0) and (pag_enabled and pag_scale > 0):
+                # All three guidance methods - use combined sampler
+                print(f"[GUIDANCE] Using combined guidance: TPG({tpg_scale}), NAG({nag_scale}), PAG({pag_scale})")
+                guidance_sampler = "euler_guidance"
+            elif tpg_enabled and tpg_scale > 0:
+                print(f"[TPG] Using TPG sampler with scale {tpg_scale}")
+                guidance_sampler = "euler_tpg"
+            elif nag_scale > 1.0:
+                print(f"[NAG] Using NAG sampler with scale {nag_scale}")
+                guidance_sampler = "euler_nag"
+            elif pag_enabled and pag_scale > 0:
+                print(f"[PAG] Using PAG sampler with scale {pag_scale}")
+                guidance_sampler = "euler_pag"
             else:
-                imgs = []
-            
-            return imgs
-            
-        finally:
-            # Always deactivate all guidance methods
-            if tpg_enabled and tpg_scale > 0:
-                tpg_sampler.deactivate()
-            if nag_scale > 1.0:
-                nag_sampler.deactivate()
-            if pag_enabled and pag_scale > 0:
-                pag_sampler.deactivate()
+                guidance_sampler = sampler_name
+        else:
+            guidance_sampler = sampler_name
+        
+        # Use sampler (with or without guidance)
+        ksampler_imgs = core.ksampler(
+            model=final_unet,
+            positive=positive_cond,
+            negative=negative_cond,
+            latent=initial_latent,
+            seed=image_seed,
+            steps=steps,
+            cfg=cfg_scale,
+            sampler_name=guidance_sampler,
+            scheduler=scheduler_name,
+            denoise=denoise,
+            disable_preview=disable_preview,
+            refiner=final_refiner_unet,
+            refiner_switch=switch,
+            sigmas=minmax_sigmas,
+            callback_function=callback,
+            # Pass guidance parameters
+            tpg_scale=tpg_scale if tpg_enabled else 0.0,
+            nag_scale=nag_scale,
+            pag_scale=pag_scale if pag_enabled else 0.0
+        )['samples']
+        
+        # Convert latents to images
+        if ksampler_imgs is not None:
+            latent_dict = {'samples': ksampler_imgs}
+            imgs = core.decode_vae(target_vae, latent_dict)
+            imgs = core.pytorch_to_numpy(imgs)
+        else:
+            imgs = []
+        
+        return imgs

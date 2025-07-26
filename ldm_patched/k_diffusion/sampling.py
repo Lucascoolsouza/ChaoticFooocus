@@ -1766,6 +1766,20 @@ def sample_tcd(model, x, sigmas, extra_args=None, callback=None, disable=None, n
     return x
 
 
+# Import guidance samplers
+try:
+    from extras.guidance_samplers import sample_euler_tpg, sample_euler_nag, sample_euler_pag, sample_euler_guidance
+except ImportError:
+    # Fallback if guidance samplers are not available
+    def sample_euler_tpg(*args, **kwargs):
+        return sample_euler(*args, **kwargs)
+    def sample_euler_nag(*args, **kwargs):
+        return sample_euler(*args, **kwargs)
+    def sample_euler_pag(*args, **kwargs):
+        return sample_euler(*args, **kwargs)
+    def sample_euler_guidance(*args, **kwargs):
+        return sample_euler(*args, **kwargs)
+
 @torch.no_grad()
 def sample_restart(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., restart_list=None):
     """Implements restart sampling in Restart Sampling for Improving Generative Processes (2023)
