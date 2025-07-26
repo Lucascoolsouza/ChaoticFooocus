@@ -37,7 +37,7 @@ KSAMPLER = {
     "euler_dreamy_pp": "Euler Dreamy++",
     "euler_tpg": "Euler TPG",
     "euler_nag": "Euler NAG", 
-    "euler_pag": "Euler PAG",
+    "euler_dag": "Euler DAG",
     "euler_guidance": "Euler Guidance",
     "triangular": "Triangular",
     "pixelart": "Pixel Art",

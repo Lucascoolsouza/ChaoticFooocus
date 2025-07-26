@@ -1768,14 +1768,14 @@ def sample_tcd(model, x, sigmas, extra_args=None, callback=None, disable=None, n
 
 # Import guidance samplers
 try:
-    from extras.guidance_samplers import sample_euler_tpg, sample_euler_nag, sample_euler_pag, sample_euler_guidance
+    from extras.guidance_samplers import sample_euler_tpg, sample_euler_nag, sample_euler_dag, sample_euler_guidance
 except ImportError:
     # Fallback if guidance samplers are not available
     def sample_euler_tpg(*args, **kwargs):
         return sample_euler(*args, **kwargs)
     def sample_euler_nag(*args, **kwargs):
         return sample_euler(*args, **kwargs)
-    def sample_euler_pag(*args, **kwargs):
+    def sample_euler_dag(*args, **kwargs):
         return sample_euler(*args, **kwargs)
     def sample_euler_guidance(*args, **kwargs):
         return sample_euler(*args, **kwargs)

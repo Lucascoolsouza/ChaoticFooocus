@@ -9,18 +9,18 @@ from tqdm.auto import trange
 _guidance_config = {
     'tpg_scale': 0.0,
     'nag_scale': 1.0,
-    'pag_scale': 0.0
+    'dag_scale': 0.0
 }
 
-def set_guidance_config(tpg_scale=0.0, nag_scale=1.0, pag_scale=0.0):
+def set_guidance_config(tpg_scale=0.0, nag_scale=1.0, dag_scale=0.0):
     """Set global guidance configuration"""
     global _guidance_config
     _guidance_config.update({
         'tpg_scale': tpg_scale,
         'nag_scale': nag_scale,
-        'pag_scale': pag_scale
+        'dag_scale': dag_scale
     })
-    print(f"[GUIDANCE] Config updated: TPG={tpg_scale}, NAG={nag_scale}, PAG={pag_scale}")
+    print(f"[GUIDANCE] Config updated: TPG={tpg_scale}, NAG={nag_scale}, DAG={dag_scale}")
 
 def get_guidance_config():
     """Get current guidance configuration"""
@@ -97,13 +97,57 @@ def apply_attention_degradation(embeddings, degradation_strength=0.5):
     except Exception:
         return embeddings
 
-def apply_attention_perturbation(embeddings):
-    """Apply attention perturbation for PAG"""
+def apply_dynamic_attention_modulation(embeddings, step=None, total_steps=None, modulation_strength=1.0):
+    """Apply dynamic attention modulation for DAG (Dynamic Attention Guidance)
+    
+    Creates step-dependent attention perturbations that evolve throughout sampling:
+    - Early steps: Large-scale structural perturbations
+    - Mid steps: Feature-level modulations  
+    - Late steps: Fine detail adjustments
+    """
     try:
-        # Add controlled noise perturbation
-        noise = torch.randn_like(embeddings) * 0.15
+        if step is None or total_steps is None:
+            # Fallback to simple perturbation
+            noise = torch.randn_like(embeddings) * 0.1 * modulation_strength
+            return embeddings + noise
+        
+        # Calculate sampling progress
+        progress = step / max(1, total_steps - 1)
+        
+        # Dynamic modulation strategy based on sampling progress
+        if progress < 0.3:
+            # Early stage: Large structural perturbations
+            # Use low-frequency noise for global structure changes
+            noise_scale = 0.2 * modulation_strength
+            # Create correlated noise across tokens for structural coherence
+            base_noise = torch.randn(embeddings.shape[0], 1, embeddings.shape[2], device=embeddings.device)
+            noise = base_noise.expand_as(embeddings) * noise_scale
+            
+        elif progress < 0.7:
+            # Mid stage: Feature-level modulations
+            # Mix of correlated and independent noise
+            noise_scale = 0.15 * modulation_strength
+            base_noise = torch.randn(embeddings.shape[0], embeddings.shape[1] // 4, embeddings.shape[2], device=embeddings.device)
+            base_noise = torch.nn.functional.interpolate(base_noise.unsqueeze(0), size=(embeddings.shape[1], embeddings.shape[2]), mode='nearest').squeeze(0)
+            independent_noise = torch.randn_like(embeddings) * 0.05
+            noise = (base_noise + independent_noise) * noise_scale
+            
+        else:
+            # Late stage: Fine detail adjustments
+            # High-frequency, low-amplitude perturbations
+            noise_scale = 0.08 * modulation_strength * (1.0 - progress)  # Fade out towards end
+            noise = torch.randn_like(embeddings) * noise_scale
+        
+        # Apply step-dependent frequency modulation
+        if embeddings.shape[1] > 1:
+            # Create frequency-based modulation
+            freq_factor = 1.0 + 0.5 * math.sin(2 * math.pi * progress * 3)  # 3 cycles through sampling
+            noise = noise * freq_factor
+        
         return embeddings + noise
-    except Exception:
+        
+    except Exception as e:
+        print(f"[DAG] Dynamic attention modulation error: {e}")
         return embeddings
 
 def to_d(x, sigma, denoised):
@@ -276,20 +320,28 @@ def sample_euler_nag(model, x, sigmas, extra_args=None, callback=None, disable=N
     return x
 
 @torch.no_grad()
-def sample_euler_pag(model, x, sigmas, extra_args=None, callback=None, disable=None,
-                     pag_scale=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
-    """Euler method with PAG (Perturbed Attention Guidance)"""
+def sample_euler_dag(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                     dag_scale=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
+    """Euler method with DAG (Dynamic Attention Guidance)
+    
+    DAG applies dynamic attention modulations that evolve throughout sampling:
+    - Early steps: Large structural perturbations for composition
+    - Mid steps: Feature-level modulations for content refinement
+    - Late steps: Fine detail adjustments for quality enhancement
+    """
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     
-    # Get PAG scale from global config if not provided
-    if pag_scale is None:
-        pag_scale = _guidance_config.get('pag_scale', 3.0)
+    # Get DAG scale from global config if not provided
+    if dag_scale is None:
+        dag_scale = _guidance_config.get('dag_scale', 2.5)
     
-    print(f"[PAG] Using PAG-enhanced Euler sampler with scale {pag_scale}")
+    total_steps = len(sigmas) - 1
+    print(f"[DAG] Using DAG-enhanced Euler sampler with scale {dag_scale}")
+    print("[DAG] Applying dynamic attention modulations throughout sampling")
     
-    for i in trange(len(sigmas) - 1, disable=disable):
-        gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
+    for i in trange(total_steps, disable=disable):
+        gamma = min(s_churn / total_steps, 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
         sigma_hat = sigmas[i] * (gamma + 1)
         if gamma > 0:
             eps = torch.randn_like(x) * s_noise
@@ -298,35 +350,49 @@ def sample_euler_pag(model, x, sigmas, extra_args=None, callback=None, disable=N
         # Standard denoising
         denoised = model(x, sigma_hat * s_in, **extra_args)
         
-        # Apply PAG if we have conditioning
-        if 'cond' in extra_args and len(extra_args['cond']) > 0:
+        # Apply DAG if we have conditioning
+        if 'cond' in extra_args and len(extra_args['cond']) > 0 and dag_scale > 0:
             try:
-                # Create PAG conditioning by perturbing attention
-                pag_extra_args = extra_args.copy()
-                pag_cond = []
+                # Create DAG conditioning with dynamic attention modulation
+                dag_extra_args = extra_args.copy()
+                dag_cond = []
+                
+                # Calculate dynamic modulation strength based on step and scale
+                progress = i / max(1, total_steps - 1)
+                dynamic_strength = dag_scale * (1.0 + 0.3 * math.sin(2 * math.pi * progress * 2))
                 
                 for c in extra_args['cond']:
                     new_c = c.copy()
                     if 'model_conds' in new_c:
                         for key, model_cond in new_c['model_conds'].items():
                             if hasattr(model_cond, 'cond') and isinstance(model_cond.cond, torch.Tensor):
-                                # Create perturbed version
+                                # Create dynamically modulated version
                                 import copy
                                 new_model_cond = copy.deepcopy(model_cond)
-                                new_model_cond.cond = apply_attention_perturbation(model_cond.cond)
+                                new_model_cond.cond = apply_dynamic_attention_modulation(
+                                    model_cond.cond,
+                                    step=i,
+                                    total_steps=total_steps,
+                                    modulation_strength=dynamic_strength / dag_scale  # Normalize
+                                )
                                 new_c['model_conds'][key] = new_model_cond
-                    pag_cond.append(new_c)
+                    dag_cond.append(new_c)
                 
-                pag_extra_args['cond'] = pag_cond
+                dag_extra_args['cond'] = dag_cond
                 
-                # Get PAG prediction
-                denoised_pag = model(x, sigma_hat * s_in, **pag_extra_args)
+                # Get DAG prediction with dynamic modulation
+                denoised_dag = model(x, sigma_hat * s_in, **dag_extra_args)
                 
-                # Apply PAG guidance
-                denoised = denoised + pag_scale * (denoised - denoised_pag)
+                # Apply DAG guidance with adaptive strength
+                guidance_direction = denoised - denoised_dag
+                denoised = denoised + dynamic_strength * guidance_direction
+                
+                if i % 15 == 0:  # Log occasionally
+                    stage = "early" if progress < 0.3 else "mid" if progress < 0.7 else "late"
+                    print(f"[DAG] Step {i} ({stage}): Dynamic modulation strength {dynamic_strength:.2f}")
                 
             except Exception as e:
-                print(f"[PAG] Error applying PAG, using standard denoising: {e}")
+                print(f"[DAG] Error applying DAG at step {i}, using standard denoising: {e}")
         
         d = to_d(x, sigma_hat, denoised)
         if callback is not None:
@@ -339,9 +405,9 @@ def sample_euler_pag(model, x, sigmas, extra_args=None, callback=None, disable=N
 # Combined guidance sampler
 @torch.no_grad()
 def sample_euler_guidance(model, x, sigmas, extra_args=None, callback=None, disable=None,
-                         tpg_scale=None, nag_scale=None, pag_scale=None,
+                         tpg_scale=None, nag_scale=None, dag_scale=None,
                          s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
-    """Euler method with combined TPG, NAG, and PAG guidance"""
+    """Euler method with combined TPG, NAG, and DAG guidance"""
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     
@@ -350,8 +416,10 @@ def sample_euler_guidance(model, x, sigmas, extra_args=None, callback=None, disa
         tpg_scale = _guidance_config.get('tpg_scale', 0.0)
     if nag_scale is None:
         nag_scale = _guidance_config.get('nag_scale', 1.0)
-    if pag_scale is None:
-        pag_scale = _guidance_config.get('pag_scale', 0.0)
+    if dag_scale is None:
+        dag_scale = _guidance_config.get('dag_scale', 0.0)
+    
+    total_steps = len(sigmas) - 1
     
     # Count active guidance methods
     active_methods = []
@@ -359,8 +427,8 @@ def sample_euler_guidance(model, x, sigmas, extra_args=None, callback=None, disa
         active_methods.append(f"TPG({tpg_scale})")
     if nag_scale > 1.0:
         active_methods.append(f"NAG({nag_scale})")
-    if pag_scale > 0:
-        active_methods.append(f"PAG({pag_scale})")
+    if dag_scale > 0:
+        active_methods.append(f"DAG({dag_scale})")
     
     if active_methods:
         print(f"[GUIDANCE] Using combined guidance: {', '.join(active_methods)}")
@@ -377,7 +445,7 @@ def sample_euler_guidance(model, x, sigmas, extra_args=None, callback=None, disa
         
         # Apply guidance if we have conditioning and any guidance is enabled
         if ('cond' in extra_args and len(extra_args['cond']) > 0 and 
-            (tpg_scale > 0 or nag_scale > 1.0 or pag_scale > 0)):
+            (tpg_scale > 0 or nag_scale > 1.0 or dag_scale > 0)):
             
             try:
                 guidance_sum = torch.zeros_like(denoised)
@@ -434,10 +502,15 @@ def sample_euler_guidance(model, x, sigmas, extra_args=None, callback=None, disa
                     guidance_sum += (nag_scale - 1.0) * (denoised - denoised_nag)
                     guidance_count += 1
                 
-                # Apply PAG
-                if pag_scale > 0:
-                    pag_extra_args = extra_args.copy()
-                    pag_cond = []
+                # Apply DAG - dynamic attention modulation
+                if dag_scale > 0:
+                    dag_extra_args = extra_args.copy()
+                    dag_cond = []
+                    
+                    # Calculate dynamic strength for this step
+                    progress = i / max(1, total_steps - 1)
+                    dynamic_strength = dag_scale * (1.0 + 0.3 * math.sin(2 * math.pi * progress * 2))
+                    
                     for c in extra_args['cond']:
                         new_c = c.copy()
                         if 'model_conds' in new_c:
@@ -445,12 +518,17 @@ def sample_euler_guidance(model, x, sigmas, extra_args=None, callback=None, disa
                                 if hasattr(model_cond, 'cond') and isinstance(model_cond.cond, torch.Tensor):
                                     import copy
                                     new_model_cond = copy.deepcopy(model_cond)
-                                    new_model_cond.cond = apply_attention_perturbation(model_cond.cond)
+                                    new_model_cond.cond = apply_dynamic_attention_modulation(
+                                        model_cond.cond,
+                                        step=i,
+                                        total_steps=total_steps,
+                                        modulation_strength=dynamic_strength / dag_scale
+                                    )
                                     new_c['model_conds'][key] = new_model_cond
-                        pag_cond.append(new_c)
-                    pag_extra_args['cond'] = pag_cond
-                    denoised_pag = model(x, sigma_hat * s_in, **pag_extra_args)
-                    guidance_sum += pag_scale * (denoised - denoised_pag)
+                        dag_cond.append(new_c)
+                    dag_extra_args['cond'] = dag_cond
+                    denoised_dag = model(x, sigma_hat * s_in, **dag_extra_args)
+                    guidance_sum += dynamic_strength * (denoised - denoised_dag)
                     guidance_count += 1
                 
                 # Apply combined guidance
