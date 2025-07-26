@@ -460,13 +460,13 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         sigmas=minmax_sigmas,
         callback_function=callback
     )['samples']
-
-    # Convert latents to images
-    if ksampler_imgs is not None:
-        latent_dict = {'samples': ksampler_imgs}
-        imgs = core.decode_vae(target_vae, latent_dict)
-        imgs = core.pytorch_to_numpy(imgs)
-    else:
-        imgs = []
+        
+        # Convert latents to images
+        if ksampler_imgs is not None:
+            latent_dict = {'samples': ksampler_imgs}
+            imgs = core.decode_vae(target_vae, latent_dict)
+            imgs = core.pytorch_to_numpy(imgs)
+        else:
+            imgs = []
         
         return imgs
