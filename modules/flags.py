@@ -63,6 +63,7 @@ KSAMPLER = {
     "negative_focus": "Negative Focus",
     "token_shuffle": "Token Shuffle",
     "diverse_attention": "Diverse Attention",
+    "dpmpp_unipc_restart": "DPM++ UNIPC Restart",
 }
 
 SAMPLER_EXTRA = {

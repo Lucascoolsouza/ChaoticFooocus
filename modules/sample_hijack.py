@@ -144,6 +144,17 @@ def sample_hacked(model, noise, positive, negative, cfg, device, sampler, sigmas
         extra_args["attn_temp"] = 0.7     # Default value from sample_diverse_attention
         extra_args["diversity_start"] = 0.4 # Default value from sample_diverse_attention
 
+    if sampler == "dpmpp_unipc_restart":
+        extra_args["restart_list"] = None # Default value from sample_dpmpp_unipc_restart
+        extra_args["unipc_order"] = 3
+        extra_args["unipc_rtol"] = 0.05
+        extra_args["unipc_atol"] = 0.0078
+        extra_args["unipc_h_init"] = 0.05
+        extra_args["unipc_pcoeff"] = 0.0
+        extra_args["unipc_icoeff"] = 1.0
+        extra_args["unipc_dcoeff"] = 0.0
+        extra_args["unipc_accept_safety"] = 0.81
+
     if current_refiner is not None and hasattr(current_refiner.model, 'extra_conds'):
         positive_refiner = clip_separate_after_preparation(positive, target_model=current_refiner.model)
         negative_refiner = clip_separate_after_preparation(negative, target_model=current_refiner.model)

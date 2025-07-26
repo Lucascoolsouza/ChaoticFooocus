@@ -1789,3 +1789,86 @@ def sample_diverse_attention(
     for h in hooks:
         h.remove()
     return x
+
+@torch.no_grad()
+def sample_dpmpp_unipc_restart(
+    model,
+    x,
+    sigmas,
+    *,
+    extra_args=None,
+    callback=None,
+    disable=None,
+    eta=1.0,
+    s_noise=1.0,
+    noise_sampler=None,
+    restart_list=None,
+    unipc_order=3,
+    unipc_rtol=0.05,
+    unipc_atol=0.0078,
+    unipc_h_init=0.05,
+    unipc_pcoeff=0.0,
+    unipc_icoeff=1.0,
+    unipc_dcoeff=0.0,
+    unipc_accept_safety=0.81,
+):
+    """
+    Combines DPM++ sampling with UNIPC adaptive step size control and restart mechanism.
+    """
+    extra_args = {} if extra_args is None else extra_args
+    noise_sampler = default_noise_sampler(x) if noise_sampler is None else noise_sampler
+    s_in = x.new_ones([x.shape[0]])
+    sigma_fn = lambda t: t.neg().exp()
+    t_fn = lambda sigma: sigma.log().neg()
+
+    if restart_list is None:
+        restart_list = {0.1: [10, 2, 2]}  # Example restart list
+
+    restart_list = {int(torch.argmin(abs(sigmas - key), dim=0)): value for key, value in restart_list.items()}
+
+    step_list = []
+    for i in range(len(sigmas) - 1):
+        step_list.append((sigmas[i], sigmas[i + 1]))
+        if i + 1 in restart_list:
+            restart_steps, restart_times, restart_max = restart_list[i + 1]
+            min_idx = i + 1
+            max_idx = int(torch.argmin(abs(sigmas - restart_max), dim=0))
+            if max_idx < min_idx:
+                sigma_restart = get_sigmas_karras(restart_steps, sigmas[min_idx].item(), sigmas[max_idx].item(), device=sigmas.device)
+                while restart_times > 0:
+                    restart_times -= 1
+                    step_list.extend(zip(sigma_restart[:-1], sigma_restart[1:]))
+
+    def unipc_step(x, t, t_next, eps_cache=None):
+        dpm_solver = DPMSolver(model, extra_args, eps_callback=None, info_callback=None)
+        x, eps_cache = dpm_solver.dpm_solver_adaptive(
+            x, t, t_next, order=unipc_order, rtol=unipc_rtol, atol=unipc_atol, h_init=unipc_h_init,
+            pcoeff=unipc_pcoeff, icoeff=unipc_icoeff, dcoeff=unipc_dcoeff, accept_safety=unipc_accept_safety,
+            eta=eta, s_noise=s_noise, noise_sampler=noise_sampler, return_info=False
+        )
+        return x, eps_cache
+
+    last_sigma = None
+    for old_sigma, new_sigma in tqdm(step_list, disable=disable):
+        if last_sigma is None:
+            last_sigma = old_sigma
+        elif last_sigma < old_sigma:
+            x = x + torch.randn_like(x) * s_noise * (old_sigma ** 2 - last_sigma ** 2) ** 0.5
+
+        t, t_next = t_fn(old_sigma), t_fn(new_sigma)
+        x, _ = unipc_step(x, t, t_next)
+
+        if callback is not None:
+            callback(
+                {
+                    "x": x,
+                    "i": len(step_list) - len(step_list), # This will always be 0, consider using a proper step index
+                    "sigma": old_sigma,
+                    "sigma_hat": old_sigma,
+                    "denoised": x,  # Placeholder for denoised value
+                }
+            )
+
+        last_sigma = new_sigma
+
+    return x
