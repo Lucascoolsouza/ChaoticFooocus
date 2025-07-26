@@ -765,15 +765,15 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 set_guidance_config(
                     tpg_scale=tpg_scale if tpg_enabled else 0.0,
                     nag_scale=nag_scale,
-                    pag_scale=pag_scale if pag_enabled else 0.0
+                    dag_scale=dag_scale if dag_enabled else 0.0
                 )
             except ImportError:
                 print("[GUIDANCE] Warning: guidance_samplers not available")
             
             # Determine which guidance sampler to use
-            if (tpg_enabled and tpg_scale > 0) and (nag_scale > 1.0) and (pag_enabled and pag_scale > 0):
+            if (tpg_enabled and tpg_scale > 0) and (nag_scale > 1.0) and (dag_enabled and dag_scale > 0):
                 # All three guidance methods - use combined sampler
-                print(f"[GUIDANCE] Using combined guidance: TPG({tpg_scale}), NAG({nag_scale}), PAG({pag_scale})")
+                print(f"[GUIDANCE] Using combined guidance: TPG({tpg_scale}), NAG({nag_scale}), DAG({dag_scale})")
                 guidance_sampler = "euler_guidance"
             elif tpg_enabled and tpg_scale > 0:
                 print(f"[TPG] Using TPG sampler with scale {tpg_scale}")
@@ -781,9 +781,9 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             elif nag_scale > 1.0:
                 print(f"[NAG] Using NAG sampler with scale {nag_scale}")
                 guidance_sampler = "euler_nag"
-            elif pag_enabled and pag_scale > 0:
-                print(f"[PAG] Using PAG sampler with scale {pag_scale}")
-                guidance_sampler = "euler_pag"
+            elif dag_enabled and dag_scale > 0:
+                print(f"[DAG] Using DAG sampler with scale {dag_scale}")
+                guidance_sampler = "euler_dag"
             else:
                 guidance_sampler = sampler_name
         else:
