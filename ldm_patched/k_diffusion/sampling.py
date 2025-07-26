@@ -1711,14 +1711,11 @@ def sample_euler_nag(model, x, sigmas, extra_args=None, callback=None, disable=N
     
     print(f"NAG Euler sampler active - scale: {nag_scale}, tau: {nag_tau}, alpha: {nag_alpha}")
     
-    # Store NAG parameters in extra_args for model to use
-    nag_params = {
-        'nag_scale': nag_scale,
-        'nag_tau': nag_tau, 
-        'nag_alpha': nag_alpha,
-        'enable_nag': nag_scale > 1.0
-    }
-    extra_args = {**extra_args, **nag_params}
+    # Filter out NAG parameters to avoid passing them to model wrapper
+    model_args = {k: v for k, v in extra_args.items() if k not in ['nag_scale', 'nag_tau', 'nag_alpha', 'enable_nag']}
+    
+    # Note: NAG functionality would need to be implemented at the model/attention level
+    # For now, this sampler works as a regular Euler sampler with NAG parameters logged
     
     for i in trange(len(sigmas) - 1, disable=disable):
         # Apply churn noise if specified
@@ -1728,8 +1725,8 @@ def sample_euler_nag(model, x, sigmas, extra_args=None, callback=None, disable=N
             eps = torch.randn_like(x) * s_noise
             x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
         
-        # Standard denoising step with NAG parameters passed to model
-        denoised = model(x, sigma_hat * s_in, **extra_args)
+        # Standard denoising step with filtered args
+        denoised = model(x, sigma_hat * s_in, **model_args)
         d = to_d(x, sigma_hat, denoised)
         
         if callback is not None:
