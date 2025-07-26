@@ -1928,7 +1928,7 @@ def sample_euler_nag(model, x, sigmas, extra_args=None, callback=None, disable=N
     
     # Get NAG scale from global config if not provided
     if nag_scale is None:
-        nag_scale = _guidance_config.get('nag_scale', 0.2)
+        nag_scale = _guidance_config.get('nag_scale', 1.5)
     
     print(f"[NAG] Using NAG-enhanced Euler sampler with scale {nag_scale}")
     
@@ -1987,8 +1987,144 @@ def sample_euler_nag(model, x, sigmas, extra_args=None, callback=None, disable=N
     return x
 
 
+@torch.no_grad()
+def sample_euler_dag(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                     dag_scale=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
+    """Euler method with DAG (Dynamic Attention Guidance)"""
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    # Get DAG scale from global config if not provided
+    if dag_scale is None:
+        dag_scale = _guidance_config.get('dag_scale', 1.0)
+    
+    print(f"[DAG] Using DAG-enhanced Euler sampler with scale {dag_scale}")
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
+        sigma_hat = sigmas[i] * (gamma + 1)
+        if gamma > 0:
+            eps = torch.randn_like(x) * s_noise
+            x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
+        
+        # Standard denoising
+        denoised = model(x, sigma_hat * s_in, **extra_args)
+        
+        # Apply DAG if we have conditioning
+        if 'cond' in extra_args and len(extra_args['cond']) > 0 and dag_scale > 0:
+            try:
+                # Create DAG conditioning by applying dynamic attention modulation
+                dag_extra_args = extra_args.copy()
+                dag_cond = []
+                
+                for c in extra_args['cond']:
+                    new_c = c.copy()
+                    if 'model_conds' in new_c:
+                        for key, model_cond in new_c['model_conds'].items():
+                            if hasattr(model_cond, 'cond') and isinstance(model_cond.cond, torch.Tensor):
+                                # Apply dynamic attention modulation
+                                import copy
+                                new_model_cond = copy.deepcopy(model_cond)
+                                new_model_cond.cond = apply_dynamic_attention_modulation(
+                                    model_cond.cond,
+                                    step=i,
+                                    total_steps=len(sigmas) - 1,
+                                    modulation_strength=dag_scale
+                                )
+                                new_c['model_conds'][key] = new_model_cond
+                    dag_cond.append(new_c)
+                
+                dag_extra_args['cond'] = dag_cond
+                
+                # Get DAG prediction
+                denoised_dag = model(x, sigma_hat * s_in, **dag_extra_args)
+                
+                # Apply DAG guidance
+                guidance_direction = denoised - denoised_dag
+                denoised = denoised + dag_scale * guidance_direction
+                
+            except Exception as e:
+                print(f"[DAG] Error applying DAG at step {i}, using standard denoising: {e}")
+        
+        d = to_d(x, sigma_hat, denoised)
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
+        dt = sigmas[i + 1] - sigma_hat
+        x = x + d * dt
+    
+    return x
 
-
+@torch.no_grad()
+def sample_euler_dag(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                     dag_scale=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
+    """Euler method with DAG (Dynamic Attention Guidance)"""
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    # Get DAG scale from global config if not provided
+    if dag_scale is None:
+        dag_scale = _guidance_config.get('dag_scale', 2.5)
+    
+    total_steps = len(sigmas) - 1
+    print(f"[DAG] Using DAG-enhanced Euler sampler with scale {dag_scale}")
+    
+    for i in trange(total_steps, disable=disable):
+        gamma = min(s_churn / total_steps, 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
+        sigma_hat = sigmas[i] * (gamma + 1)
+        if gamma > 0:
+            eps = torch.randn_like(x) * s_noise
+            x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
+        
+        # Standard denoising
+        denoised = model(x, sigma_hat * s_in, **extra_args)
+        
+        # Apply DAG if we have conditioning
+        if 'cond' in extra_args and len(extra_args['cond']) > 0 and dag_scale > 0:
+            try:
+                # Create DAG conditioning with dynamic attention modulation
+                dag_extra_args = extra_args.copy()
+                dag_cond = []
+                
+                # Calculate dynamic modulation strength based on step and scale
+                progress = i / max(1, total_steps - 1)
+                dynamic_strength = dag_scale * (1.0 + 0.3 * math.sin(2 * math.pi * progress * 2))
+                
+                for c in extra_args['cond']:
+                    new_c = c.copy()
+                    if 'model_conds' in new_c:
+                        for key, model_cond in new_c['model_conds'].items():
+                            if hasattr(model_cond, 'cond') and isinstance(model_cond.cond, torch.Tensor):
+                                # Create dynamically modulated version
+                                import copy
+                                new_model_cond = copy.deepcopy(model_cond)
+                                new_model_cond.cond = apply_dynamic_attention_modulation(
+                                    model_cond.cond,
+                                    step=i,
+                                    total_steps=total_steps,
+                                    modulation_strength=dynamic_strength / dag_scale  # Normalize
+                                )
+                                new_c['model_conds'][key] = new_model_cond
+                    dag_cond.append(new_c)
+                
+                dag_extra_args['cond'] = dag_cond
+                
+                # Get DAG prediction with dynamic modulation
+                denoised_dag = model(x, sigma_hat * s_in, **dag_extra_args)
+                
+                # Apply DAG guidance with adaptive strength
+                guidance_direction = denoised - denoised_dag
+                denoised = denoised + dynamic_strength * guidance_direction
+                
+            except Exception as e:
+                print(f"[DAG] Error applying DAG at step {i}, using standard denoising: {e}")
+        
+        d = to_d(x, sigma_hat, denoised)
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
+        dt = sigmas[i + 1] - sigma_hat
+        x = x + d * dt
+    
+    return x
 
 @torch.no_grad()
 def sample_euler_guidance(model, x, sigmas, extra_args=None, callback=None, disable=None,
