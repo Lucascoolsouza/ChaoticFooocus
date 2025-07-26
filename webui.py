@@ -27,6 +27,8 @@ from modules.ui_gradio_extensions import reload_javascript
 from modules.auth import auth_enabled, check_auth
 from modules.util import is_json
 
+inpaint_mask_image_upload = None # Initialize to None
+
 def get_task(*args):
     args = list(args)
     args.pop(0)
