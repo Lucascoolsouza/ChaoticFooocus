@@ -841,20 +841,24 @@ input[type="text"]:not(#positive_prompt):focus, input[type="number"]:focus, inpu
     box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
 }
 
-/* Enhanced card/panel styles */
-.card, .panel, .container {
-    background: var(--glass-bg) !important;
-    backdrop-filter: var(--glass-backdrop) !important;
-    border: 1px solid var(--glass-border) !important;
-    border-radius: 6px !important;
-    box-shadow: var(--glass-shadow) !important;
-    transition: var(--transition-smooth) !important;
-    padding: 8px !important;
+/* Enhanced card/panel styles - only apply to specific contexts */
+.enhanced-layout .card, 
+.enhanced-layout .panel, 
+.enhanced-layout .container {
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-backdrop);
+    border: 1px solid var(--glass-border);
+    border-radius: 6px;
+    box-shadow: var(--glass-shadow);
+    transition: var(--transition-smooth);
+    padding: 8px;
 }
 
-.card:hover, .panel:hover, .container:hover {
-    transform: translateY(-1px) !important;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4) !important;
+.enhanced-layout .card:hover, 
+.enhanced-layout .panel:hover, 
+.enhanced-layout .container:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
 }
 
 /* Scrollbar styling */
