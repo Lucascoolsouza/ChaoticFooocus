@@ -6,7 +6,6 @@ from collections import namedtuple
 from ldm_patched.contrib.external_align_your_steps import AlignYourStepsScheduler
 from ldm_patched.contrib.external_custom_sampler import SDTurboScheduler
 from ldm_patched.k_diffusion import sampling as k_diffusion_sampling
-# Import guidance configuration functions
 from ldm_patched.modules.samplers import normal_scheduler, simple_scheduler, ddim_scheduler
 from ldm_patched.modules.model_base import SDXLRefiner, SDXL
 from ldm_patched.modules.conds import CONDRegular
@@ -14,7 +13,7 @@ from ldm_patched.modules.sample import get_additional_models, get_models_from_co
 from ldm_patched.modules.samplers import resolve_areas_and_cond_masks, wrap_model, calculate_start_end_timesteps, \
     create_cond_with_same_area_if_none, pre_run_control, apply_empty_x_to_equal_area, encode_model_conds
 
-# Import guidance configuration functions
+
 current_refiner = None
 refiner_switch_step = -1
 
@@ -163,113 +162,26 @@ def sample_hacked(model, noise, positive, negative, cfg, device, sampler, sigmas
 @torch.no_grad()
 @torch.inference_mode()
 def calculate_sigmas_scheduler_hacked(model, scheduler_name, steps):
-    sigma_min = float(model.model_sampling.sigma_min)
-    sigma_max = float(model.model_sampling.sigma_max)
-
-    if scheduler_name == "normal":
-        sigmas = normal_scheduler(model, steps)
-
-    elif scheduler_name == "karras":
+    if scheduler_name == "karras":
         sigmas = k_diffusion_sampling.get_sigmas_karras(n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max))
-
     elif scheduler_name == "exponential":
-        sigmas = k_diffusion_sampling.get_sigmas_exponential(
-            n=steps, sigma_min=sigma_min, sigma_max=sigma_max
-        )
-
-    elif scheduler_name == "sgm_uniform":
-        sigmas = normal_scheduler(model, steps, sgm=True)
-
+        sigmas = k_diffusion_sampling.get_sigmas_exponential(n=steps, sigma_min=float(model.model_sampling.sigma_min), sigma_max=float(model.model_sampling.sigma_max))
+    elif scheduler_name == "normal":
+        sigmas = normal_scheduler(model, steps)
     elif scheduler_name == "simple":
         sigmas = simple_scheduler(model, steps)
-
     elif scheduler_name == "ddim_uniform":
         sigmas = ddim_scheduler(model, steps)
-
+    elif scheduler_name == "sgm_uniform":
+        sigmas = normal_scheduler(model, steps, sgm=True)
     elif scheduler_name == "turbo":
         sigmas = SDTurboScheduler().get_sigmas(model=model, steps=steps, denoise=1.0)[0]
-
     elif scheduler_name == "align_your_steps":
-        model_type = 'SDXL' if isinstance(
-            model.latent_format,
-            ldm_patched.modules.latent_formats.SDXL
-        ) else 'SD1'
-        sigmas = AlignYourStepsScheduler().get_sigmas(
-            model_type=model_type, steps=steps, denoise=1.0
-        )[0]
-        
-    elif scheduler_name == "sinusoidal":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_sinusoidal(
-            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
-        )
-
-    elif scheduler_name == "chaotic":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_chaotic(
-            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
-        )
-
-    elif scheduler_name == "zigzag":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_zigzag(
-            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
-        )
-
-    elif scheduler_name == "jitter":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_jitter(
-            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
-        )
-
-    elif scheduler_name == "upscale":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_upscale(
-            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
-        )
-
-    elif scheduler_name == "mini_dalle":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_mini_dalle(
-            n=150, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
-        )
-
-    elif scheduler_name == "grid":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_grid(
-            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
-        )
-
-    elif scheduler_name == "pixel_art":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_pixel_art(
-            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
-        )
-
-    elif scheduler_name == "golden_ratio":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_golden_ratio(
-            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
-        )
-
-    elif scheduler_name == "dream":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_dream(
-            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
-        )
-
-    elif scheduler_name == "piecewise":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_piecewise(
-            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
-        )
-
-    elif scheduler_name == "trow_random_blsht":
-        sigmas = k_diffusion_sampling.get_sigmas_karras_trow_random_blsht(
-            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
-        )
-
-    elif scheduler_name == "comic_panel":
-        sigmas = k_diffusion_sampling.get_sigmas_comic(
-            n=steps, sigma_min=float(sigma_min), sigma_max=float(sigma_max)
-        )
-
-    
-        
+        model_type = 'SDXL' if isinstance(model.latent_format, ldm_patched.modules.latent_formats.SDXL) else 'SD1'
+        sigmas = AlignYourStepsScheduler().get_sigmas(model_type=model_type, steps=steps, denoise=1.0)[0]
     else:
-        raise TypeError(f"error invalid scheduler: {scheduler_name}")
-
+        raise TypeError("error invalid scheduler")
     return sigmas
-
 
 
 ldm_patched.modules.samplers.calculate_sigmas_scheduler = calculate_sigmas_scheduler_hacked

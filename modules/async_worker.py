@@ -51,9 +51,6 @@ class AsyncTask:
         self.current_tab = args.pop()
         self.uov_method = args.pop()
         self.uov_input_image = args.pop()
-        self.latent_upscale_method = args.pop()
-        self.latent_upscale_scheduler = args.pop()
-        self.latent_upscale_size = args.pop()
         self.outpaint_selections = args.pop()
         self.inpaint_input_image = args.pop()
         self.inpaint_additional_prompt = args.pop()
@@ -77,7 +74,6 @@ class AsyncTask:
         self.overwrite_height = args.pop()
         self.overwrite_vary_strength = args.pop()
         self.overwrite_upscale_strength = args.pop()
-        self.upscale_loops = args.pop()
         self.mixing_image_prompt_and_vary_upscale = args.pop()
         self.mixing_image_prompt_and_inpaint = args.pop()
         self.debugging_cn_preprocessor = args.pop()
@@ -99,45 +95,10 @@ class AsyncTask:
         self.inpaint_advanced_masking_checkbox = args.pop()
         self.invert_mask_checkbox = args.pop()
         self.inpaint_erode_or_dilate = args.pop()
-        
-        
         self.save_final_enhanced_image_only = args.pop() if not args_manager.args.disable_image_log else False
         self.save_metadata_to_images = args.pop() if not args_manager.args.disable_metadata else False
         self.metadata_scheme = MetadataScheme(
             args.pop()) if not args_manager.args.disable_metadata else MetadataScheme.FOOOCUS
-
-        # Detail daemon parameters (popped in reverse order from webui.py)
-        print(f"[DEBUG] Args remaining before detail daemon: {len(args)}")
-        
-        # Pop all 12 detail daemon parameters
-        detail_params = []
-        try:
-            for i in range(12):
-                param = args.pop()
-                detail_params.append(param)
-                print(f"[DEBUG] Popped param {i}: {param} (type: {type(param)})")
-        except IndexError as e:
-            print(f"[DEBUG] Error popping parameter {i}: {e}")
-            print(f"[DEBUG] Args remaining: {len(args)}")
-            # Fill remaining with defaults
-            while len(detail_params) < 12:
-                detail_params.append(None)
-        
-        # Assign in correct order matching webui ctrls order with defaults
-        self.detail_daemon_enabled = detail_params[0] if detail_params[0] is not None else False
-        self.detail_daemon_amount = detail_params[1] if detail_params[1] is not None else 0.25
-        self.detail_daemon_start = detail_params[2] if detail_params[2] is not None else 0.2
-        self.detail_daemon_end = detail_params[3] if detail_params[3] is not None else 0.8
-        self.detail_daemon_bias = detail_params[4] if detail_params[4] is not None else 0.71
-        self.detail_daemon_base_multiplier = detail_params[5] if detail_params[5] is not None else 0.85
-        self.detail_daemon_start_offset = detail_params[6] if detail_params[6] is not None else 0
-        self.detail_daemon_end_offset = detail_params[7] if detail_params[7] is not None else -0.15
-        self.detail_daemon_exponent = detail_params[8] if detail_params[8] is not None else 1
-        self.detail_daemon_fade = detail_params[9] if detail_params[9] is not None else 0
-        self.detail_daemon_mode = detail_params[10] if detail_params[10] is not None else 'both'
-        self.detail_daemon_smooth = detail_params[11] if detail_params[11] is not None else True
-        
-        print(f"[DEBUG] Detail daemon params: enabled={self.detail_daemon_enabled}, amount={self.detail_daemon_amount}, mode={self.detail_daemon_mode}")
 
         self.cn_tasks = {x: [] for x in ip_list}
         for _ in range(modules.config.default_controlnet_image_count):
@@ -155,11 +116,8 @@ class AsyncTask:
         self.enhance_input_image = args.pop()
         self.enhance_checkbox = args.pop()
         self.enhance_uov_method = args.pop()
-        self.enhance_bg_removal_model = args.pop()
         self.enhance_uov_processing_order = args.pop()
         self.enhance_uov_prompt_type = args.pop()
-        self.seamless_tiling_method = args.pop()
-        self.seamless_tiling_overlap = args.pop()
         self.enhance_ctrls = []
         for _ in range(modules.config.default_enhance_tabs):
             enhance_enabled = args.pop()
@@ -231,7 +189,6 @@ def worker():
     import extras.ip_adapter as ip_adapter
     import extras.face_crop
     import fooocus_version
-    from extras.TPG.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
 
     from extras.censor import default_censor
     from modules.sdxl_styles import apply_style, get_random_style, fooocus_expansion, apply_arrays, random_style_name
@@ -320,12 +277,10 @@ def worker():
         async_task.results = async_task.results + [wall]
         return
 
-    
-
     def process_task(all_steps, async_task, callback, controlnet_canny_path, controlnet_cpds_path, current_task_id,
                      denoising_strength, final_scheduler_name, goals, initial_latent, steps, switch, positive_cond,
                      negative_cond, task, loras, tiled, use_expansion, width, height, base_progress, preparation_steps,
-                     total_count, show_intermediate_results, persist_image=True, task_prompt=None, task_negative_prompt=None):
+                     total_count, show_intermediate_results, persist_image=True):
         if async_task.last_stop is not False:
             ldm_patched.modules.model_management.interrupt_current_processing()
         if 'cn' in goals:
@@ -337,20 +292,6 @@ def worker():
                     positive_cond, negative_cond = core.apply_controlnet(
                         positive_cond, negative_cond,
                         pipeline.loaded_ControlNets[cn_path], cn_img, cn_weight, 0, cn_stop)
-
-        # Use the pipeline.process_diffusion which now supports NAG and Detail Daemon
-        print(" SAMPLER DEBUG:")
-        print(f"  Requested sampler: {async_task.sampler_name}")
-        
-        
-
-        import inspect
-        from ldm_patched.k_diffusion import sampling as k_sampling
-        available_samplers = [name for name in dir(k_sampling) if name.startswith('sample_')]
-        print(f" Available samplers: {available_samplers}")
-
-        
-        
         imgs = pipeline.process_diffusion(
             positive_cond=positive_cond,
             negative_cond=negative_cond,
@@ -367,37 +308,15 @@ def worker():
             tiled=tiled,
             cfg_scale=async_task.cfg_scale,
             refiner_swap_method=async_task.refiner_swap_method,
-            disable_preview=async_task.disable_preview,
-            
-            
-            detail_daemon_enabled=async_task.detail_daemon_enabled,
-            detail_daemon_amount=async_task.detail_daemon_amount,
-            detail_daemon_start=async_task.detail_daemon_start,
-            detail_daemon_end=async_task.detail_daemon_end,
-            detail_daemon_bias=async_task.detail_daemon_bias,
-            detail_daemon_base_multiplier=async_task.detail_daemon_base_multiplier,
-            detail_daemon_start_offset=async_task.detail_daemon_start_offset,
-            detail_daemon_end_offset=async_task.detail_daemon_end_offset,
-            detail_daemon_exponent=async_task.detail_daemon_exponent,
-            detail_daemon_fade=async_task.detail_daemon_fade,
-            detail_daemon_mode=async_task.detail_daemon_mode,
-            detail_daemon_smooth=async_task.detail_daemon_smooth
+            disable_preview=async_task.disable_preview
         )
-
-        if imgs is None:
-            imgs = []
-
         del positive_cond, negative_cond  # Save memory
         if inpaint_worker.current_task is not None:
             imgs = [inpaint_worker.current_task.post_process(x) for x in imgs]
-        
-
         current_progress = int(base_progress + (100 - preparation_steps) / float(all_steps) * steps)
         if modules.config.default_black_out_nsfw or async_task.black_out_nsfw:
             progressbar(async_task, current_progress, 'Checking for NSFW content ...')
             imgs = default_censor(imgs)
-            if imgs is None:
-                imgs = []
         progressbar(async_task, current_progress, f'Saving image {current_task_id + 1}/{total_count} to system ...')
         img_paths = save_and_log(async_task, height, imgs, task, use_expansion, width, loras, persist_image)
         yield_result(async_task, img_paths, current_progress, async_task.black_out_nsfw, False,
@@ -530,7 +449,6 @@ def worker():
             denoising_strength = 0.5
         if 'strong' in uov_method:
             denoising_strength = 0.85
-        
         if async_task.overwrite_vary_strength > 0:
             denoising_strength = async_task.overwrite_vary_strength
         shape_ceil = get_image_shape_ceil(uov_input_image)
@@ -653,30 +571,26 @@ def worker():
         return inpaint_image, inpaint_mask
 
     def apply_upscale(async_task, uov_input_image, uov_method, switch, current_progress, advance_progress=False):
-        # Apply upscaler in a loop
-        for i in range(async_task.upscale_loops):
-            progressbar(async_task, current_progress, f'Upscaling image (Loop {i+1}/{async_task.upscale_loops}) ...')
-            uov_input_image = perform_upscale(uov_input_image, uov_method, async_task=async_task, vae_model=pipeline.final_vae)
-            print(f'Image upscaled (Loop {i+1}/{async_task.upscale_loops}).')
-
-        # Get final dimensions after all loops
         H, W, C = uov_input_image.shape
-
-        shape_ceil = get_shape_ceil(H, W) # Use current dimensions for shape_ceil
-
+        if advance_progress:
+            current_progress += 1
+        progressbar(async_task, current_progress, f'Upscaling image from {str((W, H))} ...')
+        uov_input_image = perform_upscale(uov_input_image)
+        print(f'Image upscaled.')
+        if '1.5x' in uov_method:
+            f = 1.5
+        elif '2x' in uov_method:
+            f = 2.0
+        else:
+            f = 1.0
+        shape_ceil = get_shape_ceil(H * f, W * f)
         if shape_ceil < 1024:
             print(f'[Upscale] Image is resized because it is too small.')
             uov_input_image = set_image_shape_ceil(uov_input_image, 1024)
-            shape_ceil = 1024 # Update shape_ceil after resizing
-        elif shape_ceil > 2800: # Added a check for super large images to resize down if needed
-            print(f'[Upscale] Image is resized because it is too large.')
-            uov_input_image = set_image_shape_ceil(uov_input_image, 2800) # Resize to a max reasonable size
-            shape_ceil = 2800 # Update shape_ceil after resizing
-
-        # The 'fast' and 'image_is_super_large' direct_return logic should still apply.
-        # The `image_is_super_large` check should use the `shape_ceil` after potential resizing.
-        image_is_super_large = shape_ceil > 2800 # Re-evaluate after potential resizing
-
+            shape_ceil = 1024
+        else:
+            uov_input_image = resample_image(uov_input_image, width=W * f, height=H * f)
+        image_is_super_large = shape_ceil > 2800
         if 'fast' in uov_method:
             direct_return = True
         elif image_is_super_large:
@@ -692,7 +606,7 @@ def worker():
         tiled = True
         denoising_strength = 0.382
         if async_task.overwrite_upscale_strength > 0:
-            denoising_strength = min(async_task.overwrite_upscale_strength, 1.0)
+            denoising_strength = async_task.overwrite_upscale_strength
         initial_pixels = core.numpy_to_pytorch(uov_input_image)
         if advance_progress:
             current_progress += 1
@@ -979,7 +893,6 @@ def worker():
             if isinstance(inpaint_image, np.ndarray) and isinstance(inpaint_mask, np.ndarray) \
                     and (np.any(inpaint_mask > 127) or len(async_task.outpaint_selections) > 0):
                 progressbar(async_task, 1, 'Downloading upscale models ...')
-                import modules.config
                 modules.config.downloading_upscale_model()
                 if inpaint_parameterized:
                     progressbar(async_task, 1, 'Downloading inpainter ...')
@@ -1024,7 +937,7 @@ def worker():
         uov_input_image = HWC3(uov_input_image)
         if 'vary' in uov_method:
             goals.append('vary')
-        elif 'upscale' in uov_method or 'ultrasharp' in uov_method or 'web photo' in uov_method or 'realistic rescaler' in uov_method or 'skin contrast' in uov_method or '4xnomos' in uov_method or 'faces' in uov_method or 'pixelsharpen' in uov_method or 'tghqface8x' in uov_method:
+        elif 'upscale' in uov_method:
             goals.append('upscale')
             if 'fast' in uov_method:
                 skip_prompt_processing = True
@@ -1035,59 +948,7 @@ def worker():
             if advance_progress:
                 current_progress += 1
             progressbar(async_task, current_progress, 'Downloading upscale models ...')
-            import modules.config
             modules.config.downloading_upscale_model()
-        elif 'remove background' in uov_method.lower():
-            goals.append('remove_background')
-            skip_prompt_processing = True
-            steps = 0
-            
-            if advance_progress:
-                current_progress += 1
-            progressbar(async_task, current_progress, 'Removing background ...')
-            
-            # Use the extension for background removal
-            from extras.rembg_bg_removal import remove_background
-            # uov_input_image may be numpy or PIL
-            bg_removal_model = async_task.enhance_bg_removal_model
-            uov_input_image = remove_background(uov_input_image, model_name=bg_removal_model)
-            print(f"[rembg_bg_removal] Output image shape after removal: {uov_input_image.shape}")
-            # Save debug output for manual inspection
-            try:
-                from PIL import Image
-                import modules.config
-                import os
-                output_path = os.path.join(modules.config.path_outputs, 'debug_bg_removed.png')
-                Image.fromarray(uov_input_image).save(output_path)
-                print(f'[rembg_bg_removal] Saved debug_bg_removed.png to {output_path}')
-                # Add debug image to results for gallery display
-                if hasattr(async_task, 'results') and isinstance(async_task.results, list):
-                    async_task.results.append(output_path)
-            except Exception as e:
-                print(f'[rembg_bg_removal] Failed to save debug image: {e}')
-            
-            # Ensure the image has an alpha channel if background was removed
-            if uov_input_image.shape[2] == 3: # If it's RGB, add an alpha channel
-                import numpy as np
-                alpha_channel = np.full((uov_input_image.shape[0], uov_input_image.shape[1], 1), 255, dtype=np.uint8)
-                uov_input_image = np.concatenate((uov_input_image, alpha_channel), axis=2)
-                print(f"[rembg_bg_removal] Converted to RGBA. New shape: {uov_input_image.shape}")
-            print(f'Background removed using {bg_removal_model} model')
-            # Force output format to PNG for gallery/visibility
-            async_task.output_format = 'png'
-            
-        elif 'seamless tiling' in uov_method.lower():
-            goals.append('upscale')  # Use upscale goal for seamless tiling
-            skip_prompt_processing = True
-            steps = 0  # No diffusion steps needed for seamless tiling
-            
-            if advance_progress:
-                current_progress += 1
-            progressbar(async_task, current_progress, 'Preparing seamless tiling ...')
-            
-            print(f"[SEAMLESS] Seamless tiling method detected: {uov_method}")
-            print(f"[SEAMLESS] Image shape: {uov_input_image.shape}")
-            
         return uov_input_image, skip_prompt_processing, steps
 
     def prepare_enhance_prompt(prompt: str, fallback_prompt: str):
@@ -1107,11 +968,6 @@ def worker():
                         prompt, negative_prompt, final_scheduler_name, goals, height, img, mask,
                         preparation_steps, steps, switch, tiled, total_count, use_expansion, use_style,
                         use_synthetic_refiner, width, show_intermediate_results=True, persist_image=True):
-
-        if 'remove_background' in goals and steps == 0:
-            # If background removal is the goal and steps is 0, return the processed image directly
-            return current_progress, img, prompt, negative_prompt
-
         base_model_additional_loras = []
         inpaint_head_model_path = None
         inpaint_parameterized = inpaint_engine != 'None'  # inpaint_engine = None, improve detail
@@ -1185,8 +1041,6 @@ def worker():
             async_task, goals_enhance, img, async_task.enhance_uov_method, async_task.performance_selection,
             enhance_steps, current_progress)
         steps, _, _, _ = apply_overrides(async_task, steps, height, width)
-        if 'remove_background' in goals_enhance:
-            steps = 0
         exception_result = ''
         if len(goals_enhance) > 0:
             try:
@@ -1297,9 +1151,6 @@ def worker():
         async_task.steps, switch, width, height = apply_overrides(async_task, async_task.steps, height, width)
 
         print(f'[Parameters] Sampler = {async_task.sampler_name} - {async_task.scheduler_name}')
-        
-        # Debug: Show guidance parameters
-        print(f'[Parameters] No guidance methods active')
         print(f'[Parameters] Steps = {async_task.steps} - {switch}')
 
         progressbar(async_task, current_progress, 'Initializing ...')
@@ -1439,8 +1290,7 @@ def worker():
                                                                  task['uc'], task, loras, tiled, use_expansion, width,
                                                                  height, current_progress, preparation_steps,
                                                                  async_task.image_number, show_intermediate_results,
-                                                                 persist_image,
-                                                                 task['task_prompt'], task['task_negative_prompt'])
+                                                                 persist_image)
 
                 current_progress = int(preparation_steps + (100 - preparation_steps) / float(all_steps) * async_task.steps * (current_task_id + 1))
                 images_to_enhance += imgs
@@ -1497,21 +1347,6 @@ def worker():
                     current_task_id, denoising_strength, done_steps_inpainting, done_steps_upscaling, enhance_steps,
                     async_task.prompt, async_task.negative_prompt, final_scheduler_name, height, img, preparation_steps,
                     switch, tiled, total_count, use_expansion, use_style, use_synthetic_refiner, width, persist_image)
-                if async_task.enhance_uov_method == flags.remove_background:
-                    # After enhance_upscale, the image 'img' should have the background removed.
-                    # Now, log and yield this processed image.
-                    if modules.config.default_black_out_nsfw or async_task.black_out_nsfw:
-                        progressbar(async_task, current_progress, 'Checking for NSFW content ...')
-                        img = default_censor(img)
-                    progressbar(async_task, current_progress, f'Saving image {current_task_id + 1}/{total_count} to system ...')
-                    # Force output format to PNG for background removal to preserve transparency
-                    original_output_format = async_task.output_format
-                    async_task.output_format = 'png'
-                    uov_image_path = log(img, [('Background Removed', 'background_removed', 'True')], output_format=async_task.output_format, persist_image=persist_image)
-                    async_task.output_format = original_output_format # Restore original output format
-                    yield_result(async_task, uov_image_path, current_progress, async_task.black_out_nsfw, False,
-                                 do_not_show_finished_images=not show_intermediate_results or async_task.disable_intermediate_results)
-                    exception_result = 'continue' # Skip further processing for this image
                 async_task.enhance_stats[index] += 1
 
                 if exception_result == 'continue':
@@ -1634,8 +1469,6 @@ def worker():
 
             try:
                 handler(task)
-                # Detail daemon is now integrated into the pipeline, no post-processing needed
-                
                 if task.generate_image_grid:
                     build_image_wall(task)
                 task.yields.append(['finish', task.results])
