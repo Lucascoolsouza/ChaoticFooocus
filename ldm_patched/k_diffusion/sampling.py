@@ -1950,12 +1950,8 @@ def sample_euler_multiscale(model, x, sigmas, extra_args=None, callback=None, di
     original_shape = x.shape
     
     for i in trange(len(sigmas) - 1, disable=disable):
-        # Apply churn noise if specified
-        gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
-        sigma_hat = sigmas[i] * (gamma + 1)
-        if gamma > 0:
-            eps = torch.randn_like(x) * s_noise
-            x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
+        # Use current sigma directly (no churn noise for multi-scale)
+        sigma_hat = sigmas[i]
         
         # Multi-scale processing
         guidance_list = []
