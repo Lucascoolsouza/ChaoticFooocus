@@ -352,19 +352,22 @@ def worker():
                         pipeline.loaded_ControlNets[cn_path], cn_img, cn_weight, 0, cn_stop)
 
         # Use the pipeline.process_diffusion which now supports NAG and Detail Daemon
-        print(f"[PROCESS_TASK DEBUG] dag_enabled: {async_task.dag_enabled}, tpg_enabled: {async_task.tpg_enabled}, nag_scale: {async_task.nag_scale}")
+        print(" SAMPLER DEBUG:")
+        print(f"  Requested sampler: {async_task.sampler_name}")
         
-        # Debug: Check if guidance samplers are being used
-        guidance_sampler_names = ['euler_tpg', 'euler_nag', 'euler_dag', 'euler_guidance']
-        if async_task.sampler_name in guidance_sampler_names:
-            print(f"[ASYNC_WORKER] 🎯 GUIDANCE SAMPLER DETECTED: {async_task.sampler_name}")
-            print(f"[ASYNC_WORKER] TPG: enabled={async_task.tpg_enabled}, scale={async_task.tpg_scale}")
-            print(f"[ASYNC_WORKER] NAG: scale={async_task.nag_scale}")
-            print(f"[ASYNC_WORKER] DAG: enabled={async_task.dag_enabled}, scale={async_task.dag_scale}")
-        else:
-            print(f"[ASYNC_WORKER] Regular sampler: {async_task.sampler_name}")
-            if async_task.tpg_enabled or async_task.nag_scale > 1.0 or async_task.dag_enabled:
-                print(f"[ASYNC_WORKER] ⚠️  WARNING: Guidance enabled but not using guidance sampler!")
+        is_guidance_sampler = any(name in async_task.sampler_name.lower() for name in ['tpg', 'nag', 'dag', 'guidance'])
+        print(f"[SAMPLER CHECK] Is guidance sampler: {is_guidance_sampler}")
+        print(f"[SAMPLER CHECK] Sampler name: {async_task.sampler_name}")
+
+        import inspect
+        from ldm_patched.k_diffusion import sampling as k_sampling
+        available_samplers = [name for name in dir(k_sampling) if name.startswith('sample_')]
+        print(f" Available samplers: {available_samplers}")
+
+        print(f"[PARAM PASS-THROUGH] DAG params being passed:")
+        print(f"  dag_enabled: {async_task.dag_enabled}")
+        print(f"  dag_scale: {async_task.dag_scale}")
+        print(f"  dag_applied_layers: {async_task.dag_applied_layers}")
         
         imgs = pipeline.process_diffusion(
             positive_cond=positive_cond,
