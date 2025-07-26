@@ -1849,13 +1849,22 @@ def apply_attention_degradation(embeddings, degradation_strength=0.5):
 def apply_dynamic_attention_modulation(embeddings, step=None, total_steps=None, modulation_strength=1.0):
     """Apply dynamic attention modulation for DAG (Dynamic Attention Guidance)"""
     try:
+        print(f"[DAG_DEBUG] apply_dynamic_attention_modulation called. Embeddings shape: {embeddings.shape}, step: {step}, total_steps: {total_steps}, strength: {modulation_strength}")
+        if torch.isnan(embeddings).any() or torch.isinf(embeddings).any():
+            print("[DAG_DEBUG] Input embeddings contain NaN/Inf. Returning original embeddings.")
+            return embeddings
+
         if step is None or total_steps is None:
             # Fallback to simple perturbation
             noise = torch.randn_like(embeddings) * 0.1 * modulation_strength
-            return embeddings + noise
+            print(f"[DAG_DEBUG] Fallback mode. Noise stats - mean: {noise.mean():.4f}, std: {noise.std():.4f}")
+            modulated_embeddings = embeddings + noise
+            print(f"[DAG_DEBUG] Modulated embeddings (fallback) stats - mean: {modulated_embeddings.mean():.4f}, std: {modulated_embeddings.std():.4f}")
+            return modulated_embeddings
         
         # Calculate sampling progress
         progress = step / max(1, total_steps - 1)
+        print(f"[DAG_DEBUG] Progress: {progress:.4f}")
         
         # Dynamic modulation strategy based on sampling progress
         if progress < 0.3:
@@ -1864,6 +1873,7 @@ def apply_dynamic_attention_modulation(embeddings, step=None, total_steps=None, 
             # Create correlated noise across tokens for structural coherence
             base_noise = torch.randn(embeddings.shape[0], 1, embeddings.shape[2], device=embeddings.device)
             noise = base_noise.expand_as(embeddings) * noise_scale
+            print(f"[DAG_DEBUG] Early stage. Noise scale: {noise_scale:.4f}")
             
         elif progress < 0.7:
             # Mid stage: Feature-level modulations
@@ -1872,19 +1882,28 @@ def apply_dynamic_attention_modulation(embeddings, step=None, total_steps=None, 
             base_noise = torch.nn.functional.interpolate(base_noise.unsqueeze(0), size=(embeddings.shape[1], embeddings.shape[2]), mode='nearest').squeeze(0)
             independent_noise = torch.randn_like(embeddings) * 0.05
             noise = (base_noise + independent_noise) * noise_scale
+            print(f"[DAG_DEBUG] Mid stage. Noise scale: {noise_scale:.4f}")
             
         else:
             # Late stage: Fine detail adjustments
             noise_scale = 0.08 * modulation_strength * (1.0 - progress)  # Fade out towards end
             noise = torch.randn_like(embeddings) * noise_scale
+            print(f"[DAG_DEBUG] Late stage. Noise scale: {noise_scale:.4f}")
         
         # Apply step-dependent frequency modulation
         if embeddings.shape[1] > 1:
             # Create frequency-based modulation
             freq_factor = 1.0 + 0.5 * math.sin(2 * math.pi * progress * 3)  # 3 cycles through sampling
             noise = noise * freq_factor
+            print(f"[DAG_DEBUG] Frequency modulation applied. Freq factor: {freq_factor:.4f}")
         
-        return embeddings + noise
+        modulated_embeddings = embeddings + noise
+        print(f"[DAG_DEBUG] Modulated embeddings stats - mean: {modulated_embeddings.mean():.4f}, std: {modulated_embeddings.std():.4f}, min: {modulated_embeddings.min():.4f}, max: {modulated_embeddings.max():.4f}")
+        if torch.isnan(modulated_embeddings).any() or torch.isinf(modulated_embeddings).any():
+            print("[DAG_DEBUG] Modulated embeddings contain NaN/Inf. Returning original embeddings.")
+            return embeddings # Return original if NaN/Inf detected after modulation
+
+        return modulated_embeddings
         
     except Exception as e:
         print(f"[DAG] Dynamic attention modulation error: {e}")
@@ -1892,7 +1911,7 @@ def apply_dynamic_attention_modulation(embeddings, step=None, total_steps=None, 
 
 @torch.no_grad()
 def sample_euler_tpg(model, x, sigmas, extra_args=None, callback=None, disable=None, 
-                     tpg_scale=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
+                     tpg_scale=None, tpg_applied_layers_index="", s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
     """Euler method with TPG (Token Perturbation Guidance)"""
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
@@ -1901,7 +1920,7 @@ def sample_euler_tpg(model, x, sigmas, extra_args=None, callback=None, disable=N
     if tpg_scale is None:
         tpg_scale = _guidance_config.get('tpg_scale', 3.0)
     
-    print(f"[TPG] Using TPG-enhanced Euler sampler with scale {tpg_scale}")
+    print(f"[TPG] Using TPG-enhanced Euler sampler with scale {tpg_scale}, applied layers: {tpg_applied_layers_index}")
     
     for i in trange(len(sigmas) - 1, disable=disable):
         gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
@@ -2034,7 +2053,7 @@ def sample_euler_nag(model, x, sigmas, extra_args=None, callback=None, disable=N
 
 @torch.no_grad()
 def sample_euler_dag(model, x, sigmas, extra_args=None, callback=None, disable=None,
-                     dag_scale=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
+                     dag_scale=None, dag_applied_layers="mid,up", s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
     """Euler method with DAG (Dynamic Attention Guidance)"""
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
@@ -2043,11 +2062,10 @@ def sample_euler_dag(model, x, sigmas, extra_args=None, callback=None, disable=N
     if dag_scale is None:
         dag_scale = _guidance_config.get('dag_scale', 2.5)
     
-    total_steps = len(sigmas) - 1
-    print(f"[DAG] Using DAG-enhanced Euler sampler with scale {dag_scale}")
+    print(f"[DAG] Using DAG-enhanced Euler sampler with scale {dag_scale}, applied layers: {dag_applied_layers}")
     
-    for i in trange(total_steps, disable=disable):
-        gamma = min(s_churn / total_steps, 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
+    for i in trange(len(sigmas) - 1, disable=disable):
+        gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
         sigma_hat = sigmas[i] * (gamma + 1)
         if gamma > 0:
             eps = torch.randn_like(x) * s_noise
@@ -2055,52 +2073,76 @@ def sample_euler_dag(model, x, sigmas, extra_args=None, callback=None, disable=N
         
         # Standard denoising
         denoised = model(x, sigma_hat * s_in, **extra_args)
-        
-        # Apply DAG if we have conditioning
+        print(f"[DAG_DEBUG] Step {i}: Denoised (before DAG) stats - mean: {denoised.mean():.4f}, std: {denoised.std():.4f}, min: {denoised.min():.4f}, max: {denoised.max():.4f}")
+        if torch.isnan(denoised).any() or torch.isinf(denoised).any():
+            print(f"[DAG_DEBUG] Step {i}: Denoised (before DAG) contains NaN/Inf. Exiting.")
+            return x # Exit early if NaNs are detected
+
+        # Apply DAG if enabled and we have conditioning
         if 'cond' in extra_args and len(extra_args['cond']) > 0 and dag_scale > 0:
             try:
-                # Create DAG conditioning with dynamic attention modulation
                 dag_extra_args = extra_args.copy()
                 dag_cond = []
-                
-                # Calculate dynamic modulation strength based on step and scale
-                progress = i / max(1, total_steps - 1)
-                dynamic_strength = dag_scale * (1.0 + 0.3 * math.sin(2 * math.pi * progress * 2))
                 
                 for c in extra_args['cond']:
                     new_c = c.copy()
                     if 'model_conds' in new_c:
                         for key, model_cond in new_c['model_conds'].items():
                             if hasattr(model_cond, 'cond') and isinstance(model_cond.cond, torch.Tensor):
-                                # Create dynamically modulated version
                                 import copy
                                 new_model_cond = copy.deepcopy(model_cond)
+                                
                                 new_model_cond.cond = apply_dynamic_attention_modulation(
-                                    model_cond.cond,
-                                    step=i,
-                                    total_steps=total_steps,
-                                    modulation_strength=dynamic_strength / dag_scale  # Normalize
+                                    model_cond.cond, 
+                                    step=i, 
+                                    total_steps=len(sigmas) - 1, 
+                                    modulation_strength=dag_scale
                                 )
+                                print(f"[DAG_DEBUG] Step {i}: Modulated cond stats - mean: {new_model_cond.cond.mean():.4f}, std: {new_model_cond.cond.std():.4f}, min: {new_model_cond.cond.min():.4f}, max: {new_model_cond.cond.max():.4f}")
+                                if torch.isnan(new_model_cond.cond).any() or torch.isinf(new_model_cond.cond).any():
+                                    print(f"[DAG_DEBUG] Step {i}: Modulated cond contains NaN/Inf. Skipping DAG for this step.")
+                                    dag_cond = extra_args['cond'] # Use original cond if modulated is bad
+                                    raise ValueError("NaN/Inf detected in modulated conditioning.") # Jump to exception handler
                                 new_c['model_conds'][key] = new_model_cond
                     dag_cond.append(new_c)
                 
                 dag_extra_args['cond'] = dag_cond
                 
-                # Get DAG prediction with dynamic modulation
+                # Get DAG prediction with modulated attention
                 denoised_dag = model(x, sigma_hat * s_in, **dag_extra_args)
-                
-                # Apply DAG guidance with adaptive strength
+                print(f"[DAG_DEBUG] Step {i}: Denoised (with DAG) stats - mean: {denoised_dag.mean():.4f}, std: {denoised_dag.std():.4f}, min: {denoised_dag.min():.4f}, max: {denoised_dag.max():.4f}")
+                if torch.isnan(denoised_dag).any() or torch.isinf(denoised_dag).any():
+                    print(f"[DAG_DEBUG] Step {i}: Denoised (with DAG) contains NaN/Inf. Skipping DAG for this step.")
+                    raise ValueError("NaN/Inf detected in DAG denoised output.") # Jump to exception handler
+
+                # Apply DAG guidance
                 guidance_direction = denoised - denoised_dag
-                denoised = denoised + dynamic_strength * guidance_direction
+                print(f"[DAG_DEBUG] Step {i}: Guidance direction stats - mean: {guidance_direction.mean():.4f}, std: {guidance_direction.std():.4f}, min: {guidance_direction.min():.4f}, max: {guidance_direction.max():.4f}")
+                if torch.isnan(guidance_direction).any() or torch.isinf(guidance_direction).any():
+                    print(f"[DAG_DEBUG] Step {i}: Guidance direction contains NaN/Inf. Skipping DAG for this step.")
+                    raise ValueError("NaN/Inf detected in guidance direction.") # Jump to exception handler
+
+                denoised = denoised + dag_scale * guidance_direction
+                print(f"[DAG_DEBUG] Step {i}: Denoised (after DAG) stats - mean: {denoised.mean():.4f}, std: {denoised.std():.4f}, min: {denoised.min():.4f}, max: {denoised.max():.4f}")
+                if torch.isnan(denoised).any() or torch.isinf(denoised).any():
+                    print(f"[DAG_DEBUG] Step {i}: Denoised (after DAG) contains NaN/Inf. Exiting.")
+                    return x # Exit early if NaNs are detected
                 
             except Exception as e:
                 print(f"[DAG] Error applying DAG at step {i}, using standard denoising: {e}")
+                # If an error occurs, ensure we proceed with the original denoised output
+                # and do not apply DAG guidance for this step.
+                # The 'denoised' variable already holds the standard denoised output.
         
         d = to_d(x, sigma_hat, denoised)
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
         dt = sigmas[i + 1] - sigma_hat
         x = x + d * dt
+        print(f"[DAG_DEBUG] Step {i}: X (after update) stats - mean: {x.mean():.4f}, std: {x.std():.4f}, min: {x.min():.4f}, max: {x.max():.4f}")
+        if torch.isnan(x).any() or torch.isinf(x).any():
+            print(f"[DAG_DEBUG] Step {i}: X contains NaN/Inf. Exiting.")
+            return x # Exit early if NaNs are detected
     
     return x
 
