@@ -1841,12 +1841,7 @@ def apply_attention_degradation(embeddings, degradation_strength=0.5):
         # This creates a "negative" version that can be used for guidance
         degraded = embeddings * (1.0 - degradation_strength)
         
-        # Add controlled noise to break attention patterns
-        if degradation_strength > 0:
-            noise_scale = degradation_strength * 0.1
-            noise = torch.randn_like(embeddings) * noise_scale
-            degraded = degraded + noise
-            
+        # Removed explicit noise addition to prevent arbitrary deviations.
         return degraded
     except Exception:
         return embeddings
