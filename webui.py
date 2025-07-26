@@ -995,6 +995,9 @@ with shared.gradio_root:
                         nag_negative_prompt = gr.Textbox(label='NAG Negative Prompt', show_label=True,
                                                          placeholder="Type negative prompt for NAG here.", lines=2,
                                                          elem_id='nag_negative_prompt')
+                        nag_negative_prompt = gr.Textbox(label='NAG Negative Prompt', show_label=True,
+                                                         placeholder="Type negative prompt for NAG here.", lines=2,
+                                                         elem_id='nag_negative_prompt')
                         nag_end = gr.Slider(label='NAG End At Step', minimum=0.0, maximum=1.0, step=0.01, value=1.0,
                                             info='When to end NAG guidance (0.0 to 1.0 of total steps).')
                         nag_ctrls = [nag_scale, nag_tau, nag_alpha, nag_negative_prompt, nag_end]
@@ -1204,7 +1207,7 @@ with shared.gradio_root:
                               outputs=[stop_button, skip_button, generate_button, gallery, state_is_generating]) \
             .then(fn=refresh_seed, inputs=[seed_random, image_seed], outputs=image_seed) \
             .then(fn=lambda *args: print(f"[WEBUI_DEBUG] ctrls before get_task: {args}"), inputs=ctrls, outputs=None, queue=False)             .then(fn=get_task, inputs=ctrls, outputs=currentTask)
-            .then(fn=generate_clicked, inputs=currentTask, outputs=[progress_html, progress_window, progress_gallery, gallery]) \
+            .then(fn=generate_clicked, inputs=currentTask, outputs=[progress_html, progress_window, progress_gallery, gallery])
             .then(lambda: (gr.update(visible=True, interactive=True), gr.update(visible=False, interactive=False), gr.update(visible=False, interactive=False), False),
                   outputs=[generate_button, stop_button, skip_button, state_is_generating]) \
             .then(fn=update_history_link, outputs=history_link) \
