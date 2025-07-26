@@ -756,7 +756,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         tokenizer_l_on_device = add_tokenizer_compatibility(tokenizer_l_on_device)
         tokenizer_g_on_device = add_tokenizer_compatibility(tokenizer_g_on_device)
 
-        # Handle special guidance with the simpler sampler approach
+        # Handle special guidance with samplers
         guidance_active = False
         
         # Activate TPG if enabled
@@ -782,80 +782,41 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             pag_sampler.activate(final_unet)
             guidance_active = True
         
-        if guidance_active:
-            try:
-                # Use regular ksampler with guidance modifications
-                ksampler_imgs = core.ksampler(
-                    model=final_unet,
-                    positive=positive_cond,
-                    negative=negative_cond,
-                    latent=initial_latent,
-                    seed=image_seed,
-                    steps=steps,
-                    cfg=cfg_scale,
-                    sampler_name=sampler_name,
-                    scheduler=scheduler_name,
-                    denoise=denoise,
-                    disable_preview=disable_preview,
-                    refiner=final_refiner_unet,
-                    refiner_switch=switch,
-                    sigmas=minmax_sigmas,
-                    callback_function=callback
-                )['samples']
-                
-                # Convert latents to images
-                if ksampler_imgs is not None:
-                    latent_dict = {'samples': ksampler_imgs}
-                    imgs = core.decode_vae(target_vae, latent_dict)
-                    imgs = core.pytorch_to_numpy(imgs)
-                else:
-                    imgs = []
-                
-                return imgs
-                
-            finally:
-                # Always deactivate all guidance methods
-                if tpg_enabled and tpg_scale > 0:
-                    tpg_sampler.deactivate()
-                if nag_scale > 1.0:
-                    nag_sampler.deactivate()
-                if pag_enabled and pag_scale > 0:
-                    pag_sampler.deactivate()
-        else:
-            # Fallback to regular ksampler if no special guidance is enabled
-            print("[DEFAULT] No special guidance enabled, using regular ksampler")
-            # Skip the complex pipeline setup and use regular ksampler
-            pass  # This will fall through to the regular ksampler below
-
-        # All guidance methods now use the sampler approach above
-    
-    # Use regular ksampler if no special guidance is enabled
-    if not (nag_scale > 1.0 or (tpg_enabled and tpg_scale > 0) or (pag_enabled and pag_scale > 0)):
-        print("[DEFAULT] Using regular ksampler")
-        ksampler_imgs = core.ksampler(
-            model=final_unet,
-            positive=positive_cond,
-            negative=negative_cond,
-            latent=initial_latent,
-            seed=image_seed,
-            steps=steps,
-            cfg=cfg_scale,
-            sampler_name=sampler_name,
-            scheduler=scheduler_name,
-            denoise=denoise,
-            disable_preview=disable_preview,
-            refiner=final_refiner_unet,
-            refiner_switch=switch,
-            sigmas=minmax_sigmas,
-            callback_function=callback
-        )['samples']
-        
-        # Convert latents to images
-        if ksampler_imgs is not None:
-            latent_dict = {'samples': ksampler_imgs}
-            imgs = core.decode_vae(target_vae, latent_dict)
-            imgs = core.pytorch_to_numpy(imgs)
-        else:
-            imgs = []
-    
-    return imgs
+        try:
+            # Use regular ksampler with guidance modifications
+            ksampler_imgs = core.ksampler(
+                model=final_unet,
+                positive=positive_cond,
+                negative=negative_cond,
+                latent=initial_latent,
+                seed=image_seed,
+                steps=steps,
+                cfg=cfg_scale,
+                sampler_name=sampler_name,
+                scheduler=scheduler_name,
+                denoise=denoise,
+                disable_preview=disable_preview,
+                refiner=final_refiner_unet,
+                refiner_switch=switch,
+                sigmas=minmax_sigmas,
+                callback_function=callback
+            )['samples']
+            
+            # Convert latents to images
+            if ksampler_imgs is not None:
+                latent_dict = {'samples': ksampler_imgs}
+                imgs = core.decode_vae(target_vae, latent_dict)
+                imgs = core.pytorch_to_numpy(imgs)
+            else:
+                imgs = []
+            
+            return imgs
+            
+        finally:
+            # Always deactivate all guidance methods
+            if tpg_enabled and tpg_scale > 0:
+                tpg_sampler.deactivate()
+            if nag_scale > 1.0:
+                nag_sampler.deactivate()
+            if pag_enabled and pag_scale > 0:
+                pag_sampler.deactivate()

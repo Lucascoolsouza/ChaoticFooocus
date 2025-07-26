@@ -170,11 +170,11 @@ div:has(> #positive_prompt) {
 }
 
 .type_row {
-  height: 84px !important;
+  height: 84px;
 }
 
 .type_row_half {
-  height: 34px !important;
+  height: 34px;
 }
 
 .refresh_button {
@@ -236,7 +236,6 @@ div:has(> #positive_prompt) {
 }
 
 .lora_enable label span {
-  display: none;
 }
 
  @-moz-document url-prefix() {
@@ -561,7 +560,7 @@ div:has(> #positive_prompt) {
 }
 
 .contain .tabs .tabitem.style_selections_tab .style_selections .wrap[data-testid="checkbox-group"] {
-  position: absolute; /* remove this to disable scrolling within the checkbox-group */
+  /* position: absolute; */ /* remove this to disable scrolling within the checkbox-group */
   overflow: auto;
   padding-right: 2px;
   max-height: 100%;
