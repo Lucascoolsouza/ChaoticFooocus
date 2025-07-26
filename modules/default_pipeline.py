@@ -771,11 +771,15 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 elif sampler_name == 'euler_nag':
                     nag_scale = 1.5
                 elif sampler_name == 'euler_dag':
-                    dag_enabled, dag_scale = True, 2.5
+                    if not dag_enabled:
+                        dag_enabled, dag_scale = True, 2.5
                 elif sampler_name == 'euler_guidance':
-                    tpg_enabled, tpg_scale = True, 3.0
-                    nag_scale = 1.5
-                    dag_enabled, dag_scale = True, 2.5
+                    if not tpg_enabled:
+                        tpg_enabled, tpg_scale = True, 3.0
+                    if nag_scale <= 1.0:
+                        nag_scale = 1.5
+                    if not dag_enabled:
+                        dag_enabled, dag_scale = True, 2.5
             
             # Set global guidance configuration
             try:

@@ -31,6 +31,13 @@ def get_task(*args):
     args = list(args)
     args.pop(0)
 
+    # Ensure dag_enabled is a boolean
+    if len(args) > 0 and isinstance(args[-1], str):
+        if args[-1] == '':
+            args[-1] = False
+        else:
+            args[-1] = bool(args[-1])
+
     return worker.AsyncTask(args=args)
 
 def generate_clicked(task: worker.AsyncTask):
