@@ -1539,7 +1539,7 @@ def sample_tcd(model, x, sigmas, extra_args=None, callback=None, disable=None, n
 
 
 @torch.no_grad()
-def sample_euler_token_shuffle(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1., shuffle_strength=0.2):
+def sample_euler_token_shuffle(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=0.5, shuffle_strength=0.5):
     """Euler sampler with token shuffling at each step.
     
     This sampler shuffles the spatial positions (tokens) of the latent tensor at each
@@ -1612,7 +1612,7 @@ def sample_euler_token_shuffle(model, x, sigmas, extra_args=None, callback=None,
 
 
 @torch.no_grad()
-def sample_heun_token_shuffle(model, x, sigmas, extra_args=None, callback=None, disable=None, shuffle_strength=1.0, s_noise=1.):
+def sample_heun_token_shuffle(model, x, sigmas, extra_args=None, callback=None, disable=None, shuffle_strength=0.5, s_noise=0.5):
     """Heun sampler with token shuffling at each step.
     
     This sampler combines Heun's method with token shuffling for more accurate
@@ -1836,7 +1836,7 @@ def sample_dpmpp_2m_nag(model, x, sigmas, extra_args=None, callback=None, disabl
 
 
 @torch.no_grad()
-def sample_euler_multiscale(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1., scales=[1.0, 0.5, 0.25], guidance_weights=[0.6, 0.3, 0.1], blend_mode='weighted'):
+def sample_euler_multiscale(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=0.5, scales=[1.0, 0.5, 0.25], guidance_weights=[0.6, 0.3, 0.1], blend_mode='weighted'):
     """Euler sampler with multi-scale guidance for better detail preservation.
     
     This sampler processes the latent at multiple scales simultaneously and combines
