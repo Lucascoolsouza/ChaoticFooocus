@@ -1539,7 +1539,7 @@ def sample_tcd(model, x, sigmas, extra_args=None, callback=None, disable=None, n
 
 
 @torch.no_grad()
-def sample_euler_token_shuffle(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1., shuffle_strength=1.0):
+def sample_euler_token_shuffle(model, x, sigmas, extra_args=None, callback=None, disable=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1., shuffle_strength=0.2):
     """Euler sampler with token shuffling at each step.
     
     This sampler shuffles the spatial positions (tokens) of the latent tensor at each
