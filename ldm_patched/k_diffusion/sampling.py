@@ -2031,7 +2031,7 @@ def sample_euler_guidance(model, x, sigmas, extra_args=None, callback=None, disa
         
         # Apply guidance if we have conditioning and any guidance is enabled
         if ('cond' in extra_args and len(extra_args['cond']) > 0 and 
-            if (tpg_scale > 0 or nag_scale > 1.0):):
+            if (tpg_scale > 0 or nag_scale > 1.0):
             
             try:
                 guidance_sum = torch.zeros_like(denoised)
