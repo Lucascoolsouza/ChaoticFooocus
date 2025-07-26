@@ -756,7 +756,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         tokenizer_g_on_device = add_tokenizer_compatibility(tokenizer_g_on_device)
 
         # Handle guidance by selecting appropriate sampler
-        guidance_active = (tpg_enabled and tpg_scale > 0) or (nag_scale > 1.0) or (pag_enabled and pag_scale > 0)
+        guidance_active = (tpg_enabled and tpg_scale > 0) or (nag_scale > 1.0) or (dag_enabled and dag_scale > 0)
         
         if guidance_active:
             # Set global guidance configuration
