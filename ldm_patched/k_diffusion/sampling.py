@@ -2110,6 +2110,133 @@ def sample_heun_multiscale(model, x, sigmas, extra_args=None, callback=None, dis
 
 
 @torch.no_grad()
+def sample_dpmpp_sde_gpu_token_shuffle(model, x, sigmas, extra_args=None, callback=None, disable=None, eta=1., s_noise=1., noise_sampler=None, r=1/2, shuffle_strength=0.3):
+    """DPM++ SDE GPU sampler with token shuffling.
+    
+    This sampler combines the DPM++ SDE GPU method with token shuffling for more
+    diverse and chaotic generation patterns.
+    
+    Args:
+        eta: Noise scale factor for ancestral sampling
+        s_noise: Noise multiplier
+        noise_sampler: Custom noise sampler (will use GPU-based if None)
+        r: Solver ratio parameter
+        shuffle_strength: Strength of token shuffling (0.0 = none, 1.0 = full)
+    """
+    sigma_min, sigma_max = sigmas[sigmas > 0].min(), sigmas.max()
+    seed = extra_args.get("seed", None) if extra_args else None
+    noise_sampler = BrownianTreeNoiseSampler(x, sigma_min, sigma_max, seed=seed, cpu=False) if noise_sampler is None else noise_sampler
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    sigma_fn = lambda t: t.neg().exp()
+    t_fn = lambda sigma: sigma.log().neg()
+    
+    # Calculate total tokens for logging
+    b, c, h, w = x.shape
+    total_tokens = h * w
+    
+    print(f"Token shuffle DPM++ SDE GPU sampler active - shuffling {total_tokens} tokens each step")
+    
+    def shuffle_tokens(tensor, strength, step_ratio):
+        """Helper function to shuffle tokens in a tensor with improved algorithm"""
+        if strength <= 0.0:
+            return tensor
+            
+        b, c, h, w = tensor.shape
+        tokens = h * w
+        
+        # Progressive shuffling that decreases over time
+        dynamic_strength = strength * (1.0 - step_ratio * 0.8)
+        
+        if dynamic_strength <= 0.01:
+            return tensor
+        
+        # Flatten spatial dimensions
+        flat = tensor.view(b, c, tokens)
+        shuffled = torch.zeros_like(flat)
+        
+        for batch_idx in range(b):
+            # Local shuffling: shuffle within small neighborhoods to preserve structure
+            neighborhood_size = max(4, int(16 * (1.0 - dynamic_strength)))
+            
+            # Create a copy to work with
+            current_tokens = flat[batch_idx].clone()
+            
+            # Apply neighborhood-based shuffling
+            for start_idx in range(0, tokens, neighborhood_size):
+                end_idx = min(start_idx + neighborhood_size, tokens)
+                neighborhood_size_actual = end_idx - start_idx
+                
+                if neighborhood_size_actual > 1:
+                    # Only shuffle a fraction of tokens within this neighborhood
+                    num_to_shuffle = max(1, int(neighborhood_size_actual * dynamic_strength))
+                    
+                    # Get indices within this neighborhood
+                    local_indices = torch.arange(start_idx, end_idx, device=tensor.device)
+                    
+                    # Randomly select which tokens to shuffle
+                    shuffle_candidates = torch.randperm(neighborhood_size_actual, device=tensor.device)[:num_to_shuffle]
+                    selected_indices = local_indices[shuffle_candidates]
+                    
+                    # Shuffle only the selected tokens within the neighborhood
+                    if len(selected_indices) > 1:
+                        shuffled_order = torch.randperm(len(selected_indices), device=tensor.device)
+                        temp_values = current_tokens[:, selected_indices].clone()
+                        current_tokens[:, selected_indices] = temp_values[:, shuffled_order]
+            
+            shuffled[batch_idx] = current_tokens
+        
+        # Blend with original to reduce harshness
+        blend_factor = 0.7 + 0.3 * step_ratio
+        x_blended = blend_factor * flat + (1.0 - blend_factor) * shuffled
+        
+        return x_blended.view(b, c, h, w)
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        # Calculate step ratio for progressive shuffling
+        step_ratio = i / (len(sigmas) - 1)
+        
+        # Shuffle tokens before denoising
+        x = shuffle_tokens(x, shuffle_strength, step_ratio)
+        
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        
+        if sigmas[i + 1] == 0:
+            # Euler method for final step
+            d = to_d(x, sigmas[i], denoised)
+            dt = sigmas[i + 1] - sigmas[i]
+            x = x + d * dt
+        else:
+            # DPM-Solver++ with token shuffling
+            t, t_next = t_fn(sigmas[i]), t_fn(sigmas[i + 1])
+            h = t_next - t
+            s = t + h * r
+            fac = 1 / (2 * r)
+            
+            # Step 1
+            sd, su = get_ancestral_step(sigma_fn(t), sigma_fn(s), eta)
+            s_ = t_fn(sd)
+            x_2 = (sigma_fn(s_) / sigma_fn(t)) * x - (t - s_).expm1() * denoised
+            x_2 = x_2 + noise_sampler(sigma_fn(t), sigma_fn(s)) * s_noise * su
+            
+            # Optional light shuffling for intermediate step
+            x_2 = shuffle_tokens(x_2, shuffle_strength * 0.3, step_ratio)
+            
+            denoised_2 = model(x_2, sigma_fn(s) * s_in, **extra_args)
+            
+            # Step 2
+            sd, su = get_ancestral_step(sigma_fn(t), sigma_fn(t_next), eta)
+            t_next_ = t_fn(sd)
+            denoised_d = (1 - fac) * denoised + fac * denoised_2
+            x = (sigma_fn(t_next_) / sigma_fn(t)) * x - (t - t_next_).expm1() * denoised_d
+            x = x + noise_sampler(sigma_fn(t), sigma_fn(t_next)) * s_noise * su
+    
+    return x
+
+
+@torch.no_grad()
 def sample_restart(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., restart_list=None):
     """Implements restart sampling in Restart Sampling for Improving Generative Processes (2023)
     Restart_list format: {min_sigma: [ restart_steps, restart_times, max_sigma]}
