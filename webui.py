@@ -19,6 +19,7 @@ import launch
 from extras.inpaint_mask import SAMOptions
 from extras.nag import NAGStableDiffusionXLPipeline
 from extras.TPG.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
+# DAG (Dynamic Attention Guidance) - no separate pipeline needed
 
 from modules.sdxl_styles import legal_style_names
 from modules.private_logger import get_current_html_path
@@ -1003,7 +1004,15 @@ with shared.gradio_root:
                                                               placeholder="e.g., d6,d7,d8,d9,d10,d11,d12,d13,d14,d15,d16,d17,d18,d19,d20,d21,d22,d23", lines=1,
                                                               info='Comma-separated list of layers to apply TPG. d=down, m=mid, u=up. e.g., d6,d7,m0,u0')
                         tpg_ctrls = [tpg_enabled, tpg_scale, tpg_applied_layers_index]
-                    
+                    with gr.Tab(label='DAG'):
+                        dag_enabled = gr.Checkbox(label='Enable Dynamic Attention Guidance', value=False,
+                                                  info='Enables Dynamic Attention Guidance with evolving perturbations.')
+                        dag_scale = gr.Slider(label='DAG Scale', minimum=0.0, maximum=10.0, step=0.1, value=2.5,
+                                              info='Controls the strength of Dynamic Attention Guidance.')
+                        dag_applied_layers = gr.Textbox(label='DAG Applied Layers', show_label=True,
+                                                        placeholder="e.g., mid,up", lines=1,
+                                                        info='Comma-separated list of layer types to apply DAG. e.g., mid,up')
+                        dag_ctrls = [dag_enabled, dag_scale, dag_applied_layers]
 
                 def dev_mode_checked(r):
                     return gr.update(visible=r)
@@ -1139,7 +1148,7 @@ with shared.gradio_root:
         ctrls += inpaint_ctrls
         ctrls += nag_ctrls
         ctrls += tpg_ctrls
-        
+        ctrls += dag_ctrls
 
         if not args_manager.args.disable_image_log:
             ctrls += [save_final_enhanced_image_only]

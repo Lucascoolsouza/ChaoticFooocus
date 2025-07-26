@@ -107,7 +107,20 @@ class AsyncTask:
         self.tpg_enabled = args.pop()
         self.tpg_scale = args.pop()
         self.tpg_applied_layers_index = args.pop()
-        
+        # Handle DAG parameters with proper defaults
+        dag_params = []
+        for _ in range(3):
+            try:
+                dag_params.append(args.pop())
+            except IndexError:
+                dag_params.append(None)
+
+        # Assign in correct order (reverse of popping)
+        self.dag_applied_layers = dag_params[0] if dag_params[0] is not None else "mid,up"
+        self.dag_scale = dag_params[1] if dag_params[1] is not None else 2.5
+        self.dag_enabled = dag_params[2] if dag_params[2] is not None else False
+
+        print(f"[DAG INIT] Enabled: {self.dag_enabled}, Scale: {self.dag_scale}, Layers: {self.dag_applied_layers}")
         
         self.save_final_enhanced_image_only = args.pop() if not args_manager.args.disable_image_log else False
         self.save_metadata_to_images = args.pop() if not args_manager.args.disable_metadata else False
@@ -359,7 +372,10 @@ def worker():
         available_samplers = [name for name in dir(k_sampling) if name.startswith('sample_')]
         print(f" Available samplers: {available_samplers}")
 
-        
+        print(f"[PARAM PASS-THROUGH] DAG params being passed:")
+        print(f"  dag_enabled: {async_task.dag_enabled}")
+        print(f"  dag_scale: {async_task.dag_scale}")
+        print(f"  dag_applied_layers: {async_task.dag_applied_layers}")
         
         imgs = pipeline.process_diffusion(
             positive_cond=positive_cond,
