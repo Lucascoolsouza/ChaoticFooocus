@@ -1999,30 +1999,95 @@ def sample_euler_nag(model, x, sigmas, extra_args=None, callback=None, disable=N
                     if 'model_conds' in new_c:
                         for key, model_cond in new_c['model_conds'].items():
                             if hasattr(model_cond, 'cond') and isinstance(model_cond.cond, torch.Tensor):
+                                # Apply attention degradation
                                 import copy
                                 new_model_cond = copy.deepcopy(model_cond)
-                                # Strong degradation to create "null" conditioning
                                 new_model_cond.cond = apply_attention_degradation(
                                     model_cond.cond, 
-                                    degradation_strength=0.2  # Very strong degradation
+                                    degradation_strength=nag_scale - 1.0 # Scale degradation with nag_scale
                                 )
                                 new_c['model_conds'][key] = new_model_cond
                     nag_cond.append(new_c)
                 
                 nag_extra_args['cond'] = nag_cond
                 
-                # Get prediction with degraded positive conditioning
+                # Get negative prediction
                 denoised_nag = model(x, sigma_hat * s_in, **nag_extra_args)
                 
-                # NAG guidance: The difference shows what the positive conditioning adds
-                positive_contribution = denoised - denoised_nag
-                
-                # Apply NAG: Reduce positive contribution, enhancing negative prompt effectiveness
-                nag_strength = (nag_scale - 1.0)
-                denoised = denoised + nag_strength * positive_contribution
+                # Apply NAG guidance: push away from degraded positive conditioning
+                guidance_direction = denoised - denoised_nag
+                denoised = denoised + nag_scale * guidance_direction
                 
             except Exception as e:
-                print(f"[NAG] Error applying NAG, using standard denoising: {e}")
+                print(f"[NAG] Error applying NAG at step {i}, using standard denoising: {e}")
+        
+        d = to_d(x, sigma_hat, denoised)
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
+        dt = sigmas[i + 1] - sigma_hat
+        x = x + d * dt
+    
+    return x
+
+
+@torch.no_grad()
+def sample_euler_dag(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                     dag_scale=None, s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
+    """Euler method with DAG (Dynamic Attention Guidance)"""
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    # Get DAG scale from global config if not provided
+    if dag_scale is None:
+        dag_scale = _guidance_config.get('dag_scale', 1.0)
+    
+    print(f"[DAG] Using DAG-enhanced Euler sampler with scale {dag_scale}")
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
+        sigma_hat = sigmas[i] * (gamma + 1)
+        if gamma > 0:
+            eps = torch.randn_like(x) * s_noise
+            x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
+        
+        # Standard denoising
+        denoised = model(x, sigma_hat * s_in, **extra_args)
+        
+        # Apply DAG if we have conditioning
+        if 'cond' in extra_args and len(extra_args['cond']) > 0 and dag_scale > 0:
+            try:
+                # Create DAG conditioning by applying dynamic attention modulation
+                dag_extra_args = extra_args.copy()
+                dag_cond = []
+                
+                for c in extra_args['cond']:
+                    new_c = c.copy()
+                    if 'model_conds' in new_c:
+                        for key, model_cond in new_c['model_conds'].items():
+                            if hasattr(model_cond, 'cond') and isinstance(model_cond.cond, torch.Tensor):
+                                # Apply dynamic attention modulation
+                                import copy
+                                new_model_cond = copy.deepcopy(model_cond)
+                                new_model_cond.cond = apply_dynamic_attention_modulation(
+                                    model_cond.cond,
+                                    step=i,
+                                    total_steps=len(sigmas) - 1,
+                                    modulation_strength=dag_scale
+                                )
+                                new_c['model_conds'][key] = new_model_cond
+                    dag_cond.append(new_c)
+                
+                dag_extra_args['cond'] = dag_cond
+                
+                # Get DAG prediction
+                denoised_dag = model(x, sigma_hat * s_in, **dag_extra_args)
+                
+                # Apply DAG guidance
+                guidance_direction = denoised - denoised_dag
+                denoised = denoised + dag_scale * guidance_direction
+                
+            except Exception as e:
+                print(f"[DAG] Error applying DAG at step {i}, using standard denoising: {e}")
         
         d = to_d(x, sigma_hat, denoised)
         if callback is not None:
