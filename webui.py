@@ -989,12 +989,12 @@ with shared.gradio_root:
                                             info='Threshold for attention guidance.')
                         nag_alpha = gr.Slider(label='NAG Alpha', minimum=0.0, maximum=1.0, step=0.01, value=0.5,
                                               info='Blending factor for attention guidance.')
-                        nag_negative_prompt = gr.Textbox(label='NAG Negative Prompt', show_label=True,
-                                                        placeholder="Type negative prompt for NAG here.", lines=2,
-                                                         elem_id='nag_negative_prompt')
+                        #nag_negative_prompt = gr.Textbox(label='NAG Negative Prompt', show_label=True,
+                        #                                 placeholder="Type negative prompt for NAG here.", lines=2,
+                        #                                 elem_id='nag_negative_prompt')
                         nag_end = gr.Slider(label='NAG End At Step', minimum=0.0, maximum=1.0, step=0.01, value=1.0,
                                             info='When to end NAG guidance (0.0 to 1.0 of total steps).')
-                        nag_ctrls = [nag_scale, nag_tau, nag_alpha, nag_negative_prompt, nag_end]
+                        nag_ctrls = [nag_scale, nag_tau, nag_alpha, nag_end]
                     with gr.Tab(label='TPG'):
                         tpg_enabled = gr.Checkbox(label='Enable Token Perturbation Guidance', value=False,
                                                   info='Enables Token Perturbation Guidance.')
@@ -1012,7 +1012,7 @@ with shared.gradio_root:
                         dag_applied_layers = gr.Textbox(label='DAG Applied Layers', show_label=True,
                                                         placeholder="e.g., mid,up", lines=1,
                                                         info='Comma-separated list of layer types to apply DAG. e.g., mid,up')
-                        dag_ctrls = [dag_enabled, dag_scale, dag_applied_layers]
+                        #dag_ctrls = [dag_enabled, dag_scale, dag_applied_layers]
 
                 def dev_mode_checked(r):
                     return gr.update(visible=r)
