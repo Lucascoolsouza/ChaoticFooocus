@@ -807,34 +807,38 @@ input[type="text"]:not(#positive_prompt):focus, input[type="number"]:focus, inpu
     border-radius: 50%;
 }
 
-/* Enhanced tab styles */
-.tab-nav, .tabs {
-    background: var(--glass-bg) !important;
-    backdrop-filter: var(--glass-backdrop) !important;
-    border: 1px solid var(--glass-border) !important;
-    border-radius: 12px !important;
-    box-shadow: var(--glass-shadow) !important;
-    transition: var(--transition-smooth) !important;
+/* Enhanced tab styles - only apply to specific contexts */
+.enhanced-tabs .tab-nav, 
+.enhanced-tabs .tabs {
+    background: var(--glass-bg);
+    backdrop-filter: var(--glass-backdrop);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    box-shadow: var(--glass-shadow);
+    transition: var(--transition-smooth);
 }
 
-.tab-nav button, .tabs button {
-    background: transparent !important;
-    border: none !important;
-    padding: 12px 20px !important;
-    border-radius: 8px !important;
-    margin: 4px !important;
-    transition: var(--transition-smooth) !important;
+.enhanced-tabs .tab-nav button, 
+.enhanced-tabs .tabs button {
+    background: transparent;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 8px;
+    margin: 4px;
+    transition: var(--transition-smooth);
 }
 
-.tab-nav button:hover, .tabs button:hover {
-    background: rgba(52, 152, 219, 0.1) !important;
-    transform: translateY(-1px) !important;
+.enhanced-tabs .tab-nav button:hover, 
+.enhanced-tabs .tabs button:hover {
+    background: rgba(52, 152, 219, 0.1);
+    transform: translateY(-1px);
 }
 
-.tab-nav button.selected, .tabs button.selected {
-    background: linear-gradient(45deg, var(--primary-glow), var(--secondary-glow)) !important;
-    color: white !important;
-    box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3) !important;
+.enhanced-tabs .tab-nav button.selected, 
+.enhanced-tabs .tabs button.selected {
+    background: linear-gradient(45deg, var(--primary-glow), var(--secondary-glow));
+    color: white;
+    box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
 }
 
 /* Enhanced card/panel styles */
