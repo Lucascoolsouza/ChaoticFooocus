@@ -5,6 +5,7 @@ import ldm_patched.modules.model_management
 from collections import namedtuple
 from ldm_patched.contrib.external_align_your_steps import AlignYourStepsScheduler
 from ldm_patched.contrib.external_custom_sampler import SDTurboScheduler
+from ldm_patched.k_diffusion import sampling as k_diffusion_sampling
 # Import guidance configuration functions
 from ldm_patched.modules.samplers import normal_scheduler, simple_scheduler, ddim_scheduler
 from ldm_patched.modules.model_base import SDXLRefiner, SDXL
