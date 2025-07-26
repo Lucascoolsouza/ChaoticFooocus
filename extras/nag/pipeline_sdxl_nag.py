@@ -33,81 +33,57 @@ from PIL import Image, ImageDraw
 def safe_decode(latents, vae, width=512, height=512):
     try:
         with torch.no_grad():
-            latents = latents.to(vae.device)
+            # Handle different VAE types (ComfyUI vs Diffusers)
+            if hasattr(vae, 'decode'):
+                vae_decode_fn = vae.decode
+            elif hasattr(vae, 'model') and hasattr(vae.model, 'decode'):
+                vae_decode_fn = vae.model.decode
+            else:
+                raise ValueError("VAE doesn't have a decode method")
             
-            # Log input latents
-            print(f"[safe_decode] Input latents shape: {latents.shape}, dtype: {latents.dtype}")
+            # Ensure latents are on the correct device
+            if hasattr(vae, 'device'):
+                device = vae.device
+            elif hasattr(vae, 'model') and hasattr(vae.model, 'parameters'):
+                device = next(vae.model.parameters()).device
+            else:
+                device = latents.device
             
-            # Determine scaling factor
-            scaling_factor = 0.18215  # Default SDXL scaling factor
+            latents = latents.to(device)
+            
+            # Use standard SDXL scaling factor
+            scaling_factor = 0.13025
             if hasattr(vae, 'config') and hasattr(vae.config, 'scaling_factor'):
                 scaling_factor = vae.config.scaling_factor
-            
-            print(f"[safe_decode] Using scaling factor: {scaling_factor}")
             
             # Scale latents
             scaled_latents = latents / scaling_factor
             
-            # Decode latents using VAE
-            result = vae.decode(scaled_latents)
-            if isinstance(result, tuple):
-                decoded = result[0]
-            elif hasattr(result, 'sample'):
-                decoded = result.sample
-            else:
-                decoded = result
+            # Decode latents
+            decoded = vae_decode_fn(scaled_latents, return_dict=False)[0]
             
-            # Log raw decoded stats
-            print(f"[safe_decode] Raw decoded shape: {decoded.shape}, dtype: {decoded.dtype}")
-            print(f"[safe_decode] Raw decoded min: {decoded.min():.4f}, max: {decoded.max():.4f}")
-            print(f"[safe_decode] Raw decoded mean: {decoded.mean():.4f}, std: {decoded.std():.4f}")
+            # Ensure proper format [B, C, H, W]
+            if decoded.dim() == 4 and decoded.shape[1] == 3:
+                # Already in correct format
+                pass
+            elif decoded.dim() == 3:
+                # Add batch dimension
+                decoded = decoded.unsqueeze(0)
             
-            # Handle malformed VAE output
-            if len(decoded.shape) == 4:
-                batch_size, dim1, dim2, dim3 = decoded.shape
-                print(f"[safe_decode] Raw dimensions: B={batch_size}, D1={dim1}, D2={dim2}, D3={dim3}")
-                
-                if dim3 == 3 and dim1 > 100:  # Likely malformed: [B, H*W*C/8, H, W]
-                    print("[safe_decode] Detected malformed VAE output, attempting to fix...")
-                    
-                    # Reshape to [B, C, H, W]
-                    expected_h = scaled_latents.shape[2] * 8  # 144 * 8 = 1152
-                    expected_w = scaled_latents.shape[3] * 8  # 112 * 8 = 896
-                    print(f"[safe_decode] Expected output size: {expected_h}x{expected_w}")
-                    
-                    if decoded.numel() == batch_size * 3 * expected_h * expected_w:
-                        try:
-                            decoded = decoded.contiguous().reshape(batch_size, 3, expected_h, expected_w)
-                            print(f"[safe_decode] Successfully reshaped to: {decoded.shape}")
-                        except Exception as e:
-                            print(f"[safe_decode] Reshape failed: {e}")
-                            raise ValueError(f"Cannot reshape malformed tensor: {decoded.shape}")
-                    else:
-                        print(f"[safe_decode] Element count mismatch, trying alternative extraction...")
-                        
-                        # Convert from [B, H, W, C] to [B, C, H, W]
-                        if dim1 == expected_h and dim2 == expected_w and dim3 == 3:
-                            decoded = decoded.permute(0, 3, 1, 2)
-                            print(f"[safe_decode] Converted from BHWC to BCHW: {decoded.shape}")
+            # Clamp to valid range and convert to [0, 1]
+            decoded = torch.clamp((decoded + 1.0) / 2.0, 0.0, 1.0)
             
-            # Normalize to [0, 1] range
-            decoded = torch.clamp(decoded, 0.0, 1.0)  # Direct clamp without shifting
+            # Convert to PIL Image
+            decoded_np = decoded.squeeze(0).permute(1, 2, 0).cpu().numpy()
+            decoded_np = (decoded_np * 255).astype(np.uint8)
             
-            # Convert to numpy [H, W, C] format
-            decoded = decoded.permute(0, 2, 3, 1).cpu().numpy()
-            decoded = (decoded * 255).astype(np.uint8)
-            
-            print(f"[safe_decode] Final numpy shape: {decoded.shape}, dtype: uint8")
-            print("[safe_decode] ✅ Decode successful. Final image shape:", decoded.shape)
-            
-            return decoded
+            return Image.fromarray(decoded_np)
         
     except Exception as e:
-        print(f"[safe_decode] Error during decode: {str(e)[:50]}")
-        img = Image.new("RGB", (512, 512), color="red")
-        draw = ImageDraw.Draw(img)
-        draw.text((10, 10), f"Decode Error: {str(e)[:50]}", fill="white")
-        return np.array(img)
+        print(f"[safe_decode] Error during decode: {e}")
+        # Return a red error image
+        error_img = Image.new("RGB", (width, height), color="red")
+        return error_img
 
 
 
@@ -954,37 +930,16 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 if XLA_AVAILABLE:
                     xm.mark_step()
 
-        # For Fooocus integration, we need to return the latents, not decoded images
-        # The Fooocus pipeline will handle the decoding itself
+        # For Fooocus integration, always return latents
         if not return_dict:
             # Ensure we return the right batch size (should be 1 for single image)
             if latents.shape[0] > 1:
                 latents = latents[:1]  # Take only the first sample
-            
-
-            
             return (latents,)
         
         # For other use cases, decode and return images
-        print(f"[NAG Pipeline] Before final decode. Latents shape: {latents.shape}, dtype: {latents.dtype}, device: {latents.device}")
-        if latents.numel() > 0:
-            print(f"[NAG Pipeline] Latents min: {latents.min():.4f}, max: {latents.max():.4f}, mean: {latents.mean():.4f}, std: {latents.std():.4f}")
-        
-        # Clamp latents before final decode to prevent extreme values
-        latents = torch.clamp(latents, -3, 3)
-        print(f"[NAG Pipeline] Latents clamped. Min: {latents.min():.4f}, Max: {latents.max():.4f}, Mean: {latents.mean():.4f}, Std: {latents.std():.4f}")
-        
-        # Normalize latents to the expected VAE input range
-        latents = latents / latents.std() * 0.18215
-        print(f"[NAG Pipeline] Latents normalized. Min: {latents.min():.4f}, Max: {latents.max():.4f}, Mean: {latents.mean():.4f}, Std: {latents.std():.4f}")
-
-        # Ensure VAE is in evaluation mode and on the correct device
-        self.vae.eval()
-        self.vae.to(latents.device)
-
         final_image = safe_decode(latents, self.vae, width=width, height=height)
         self.maybe_free_model_hooks()
 
-        print("Returning:", type(final_image), final_image.size if hasattr(final_image, 'size') else "-")
         return StableDiffusionXLPipelineOutput(images=[final_image])
 

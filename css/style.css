@@ -6,8 +6,8 @@
   --glass-border: rgba(80, 80, 80, 0.6);
   --glass-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   --glass-backdrop: blur(8px);
-  --primary-glow: #3498db;
-  --secondary-glow: #2ecc71;
+  --primary-glow: #db6934;
+  --secondary-glow: #89659e;
   --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-bounce: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
   --text-color: #e0e0e0;

@@ -247,41 +247,42 @@ class PAGAttentionProcessor:
         """
         # Get the batch size and check if we're doing guidance
         batch_size = hidden_states.shape[0]
-        print(f"[PAG DEBUG] PAGAttentionProcessor.__call__ - batch_size={batch_size}")
         
         # For PAG, we expect batch_size to be 2 (unconditional + conditional)
-        # or 3 (unconditional + conditional + perturbed) when PAG is active
+        # We'll apply perturbation to the conditional part
         
-        if batch_size == 3:
-            print("[PAG DEBUG]   Processing with 3 chunks (uncond, cond, perturb)")
-            # Split into unconditional, conditional, and perturbed
-            hidden_states_uncond, hidden_states_cond, hidden_states_perturb = hidden_states.chunk(3)
-            
-            if encoder_hidden_states is not None:
-                encoder_hidden_states_uncond, encoder_hidden_states_cond, encoder_hidden_states_perturb = encoder_hidden_states.chunk(3)
+        if batch_size >= 2 and self.perturbation_scale > 0:
+            # Split into unconditional and conditional parts
+            if batch_size == 2:
+                hidden_states_uncond, hidden_states_cond = hidden_states.chunk(2)
+                if encoder_hidden_states is not None:
+                    encoder_hidden_states_uncond, encoder_hidden_states_cond = encoder_hidden_states.chunk(2)
+                else:
+                    encoder_hidden_states_uncond = encoder_hidden_states_cond = None
             else:
-                encoder_hidden_states_uncond = encoder_hidden_states_cond = encoder_hidden_states_perturb = None
+                # Handle batch_size > 2 by taking first as uncond, rest as cond
+                hidden_states_uncond = hidden_states[:1]
+                hidden_states_cond = hidden_states[1:]
+                if encoder_hidden_states is not None:
+                    encoder_hidden_states_uncond = encoder_hidden_states[:1]
+                    encoder_hidden_states_cond = encoder_hidden_states[1:]
+                else:
+                    encoder_hidden_states_uncond = encoder_hidden_states_cond = None
             
-            # Process unconditional
+            # Process unconditional normally
             out_uncond = self.original_processor(
                 attn, hidden_states_uncond, encoder_hidden_states_uncond, attention_mask, temb, scale
             )
             
-            # Process conditional
-            out_cond = self.original_processor(
+            # Process conditional with perturbation
+            out_cond = self._process_with_perturbation(
                 attn, hidden_states_cond, encoder_hidden_states_cond, attention_mask, temb, scale
             )
             
-            # Process perturbed (with attention perturbation)
-            out_perturb = self._process_with_perturbation(
-                attn, hidden_states_perturb, encoder_hidden_states_perturb, attention_mask, temb, scale
-            )
-            
             # Combine outputs
-            return torch.cat([out_uncond, out_cond, out_perturb], dim=0)
+            return torch.cat([out_uncond, out_cond], dim=0)
         
         else:
-            print("[PAG DEBUG]   Processing without PAG (batch_size != 3)")
             # Standard processing without PAG
             return self.original_processor(
                 attn, hidden_states, encoder_hidden_states, attention_mask, temb, scale
