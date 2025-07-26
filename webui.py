@@ -1012,7 +1012,7 @@ with shared.gradio_root:
                         dag_applied_layers = gr.Textbox(label='DAG Applied Layers', show_label=True,
                                                         placeholder="e.g., mid,up", lines=1,
                                                         info='Comma-separated list of layer types to apply DAG. e.g., mid,up')
-                        dag_ctrls = [dag_enabled, dag_scale, dag_applied_layers]
+                        dag_ctrls = [dag_applied_layers, dag_scale, dag_enabled]
 
                 def dev_mode_checked(r):
                     return gr.update(visible=r)
@@ -1148,7 +1148,6 @@ with shared.gradio_root:
         ctrls += inpaint_ctrls
         ctrls += nag_ctrls
         ctrls += tpg_ctrls
-        ctrls += dag_ctrls
 
         if not args_manager.args.disable_image_log:
             ctrls += [save_final_enhanced_image_only]
@@ -1157,6 +1156,8 @@ with shared.gradio_root:
             ctrls += [save_metadata_to_images, metadata_scheme]
         else:
             ctrls += [gr.State(False), gr.State(modules.flags.MetadataScheme.FOOOCUS.value)]
+
+        ctrls += dag_ctrls
             
         ctrls += [detail_daemon_enabled, detail_daemon_amount, detail_daemon_start, detail_daemon_end, 
                   detail_daemon_bias, detail_daemon_base_multiplier, detail_daemon_start_offset, detail_daemon_end_offset, 
