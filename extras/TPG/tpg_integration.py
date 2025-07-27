@@ -421,6 +421,20 @@ def patch_attention_processors_for_tpg():
         if default_pipeline.final_unet is None:
             return False
         
+        # Access the actual model from ModelPatcher
+        unet_model = None
+        if hasattr(default_pipeline.final_unet, 'model'):
+            unet_model = default_pipeline.final_unet.model
+        elif hasattr(default_pipeline.final_unet, 'diffusion_model'):
+            unet_model = default_pipeline.final_unet.diffusion_model
+        else:
+            # Fallback: try to use final_unet directly if it has named_children
+            if hasattr(default_pipeline.final_unet, 'named_children'):
+                unet_model = default_pipeline.final_unet
+            else:
+                logger.warning("[TPG] Could not access UNet model from ModelPatcher")
+                return False
+        
         applied_layers = _tpg_config.get('applied_layers', ['mid', 'up'])
         
         # Get current attention processors
@@ -433,7 +447,7 @@ def patch_attention_processors_for_tpg():
             for sub_name, child in module.named_children():
                 get_processors_recursive(f"{name}.{sub_name}", child)
         
-        for name, module in default_pipeline.final_unet.named_children():
+        for name, module in unet_model.named_children():
             get_processors_recursive(name, module)
         
         # Create TPG processors for selected layers only
@@ -458,7 +472,7 @@ def patch_attention_processors_for_tpg():
             for sub_name, child in module.named_children():
                 set_processors_recursive(f"{name}.{sub_name}", child, processors)
         
-        for name, module in default_pipeline.final_unet.named_children():
+        for name, module in unet_model.named_children():
             set_processors_recursive(name, module, tpg_processors.copy())
         
         return True
@@ -489,38 +503,53 @@ def unpatch_sampling_for_tpg():
             import modules.default_pipeline as default_pipeline
             
             if default_pipeline.final_unet is not None:
-                # Get current processors and restore any TPG processors to original
-                current_processors = {}
+                # Access the actual model from ModelPatcher
+                unet_model = None
+                if hasattr(default_pipeline.final_unet, 'model'):
+                    unet_model = default_pipeline.final_unet.model
+                elif hasattr(default_pipeline.final_unet, 'diffusion_model'):
+                    unet_model = default_pipeline.final_unet.diffusion_model
+                else:
+                    # Fallback: try to use final_unet directly if it has named_children
+                    if hasattr(default_pipeline.final_unet, 'named_children'):
+                        unet_model = default_pipeline.final_unet
+                    else:
+                        logger.warning("[TPG] Could not access UNet model from ModelPatcher for restoration")
+                        unet_model = None
                 
-                def get_processors_recursive(name, module):
-                    if hasattr(module, "get_processor"):
-                        processor = module.get_processor(return_deprecated_lora=True)
-                        if isinstance(processor, TPGAttentionProcessor):
-                            current_processors[f"{name}.processor"] = processor.original_processor
-                        else:
-                            current_processors[f"{name}.processor"] = processor
+                if unet_model is not None:
+                    # Get current processors and restore any TPG processors to original
+                    current_processors = {}
                     
-                    for sub_name, child in module.named_children():
-                        get_processors_recursive(f"{name}.{sub_name}", child)
-                
-                for name, module in default_pipeline.final_unet.named_children():
-                    get_processors_recursive(name, module)
-                
-                # Set the restored processors
-                def set_processors_recursive(name, module, processors):
-                    if hasattr(module, "set_processor"):
-                        if not isinstance(processors, dict):
-                            module.set_processor(processors)
-                        else:
-                            module.set_processor(processors.pop(f"{name}.processor"))
+                    def get_processors_recursive(name, module):
+                        if hasattr(module, "get_processor"):
+                            processor = module.get_processor(return_deprecated_lora=True)
+                            if isinstance(processor, TPGAttentionProcessor):
+                                current_processors[f"{name}.processor"] = processor.original_processor
+                            else:
+                                current_processors[f"{name}.processor"] = processor
+                        
+                        for sub_name, child in module.named_children():
+                            get_processors_recursive(f"{name}.{sub_name}", child)
                     
-                    for sub_name, child in module.named_children():
-                        set_processors_recursive(f"{name}.{sub_name}", child, processors)
-                
-                for name, module in default_pipeline.final_unet.named_children():
-                    set_processors_recursive(name, module, current_processors.copy())
-                
-                print("[TPG] Successfully restored original attention processors")
+                    for name, module in unet_model.named_children():
+                        get_processors_recursive(name, module)
+                    
+                    # Set the restored processors
+                    def set_processors_recursive(name, module, processors):
+                        if hasattr(module, "set_processor"):
+                            if not isinstance(processors, dict):
+                                module.set_processor(processors)
+                            else:
+                                module.set_processor(processors.pop(f"{name}.processor"))
+                        
+                        for sub_name, child in module.named_children():
+                            set_processors_recursive(f"{name}.{sub_name}", child, processors)
+                    
+                    for name, module in unet_model.named_children():
+                        set_processors_recursive(name, module, current_processors.copy())
+                    
+                    print("[TPG] Successfully restored original attention processors")
         
         except Exception as e:
             logger.warning(f"[TPG] Failed to restore attention processors: {e}")
