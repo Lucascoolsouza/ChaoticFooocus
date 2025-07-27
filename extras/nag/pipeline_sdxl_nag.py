@@ -1,9 +1,11 @@
+# NAG (Normalized Attention Guidance) Pipeline for Fooocus
+# Based on TPG pipeline structure for consistency
+
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import math
-
 import torch
 import torch.nn as nn
-import torch
+import logging
 
 from diffusers.callbacks import MultiPipelineCallbacks, PipelineCallback
 from diffusers.image_processor import PipelineImageInput
@@ -15,10 +17,10 @@ from diffusers.pipelines.stable_diffusion_xl.pipeline_output import StableDiffus
 
 if is_torch_xla_available():
     import torch_xla.core.xla_model as xm
-
     XLA_AVAILABLE = True
 else:
     XLA_AVAILABLE = False
+
 from diffusers.pipelines.stable_diffusion_xl.pipeline_stable_diffusion_xl import (
     StableDiffusionXLPipeline,
     retrieve_timesteps,
@@ -30,7 +32,103 @@ from .attention_nag import NAGAttnProcessor2_0
 import numpy as np
 from PIL import Image, ImageDraw
 
+logger = logging.getLogger(__name__)
+
+class NAGSampler:
+    """
+    NAG (Normalized Attention Guidance) sampler that integrates with Fooocus ksampler
+    Similar to TPG but uses attention normalization instead of token perturbation
+    """
+    
+    def __init__(self, nag_scale=1.0, nag_tau=2.5, nag_alpha=0.5):
+        self.nag_scale = nag_scale
+        self.nag_tau = nag_tau
+        self.nag_alpha = nag_alpha
+        self.original_sampling_function = None
+        self.is_active = False
+        self.original_attn_processors = {}
+    
+    def activate(self, unet):
+        """Activate NAG by patching attention processors"""
+        if self.is_active:
+            return
+        
+        print(f"[NAG] Activating NAG with scale {self.nag_scale}")
+        
+        try:
+            self.unet = unet
+            
+            # Store original attention processors
+            if hasattr(unet, 'attn_processors'):
+                self.original_attn_processors = unet.attn_processors.copy()
+            elif hasattr(unet, 'model') and hasattr(unet.model, 'attn_processors'):
+                self.original_attn_processors = unet.model.attn_processors.copy()
+            
+            # Set NAG attention processors
+            self._set_nag_attn_processor()
+            
+            self.is_active = True
+            print("[NAG] Successfully patched attention processors")
+            
+        except Exception as e:
+            print(f"[NAG] Failed to patch attention processors: {e}")
+            return
+    
+    def deactivate(self):
+        """Deactivate NAG by restoring original attention processors"""
+        if not self.is_active:
+            return
+        
+        print("[NAG] Deactivating NAG")
+        
+        try:
+            # Restore original attention processors
+            if self.original_attn_processors and hasattr(self, 'unet'):
+                if hasattr(self.unet, 'set_attn_processor'):
+                    self.unet.set_attn_processor(self.original_attn_processors)
+                elif hasattr(self.unet, 'model') and hasattr(self.unet.model, 'set_attn_processor'):
+                    self.unet.model.set_attn_processor(self.original_attn_processors)
+                print("[NAG] Successfully restored original attention processors")
+        except Exception as e:
+            print(f"[NAG] Failed to restore attention processors: {e}")
+        
+        self.is_active = False
+    
+    def _set_nag_attn_processor(self):
+        """Set NAG attention processors"""
+        if not hasattr(self, 'unet'):
+            return
+        
+        # Handle different UNet structures (Diffusers vs ldm_patched)
+        unet_to_modify = None
+        if hasattr(self.unet, 'set_attn_processor'):
+            unet_to_modify = self.unet
+        elif hasattr(self.unet, 'model') and hasattr(self.unet.model, 'set_attn_processor'):
+            unet_to_modify = self.unet.model
+        
+        if unet_to_modify is not None:
+            attn_procs = {}
+            existing_processors = getattr(unet_to_modify, 'attn_processors', {})
+            
+            for name, origin_attn_processor in existing_processors.items():
+                if "attn2" in name:  # Cross-attention layers
+                    attn_procs[name] = NAGAttnProcessor2_0(
+                        nag_scale=self.nag_scale, 
+                        nag_tau=self.nag_tau, 
+                        nag_alpha=self.nag_alpha
+                    )
+                else:
+                    attn_procs[name] = origin_attn_processor
+            
+            unet_to_modify.set_attn_processor(attn_procs)
+        else:
+            print("[NAG] Warning: Could not set attention processors - UNet structure not recognized")
+
+# Global NAG sampler instance
+nag_sampler = NAGSampler()
+
 def safe_decode(latents, vae, width=512, height=512):
+    """Safe VAE decoding with error handling"""
     try:
         with torch.no_grad():
             # Handle different VAE types (ComfyUI vs Diffusers)
@@ -64,11 +162,9 @@ def safe_decode(latents, vae, width=512, height=512):
             
             # Ensure proper format [B, C, H, W]
             if decoded.dim() == 4 and decoded.shape[1] == 3:
-                # Already in correct format
-                pass
+                pass  # Already in correct format
             elif decoded.dim() == 3:
-                # Add batch dimension
-                decoded = decoded.unsqueeze(0)
+                decoded = decoded.unsqueeze(0)  # Add batch dimension
             
             # Clamp to valid range and convert to [0, 1]
             decoded = torch.clamp((decoded + 1.0) / 2.0, 0.0, 1.0)
@@ -85,9 +181,11 @@ def safe_decode(latents, vae, width=512, height=512):
         error_img = Image.new("RGB", (width, height), color="red")
         return error_img
 
-
-
 class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
+    """
+    SDXL Pipeline with NAG support, structured similar to TPG pipeline
+    """
+    
     @property
     def do_normalized_attention_guidance(self):
         return self._nag_scale > 1
@@ -96,37 +194,16 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
     def do_classifier_free_guidance(self):
         return self._guidance_scale > 1
 
-    def _set_nag_attn_processor(self, nag_scale, nag_tau=2.5, nag_alpha=0.5):
-        if self.do_normalized_attention_guidance:
-            # Handle different UNet structures (Diffusers vs ldm_patched)
-            unet_to_modify = None
-            if hasattr(self.unet, 'set_attn_processor'):
-                unet_to_modify = self.unet
-            elif hasattr(self.unet, 'model') and hasattr(self.unet.model, 'set_attn_processor'):
-                unet_to_modify = self.unet.model
-            
-            if unet_to_modify is not None:
-                attn_procs = {}
-                existing_processors = getattr(unet_to_modify, 'attn_processors', {})
-                
-                for name, origin_attn_processor in existing_processors.items():
-                    if "attn2" in name:
-                        attn_procs[name] = NAGAttnProcessor2_0(nag_scale=nag_scale, nag_tau=nag_tau, nag_alpha=nag_alpha)
-                    else:
-                        attn_procs[name] = origin_attn_processor
-                
-                unet_to_modify.set_attn_processor(attn_procs)
-            else:
-                print("[NAG] Warning: Could not set attention processors - UNet structure not recognized")
-
     def maybe_convert_prompt(self, prompt, tokenizer):
-        # Override to bypass textual inversion logic that requires tokenizer.tokenize()
-        # Just return the prompt as-is since we're using pre-computed embeddings anyway
+        """Override to bypass textual inversion logic"""
         return prompt
 
-    def encode_prompt(self, prompt, prompt_2=None, device=None, num_images_per_prompt=1, do_classifier_free_guidance=True, negative_prompt=None, negative_prompt_2=None, prompt_embeds=None, negative_prompt_embeds=None, pooled_prompt_embeds=None, negative_pooled_prompt_embeds=None, lora_scale=None, clip_skip=None):
-        # Override encode_prompt to bypass tokenization issues
-        # Since we're passing pre-computed embeddings, just return them
+    def encode_prompt(self, prompt, prompt_2=None, device=None, num_images_per_prompt=1, 
+                     do_classifier_free_guidance=True, negative_prompt=None, negative_prompt_2=None, 
+                     prompt_embeds=None, negative_prompt_embeds=None, pooled_prompt_embeds=None, 
+                     negative_pooled_prompt_embeds=None, lora_scale=None, clip_skip=None):
+        """Override encode_prompt to handle pre-computed embeddings"""
+        
         if prompt_embeds is not None:
             # Use the pre-computed embeddings directly
             batch_size = prompt_embeds.shape[0]
@@ -147,13 +224,11 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             
             return prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds
         
-        # Handle simple prompts (like NAG negative prompts) by properly encoding them
+        # Handle simple prompts (like NAG negative prompts)
         if isinstance(prompt, str) and prompt.strip() != "":
-            # For NAG negative prompts, we need to encode them safely
             try:
-                # Apply the user's specific embedding logic for string prompts
                 inputs = self.tokenizer(
-                    prompt, # Use 'prompt' here as it's the string input
+                    prompt,
                     padding="max_length",
                     truncation=True,
                     max_length=self.tokenizer.model_max_length,
@@ -167,282 +242,122 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     return_dict=True,
                 )
 
-                # Pegando o penúltimo hidden state (como SDXL faz)
                 prompt_embeds = output.hidden_states[-2]
-                pooled_prompt_embeds = output.pooled_output # Get pooled output as well
+                pooled_prompt_embeds = output.pooled_output
 
-                # For negative prompts, we don't need negative_prompt_embeds or negative_pooled_prompt_embeds
                 return prompt_embeds, None, pooled_prompt_embeds, None
 
             except Exception as e:
                 print(f"[NAG] Error encoding NAG negative prompt '{prompt}': {e}")
                 print("[NAG] Falling back to zero embeddings for NAG negative prompt")
-                # Fall back to zero embeddings if encoding fails
-                import torch
+                
+                # Fall back to zero embeddings
                 batch_size = num_images_per_prompt
-
-                # Try to get sequence length from stored shape
                 seq_len = 77  # Default CLIP sequence length
                 embed_dim = 2048  # Default SDXL embedding dimension
+                pooled_dim = 1280  # Standard SDXL pooled dimension
 
                 if hasattr(self, '_current_prompt_embeds_shape') and self._current_prompt_embeds_shape is not None:
                     seq_len = self._current_prompt_embeds_shape[1]
                     embed_dim = self._current_prompt_embeds_shape[2]
 
-                embed_dim = 2048  # Standard SDXL embedding dimension
-                pooled_dim = 1280  # Standard SDXL pooled dimension
-
-                # Create zero embeddings (neutral)
-                dummy_embeds = torch.zeros((batch_size, seq_len, embed_dim), device=device, dtype=torch.float16 if device.type == 'cuda' else torch.float32)
-                dummy_pooled = torch.zeros((batch_size, pooled_dim), device=device, dtype=torch.float16 if device.type == 'cuda' else torch.float32)
+                dummy_embeds = torch.zeros((batch_size, seq_len, embed_dim), device=device, 
+                                         dtype=torch.float16 if device.type == 'cuda' else torch.float32)
+                dummy_pooled = torch.zeros((batch_size, pooled_dim), device=device, 
+                                         dtype=torch.float16 if device.type == 'cuda' else torch.float32)
 
                 return dummy_embeds, None, dummy_pooled, None
+                
         elif isinstance(prompt, str) and prompt.strip() == "":
-            import torch
-            # Create zero embeddings only for empty strings
+            # Create zero embeddings for empty strings
             batch_size = num_images_per_prompt
-            
-            # Try to get sequence length from stored shape
-            seq_len = 77  # Default CLIP sequence length
-            embed_dim = 2048  # Default SDXL embedding dimension
+            seq_len = 77
+            embed_dim = 2048
+            pooled_dim = 1280
             
             if hasattr(self, '_current_prompt_embeds_shape') and self._current_prompt_embeds_shape is not None:
                 seq_len = self._current_prompt_embeds_shape[1]
                 embed_dim = self._current_prompt_embeds_shape[2]
             
-            embed_dim = 2048  # Standard SDXL embedding dimension
-            pooled_dim = 1280  # Standard SDXL pooled dimension
-            
-            # Create zero embeddings (neutral)
-            dummy_embeds = torch.zeros((batch_size, seq_len, embed_dim), device=device, dtype=torch.float16 if device.type == 'cuda' else torch.float32)
-            dummy_pooled = torch.zeros((batch_size, pooled_dim), device=device, dtype=torch.float16 if device.type == 'cuda' else torch.float32)
+            dummy_embeds = torch.zeros((batch_size, seq_len, embed_dim), device=device, 
+                                     dtype=torch.float16 if device.type == 'cuda' else torch.float32)
+            dummy_pooled = torch.zeros((batch_size, pooled_dim), device=device, 
+                                     dtype=torch.float16 if device.type == 'cuda' else torch.float32)
             
             return dummy_embeds, None, dummy_pooled, None
         
-        # Fallback to parent method if no pre-computed embeddings
-        return super().encode_prompt(prompt, prompt_2, device, num_images_per_prompt, do_classifier_free_guidance, negative_prompt, negative_prompt_2, prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds, lora_scale, clip_skip)
+        # Fallback to parent method
+        return super().encode_prompt(prompt, prompt_2, device, num_images_per_prompt, 
+                                   do_classifier_free_guidance, negative_prompt, negative_prompt_2, 
+                                   prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, 
+                                   negative_pooled_prompt_embeds, lora_scale, clip_skip)
 
     @torch.no_grad()
     def __call__(
-            self,
-            # Add torch import here to ensure it's always available in this scope
-            torch=torch,
-            prompt: Union[str, List[str]] = None,
-            prompt_2: Optional[Union[str, List[str]]] = None,
-            height: Optional[int] = None,
-            width: Optional[int] = None,
-            num_inference_steps: int = 50,
-            timesteps: List[int] = None,
-            sigmas: List[float] = None,
-            denoising_end: Optional[float] = None,
-            guidance_scale: float = 5.0,
-            negative_prompt: Optional[Union[str, List[str]]] = None,
-            negative_prompt_2: Optional[Union[str, List[str]]] = None,
-            num_images_per_prompt: Optional[int] = 1,
-            eta: float = 0.0,
-            generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
-            latents: Optional[torch.Tensor] = None,
-            prompt_embeds: Optional[torch.Tensor] = None,
-            negative_prompt_embeds: Optional[torch.Tensor] = None,
-            pooled_prompt_embeds: Optional[torch.Tensor] = None,
-            negative_pooled_prompt_embeds: Optional[torch.Tensor] = None,
-            ip_adapter_image: Optional[PipelineImageInput] = None,
-            ip_adapter_image_embeds: Optional[List[torch.Tensor]] = None,
-            output_type: Optional[str] = "pil",
-            return_dict: bool = True,
-            cross_attention_kwargs: Optional[Dict[str, Any]] = None,
-            guidance_rescale: float = 0.0,
-            original_size: Optional[Tuple[int, int]] = None,
-            crops_coords_top_left: Tuple[int, int] = (0, 0),
-            target_size: Optional[Tuple[int, int]] = None,
-            negative_original_size: Optional[Tuple[int, int]] = None,
-            negative_crops_coords_top_left: Tuple[int, int] = (0, 0),
-            negative_target_size: Optional[Tuple[int, int]] = None,
-            clip_skip: Optional[int] = None,
-            callback_on_step_end: Optional[
-                Union[Callable[[int, int, Dict], None], PipelineCallback, MultiPipelineCallbacks]
-            ] = None,
-            callback_on_step_end_tensor_inputs: List[str] = ["latents"],
-
-            nag_scale: float = 1.0,
-            nag_tau: float = 5.0,
-            nag_alpha: float = 0.5,
-            nag_negative_prompt: str = None,
-            nag_negative_prompt_embeds: Optional[torch.Tensor] = None,
-            nag_end: float = 1.0,
-
-            **kwargs,
+        self,
+        prompt: Union[str, List[str]] = None,
+        prompt_2: Optional[Union[str, List[str]]] = None,
+        height: Optional[int] = None,
+        width: Optional[int] = None,
+        num_inference_steps: int = 50,
+        timesteps: List[int] = None,
+        sigmas: List[float] = None,
+        denoising_end: Optional[float] = None,
+        guidance_scale: float = 5.0,
+        negative_prompt: Optional[Union[str, List[str]]] = None,
+        negative_prompt_2: Optional[Union[str, List[str]]] = None,
+        num_images_per_prompt: Optional[int] = 1,
+        eta: float = 0.0,
+        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
+        latents: Optional[torch.Tensor] = None,
+        prompt_embeds: Optional[torch.Tensor] = None,
+        negative_prompt_embeds: Optional[torch.Tensor] = None,
+        pooled_prompt_embeds: Optional[torch.Tensor] = None,
+        negative_pooled_prompt_embeds: Optional[torch.Tensor] = None,
+        ip_adapter_image: Optional[PipelineImageInput] = None,
+        ip_adapter_image_embeds: Optional[List[torch.Tensor]] = None,
+        output_type: Optional[str] = "pil",
+        return_dict: bool = True,
+        cross_attention_kwargs: Optional[Dict[str, Any]] = None,
+        guidance_rescale: float = 0.0,
+        original_size: Optional[Tuple[int, int]] = None,
+        crops_coords_top_left: Tuple[int, int] = (0, 0),
+        target_size: Optional[Tuple[int, int]] = None,
+        negative_original_size: Optional[Tuple[int, int]] = None,
+        negative_crops_coords_top_left: Tuple[int, int] = (0, 0),
+        negative_target_size: Optional[Tuple[int, int]] = None,
+        clip_skip: Optional[int] = None,
+        callback_on_step_end: Optional[Union[Callable[[int, int, Dict], None], PipelineCallback, MultiPipelineCallbacks]] = None,
+        callback_on_step_end_tensor_inputs: List[str] = ["latents"],
+        # NAG specific parameters
+        nag_scale: float = 1.0,
+        nag_tau: float = 5.0,
+        nag_alpha: float = 0.5,
+        nag_negative_prompt: str = None,
+        nag_negative_prompt_embeds: Optional[torch.Tensor] = None,
+        nag_end: float = 1.0,
+        **kwargs,
     ):
-        r"""
-        Function invoked when calling the pipeline for generation.
-
-        Args:
-            prompt (`str` or `List[str]`, *optional*):
-                The prompt or prompts to guide the image generation. If not defined, one has to pass `prompt_embeds`.
-                instead.
-            prompt_2 (`str` or `List[str]`, *optional*):
-                The prompt or prompts to be sent to the `tokenizer_2` and `text_encoder_2`. If not defined, `prompt` is
-                used in both text-encoders
-            height (`int`, *optional*, defaults to self.unet.config.sample_size * self.vae_scale_factor):
-                The height in pixels of the generated image. This is set to 1024 by default for the best results.
-                Anything below 512 pixels won't work well for
-                [stabilityai/stable-diffusion-xl-base-1.0](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)
-                and checkpoints that are not specifically fine-tuned on low resolutions.
-            width (`int`, *optional*, defaults to self.unet.config.sample_size * self.vae_scale_factor):
-                The width in pixels of the generated image. This is set to 1024 by default for the best results.
-                Anything below 512 pixels won't work well for
-                [stabilityai/stable-diffusion-xl-base-1.0](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0)
-                and checkpoints that are not specifically fine-tuned on low resolutions.
-            num_inference_steps (`int`, *optional*, defaults to 50):
-                The number of denoising steps. More denoising steps usually lead to a higher quality image at the
-                expense of slower inference.
-            timesteps (`List[int]`, *optional*):
-                Custom timesteps to use for the denoising process with schedulers which support a `timesteps` argument
-                in their `set_timesteps` method. If not defined, the default behavior when `num_inference_steps` is
-                passed will be used. Must be in descending order.
-            sigmas (`List[float]`, *optional*):
-                Custom sigmas to use for the denoising process with schedulers which support a `sigmas` argument in
-                their `set_timesteps` method. If not defined, the default behavior when `num_inference_steps` is passed
-                will be used.
-            denoising_end (`float`, *optional*):
-                When specified, determines the fraction (between 0.0 and 1.0) of the total denoising process to be
-                completed before it is intentionally prematurely terminated. As a result, the returned sample will
-                still retain a substantial amount of noise as determined by the discrete timesteps selected by the
-                scheduler. The denoising_end parameter should ideally be utilized when this pipeline forms a part of a
-                "Mixture of Denoisers" multi-pipeline setup, as elaborated in [**Refining the Image
-                Output**](https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/stable_diffusion_xl#refining-the-image-output)
-            guidance_scale (`float`, *optional*, defaults to 5.0):
-                Guidance scale as defined in [Classifier-Free Diffusion Guidance](https://arxiv.org/abs/2207.12598).
-                `guidance_scale` is defined as `w` of equation 2. of [Imagen
-                Paper](https://arxiv.org/pdf/2205.11487.pdf). Guidance scale is enabled by setting `guidance_scale >
-                1`. Higher guidance scale encourages to generate images that are closely linked to the text `prompt`,
-                usually at the expense of lower image quality.
-            negative_prompt (`str` or `List[str]`, *optional*):
-                The prompt or prompts not to guide the image generation. If not defined, one has to pass
-                `negative_prompt_embeds` instead. Ignored when not using guidance (i.e., ignored if `guidance_scale` is
-                less than `1`).
-            negative_prompt_2 (`str` or `List[str]`, *optional*):
-                The prompt or prompts not to guide the image generation to be sent to `tokenizer_2` and
-                `text_encoder_2`. If not defined, `negative_prompt` is used in both text-encoders
-            num_images_per_prompt (`int`, *optional*, defaults to 1):
-                The number of images to generate per prompt.
-            eta (`float`, *optional*, defaults to 0.0):
-                Corresponds to parameter eta (η) in the DDIM paper: https://arxiv.org/abs/2010.02502. Only applies to
-                [`schedulers.DDIMScheduler`], will be ignored for others.
-            generator (`torch.Generator` or `List[torch.Generator]`, *optional*):
-                One or a list of [torch generator(s)](https://pytorch.org/docs/stable/generated/torch.Generator.html)
-                to make generation deterministic.
-            latents (`torch.Tensor`, *optional*):
-                Pre-generated noisy latents, sampled from a Gaussian distribution, to be used as inputs for image
-                generation. Can be used to tweak the same generation with different prompts. If not provided, a latents
-                tensor will ge generated by sampling using the supplied random `generator`.
-            prompt_embeds (`torch.Tensor`, *optional*):
-                Pre-generated text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt weighting. If not
-                provided, text embeddings will be generated from `prompt` input argument.
-            negative_prompt_embeds (`torch.Tensor`, *optional*):
-                Pre-generated negative text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt
-                weighting. If not provided, negative_prompt_embeds will be generated from `negative_prompt` input
-                argument.
-            pooled_prompt_embeds (`torch.Tensor`, *optional*):
-                Pre-generated pooled text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt weighting.
-                If not provided, pooled text embeddings will be generated from `prompt` input argument.
-            negative_pooled_prompt_embeds (`torch.Tensor`, *optional*):
-                Pre-generated negative pooled text embeddings. Can be used to easily tweak text inputs, *e.g.* prompt
-                weighting. If not provided, pooled negative_prompt_embeds will be generated from `negative_prompt`
-                input argument.
-            ip_adapter_image: (`PipelineImageInput`, *optional*): Optional image input to work with IP Adapters.
-            ip_adapter_image_embeds (`List[torch.Tensor]`, *optional*):
-                Pre-generated image embeddings for IP-Adapter. It should be a list of length same as number of
-                IP-adapters. Each element should be a tensor of shape `(batch_size, num_images, emb_dim)`. It should
-                contain the negative image embedding if `do_classifier_free_guidance` is set to `True`. If not
-                provided, embeddings are computed from the `ip_adapter_image` input argument.
-            output_type (`str`, *optional*, defaults to `"pil"`):
-                The output format of the generate image. Choose between
-                [PIL](https://pillow.readthedocs.io/en/stable/): `PIL.Image.Image` or `np.array`.
-            return_dict (`bool`, *optional*, defaults to `True`):
-                Whether or not to return a [`~pipelines.stable_diffusion_xl.StableDiffusionXLPipelineOutput`] instead
-                of a plain tuple.
-            cross_attention_kwargs (`dict`, *optional*):
-                A kwargs dictionary that if specified is passed along to the `AttentionProcessor` as defined under
-                `self.processor` in
-                [diffusers.models.attention_processor](https://github.com/huggingface/diffusers/blob/main/src/diffusers/models/attention_processor.py).
-            guidance_rescale (`float`, *optional*, defaults to 0.0):
-                Guidance rescale factor proposed by [Common Diffusion Noise Schedules and Sample Steps are
-                Flawed](https://arxiv.org/pdf/2305.08891.pdf) `guidance_scale` is defined as `φ` in equation 16. of
-                [Common Diffusion Noise Schedules and Sample Steps are Flawed](https://arxiv.org/pdf/2305.08891.pdf).
-                Guidance rescale factor should fix overexposure when using zero terminal SNR.
-            original_size (`Tuple[int]`, *optional*, defaults to (1024, 1024)):
-                If `original_size` is not the same as `target_size` the image will appear to be down- or upsampled.
-                `original_size` defaults to `(height, width)` if not specified. Part of SDXL's micro-conditioning as
-                explained in section 2.2 of
-                [https://huggingface.co/papers/2307.01952](https://huggingface.co/papers/2307.01952).
-            crops_coords_top_left (`Tuple[int]`, *optional*, defaults to (0, 0)):
-                `crops_coords_top_left` can be used to generate an image that appears to be "cropped" from the position
-                `crops_coords_top_left` downwards. Favorable, well-centered images are usually achieved by setting
-                `crops_coords_top_left` to (0, 0). Part of SDXL's micro-conditioning as explained in section 2.2 of
-                [https://huggingface.co/papers/2307.01952](https://huggingface.co/papers/2307.01952).
-            target_size (`Tuple[int]`, *optional*, defaults to (1024, 1024)):
-                For most cases, `target_size` should be set to the desired height and width of the generated image. If
-                not specified it will default to `(height, width)`. Part of SDXL's micro-conditioning as explained in
-                section 2.2 of [https://huggingface.co/papers/2307.01952](https://huggingface.co/papers/2307.01952).
-            negative_original_size (`Tuple[int]`, *optional*, defaults to (1024, 1024)):
-                To negatively condition the generation process based on a specific image resolution. Part of SDXL's
-                micro-conditioning as explained in section 2.2 of
-                [https://huggingface.co/papers/2307.01952](https://huggingface.co/papers/2307.01952). For more
-                information, refer to this issue thread: https://github.com/huggingface/diffusers/issues/4208.
-            negative_crops_coords_top_left (`Tuple[int]`, *optional*, defaults to (0, 0)):
-                To negatively condition the generation process based on a specific crop coordinates. Part of SDXL's
-                micro-conditioning as explained in section 2.2 of
-                [https://huggingface.co/papers/2307.01952](https://huggingface.co/papers/2307.01952). For more
-                information, refer to this issue thread: https://github.com/huggingface/diffusers/issues/4208.
-            negative_target_size (`Tuple[int]`, *optional*, defaults to (1024, 1024)):
-                To negatively condition the generation process based on a target image resolution. It should be as same
-                as the `target_size` for most cases. Part of SDXL's micro-conditioning as explained in section 2.2 of
-                [https://huggingface.co/papers/2307.01952](https://huggingface.co/papers/2307.01952). For more
-                information, refer to this issue thread: https://github.com/huggingface/diffusers/issues/4208.
-            callback_on_step_end (`Callable`, `PipelineCallback`, `MultiPipelineCallbacks`, *optional*):
-                A function or a subclass of `PipelineCallback` or `MultiPipelineCallbacks` that is called at the end of
-                each denoising step during the inference. with the following arguments: `callback_on_step_end(self:
-                DiffusionPipeline, step: int, timestep: int, callback_kwargs: Dict)`. `callback_kwargs` will include a
-                list of all tensors as specified by `callback_on_step_end_tensor_inputs`.
-            callback_on_step_end_tensor_inputs (`List`, *optional*):
-                The list of tensor inputs for the `callback_on_step_end` function. The tensors specified in the list
-                will be passed as `callback_kwargs` argument. You will only be able to include variables listed in the
-                `._callback_tensor_inputs` attribute of your pipeline class.
-
-        Examples:
-
-        Returns:
-            [`~pipelines.stable_diffusion_xl.StableDiffusionXLPipelineOutput`] or `tuple`:
-            [`~pipelines.stable_diffusion_xl.StableDiffusionXLPipelineOutput`] if `return_dict` is True, otherwise a
-            `tuple`. When returning a tuple, the first element is a list with the generated images.
         """
-
+        NAG Pipeline call method - structured similar to TPG
+        """
+        
         callback = kwargs.pop("callback", None)
         callback_steps = kwargs.pop("callback_steps", None)
 
         if callback is not None:
-            deprecate(
-                "callback",
-                "1.0.0",
-                "Passing `callback` as an input argument to `__call__` is deprecated, consider use `callback_on_step_end`",
-            )
+            deprecate("callback", "1.0.0", "Passing `callback` as an input argument to `__call__` is deprecated")
         if callback_steps is not None:
-            deprecate(
-                "callback_steps",
-                "1.0.0",
-                "Passing `callback_steps` as an input argument to `__call__` is deprecated, consider use `callback_on_step_end`",
-            )
+            deprecate("callback_steps", "1.0.0", "Passing `callback_steps` as an input argument to `__call__` is deprecated")
 
         if isinstance(callback_on_step_end, (PipelineCallback, MultiPipelineCallbacks)):
             callback_on_step_end_tensor_inputs = callback_on_step_end.tensor_inputs
 
-        # 0. Default height and width to unet
+        # Default height and width
         height = height or self.default_sample_size * self.vae_scale_factor
         width = width or self.default_sample_size * self.vae_scale_factor
 
-        # Enable VAE tiling and attention slicing for memory optimization
-        # For ComfyUI VAE, tiling is handled differently
+        # Enable memory optimizations
         if hasattr(self.vae, "enable_tiling"):
             self.vae.enable_tiling()
         elif hasattr(self.vae, "model") and hasattr(self.vae.model, "enable_tiling"):
@@ -456,22 +371,11 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         original_size = original_size or (height, width)
         target_size = target_size or (height, width)
 
-        # 1. Check inputs. Raise error if not correct
+        # Check inputs
         self.check_inputs(
-            prompt,
-            prompt_2,
-            height,
-            width,
-            callback_steps,
-            negative_prompt,
-            negative_prompt_2,
-            prompt_embeds,
-            negative_prompt_embeds,
-            pooled_prompt_embeds,
-            negative_pooled_prompt_embeds,
-            ip_adapter_image,
-            ip_adapter_image_embeds,
-            callback_on_step_end_tensor_inputs,
+            prompt, prompt_2, height, width, callback_steps, negative_prompt, negative_prompt_2,
+            prompt_embeds, negative_prompt_embeds, pooled_prompt_embeds, negative_pooled_prompt_embeds,
+            ip_adapter_image, ip_adapter_image_embeds, callback_on_step_end_tensor_inputs,
         )
 
         self._guidance_scale = guidance_scale
@@ -482,7 +386,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         self._interrupt = False
         self._nag_scale = nag_scale
 
-        # 2. Define call parameters
+        # Define call parameters
         if prompt is not None and isinstance(prompt, str):
             batch_size = 1
         elif prompt is not None and isinstance(prompt, list):
@@ -490,7 +394,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         else:
             batch_size = prompt_embeds.shape[0]
 
-        # Handle device detection for different UNet structures
+        # Handle device detection
         if hasattr(self.unet, 'model') and hasattr(self.unet.model, 'parameters'):
             device = next(iter(self.unet.model.parameters())).device
         elif hasattr(self.unet, 'parameters'):
@@ -498,7 +402,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         else:
             device = self._execution_device
 
-        # 3. Encode input prompt
+        # Encode input prompt
         lora_scale = (
             self.cross_attention_kwargs.get("scale", None) if self.cross_attention_kwargs is not None else None
         )
@@ -523,15 +427,19 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             lora_scale=lora_scale,
             clip_skip=self.clip_skip,
         )
+
+        # Handle NAG negative prompt embeddings
         if self.do_normalized_attention_guidance:
-            nag_negative_pooled_prompt_embeds = None # Initialize pooled embeds for NAG
+            nag_negative_pooled_prompt_embeds = None
+            
             if nag_negative_prompt_embeds is None:
-                # First priority: use existing negative prompt embeddings if available
+                # Priority 1: Use existing negative prompt embeddings
                 if self.do_classifier_free_guidance and negative_prompt_embeds is not None:
                     nag_negative_prompt_embeds = negative_prompt_embeds
                     nag_negative_pooled_prompt_embeds = negative_pooled_prompt_embeds
                     print("[NAG] Using existing CFG negative prompt embeddings for NAG")
-                # Second priority: try to encode the NAG negative prompt if provided
+                    
+                # Priority 2: Encode NAG negative prompt
                 elif nag_negative_prompt is not None and nag_negative_prompt.strip() != "":
                     print(f"[NAG] Encoding NAG negative prompt: '{nag_negative_prompt}'")
                     try:
@@ -545,36 +453,19 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                         )
                     except Exception as e:
                         print(f"[NAG] Failed to encode NAG negative prompt: {e}")
-                        print("[NAG] Falling back to zero embeddings for NAG negative prompt")
-                        # Fall back to zero embeddings if encoding fails
-                        import torch
-                        batch_size = num_images_per_prompt
+                        nag_negative_prompt_embeds = None
+                        nag_negative_pooled_prompt_embeds = None
                         
-                        # Try to get sequence length from stored shape
-                        seq_len = 77  # Default CLIP sequence length
-                        embed_dim = 2048  # Default SDXL embedding dimension
-                        
-                        if hasattr(self, '_current_prompt_embeds_shape') and self._current_prompt_embeds_shape is not None:
-                            seq_len = self._current_prompt_embeds_shape[1]
-                            embed_dim = self._current_prompt_embeds_shape[2]
-                        
-                        embed_dim = 2048  # Standard SDXL embedding dimension
-                        pooled_dim = 1280  # Standard SDXL pooled dimension
-                        
-                        # Create zero embeddings (neutral)
-                        nag_negative_prompt_embeds = torch.zeros((batch_size, seq_len, embed_dim), device=device, dtype=torch.float16 if device.type == 'cuda' else torch.float32)
-                        nag_negative_pooled_prompt_embeds = torch.zeros((batch_size, pooled_dim), device=device, dtype=torch.float16 if device.type == 'cuda' else torch.float32)
-                # Third priority: try to encode the regular negative prompt
+                # Priority 3: Use regular negative prompt
                 elif negative_prompt is not None and negative_prompt.strip() != "":
                     print(f"[NAG] Using regular negative prompt for NAG: '{negative_prompt}'")
                     if negative_prompt_embeds is not None:
                         nag_negative_prompt_embeds = negative_prompt_embeds
-                        nag_negative_pooled_prompt_embeds = negative_pooled_prompt_embeds # Also assign pooled if available
+                        nag_negative_pooled_prompt_embeds = negative_pooled_prompt_embeds
                     else:
-                        nag_negative_prompt = negative_prompt
                         try:
                             nag_negative_prompt_embeds, _, nag_negative_pooled_prompt_embeds, _ = self.encode_prompt(
-                                prompt=nag_negative_prompt,
+                                prompt=negative_prompt,
                                 device=device,
                                 num_images_per_prompt=num_images_per_prompt,
                                 do_classifier_free_guidance=False,
@@ -588,17 +479,16 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 else:
                     print("[NAG] No negative prompt available, NAG will be less effective")
                     nag_negative_prompt_embeds = None
-                    nag_negative_pooled_prompt_embeds = None # Ensure this is also None
+                    nag_negative_pooled_prompt_embeds = None
 
-        # 4. Prepare timesteps
+        # Prepare timesteps
         timesteps, num_inference_steps = retrieve_timesteps(
             self.scheduler, num_inference_steps, device, timesteps, sigmas
         )
 
-        # 5. Prepare latent variables
+        # Prepare latent variables
         num_channels_latents = 4  # Standard SDXL latent channels
         
-        # Try to use the input latents directly if they look reasonable
         if latents is not None and latents.std().item() > 0.01:
             latents = latents.to(device=device, dtype=prompt_embeds.dtype)
         else:
@@ -613,16 +503,15 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 latents,
             )
 
-        # 6. Prepare extra step kwargs. TODO: Logic should ideally just be moved out of the pipeline
+        # Prepare extra step kwargs
         extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
 
-        # 7. Prepare added time ids & embeddings
+        # Prepare added time ids & embeddings
         add_text_embeds = pooled_prompt_embeds
         if self.text_encoder_2 is None:
             text_encoder_projection_dim = int(pooled_prompt_embeds.shape[-1])
         else:
-            # Use a default projection dimension for SDXL
-            text_encoder_projection_dim = 1280  # Standard SDXL text encoder 2 projection dimension
+            text_encoder_projection_dim = 1280  # Standard SDXL
 
         add_time_ids = self._get_add_time_ids(
             original_size,
@@ -631,6 +520,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             dtype=prompt_embeds.dtype,
             text_encoder_projection_dim=text_encoder_projection_dim,
         )
+        
         if negative_original_size is not None and negative_target_size is not None:
             negative_add_time_ids = self._get_add_time_ids(
                 negative_original_size,
@@ -648,15 +538,12 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
             add_time_ids = torch.cat([negative_add_time_ids, add_time_ids], dim=0)
 
         if self.do_normalized_attention_guidance and nag_negative_prompt_embeds is not None:
-            # Concatenate prompt_embeds, add_text_embeds, and add_time_ids for NAG
+            # Concatenate for NAG
             prompt_embeds = torch.cat([prompt_embeds, nag_negative_prompt_embeds], dim=0)
-            # For add_text_embeds and add_time_ids, we need to replicate the existing ones
-            # to match the batch size of the concatenated prompt_embeds
+            
             num_existing_batches = add_text_embeds.shape[0]
             num_nag_batches = nag_negative_prompt_embeds.shape[0]
             
-            # Replicate existing add_text_embeds and add_time_ids for NAG
-            # Use nag_negative_pooled_prompt_embeds if available, otherwise replicate existing add_text_embeds
             if nag_negative_pooled_prompt_embeds is not None:
                 replicated_add_text_embeds = nag_negative_pooled_prompt_embeds
             else:
@@ -669,7 +556,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
 
         elif self.do_normalized_attention_guidance and nag_negative_prompt_embeds is None:
             print("[NAG] Warning: NAG is enabled but no negative embeddings available, disabling NAG")
-            self._nag_scale = 1.0  # Disable NAG if no negative embeddings
+            self._nag_scale = 1.0
 
         prompt_embeds = prompt_embeds.to(device)
         add_text_embeds = add_text_embeds.to(device)
@@ -684,33 +571,29 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 self.do_classifier_free_guidance,
             )
 
-        # 8. Denoising loop
+        # Denoising loop
         num_warmup_steps = max(len(timesteps) - num_inference_steps * self.scheduler.order, 0)
 
-        # 8.1 Apply denoising_end
+        # Apply denoising_end
         if (
-                self.denoising_end is not None
-                and isinstance(self.denoising_end, float)
-                and self.denoising_end > 0
-                and self.denoising_end < 1
+            self.denoising_end is not None
+            and isinstance(self.denoising_end, float)
+            and self.denoising_end > 0
+            and self.denoising_end < 1
         ):
-            discrete_timestep_cutoff = int(
-                round(
-                    1000  # Standard diffusion timesteps
-                    - (self.denoising_end * 1000)
-                )
-            )
+            discrete_timestep_cutoff = int(round(1000 - (self.denoising_end * 1000)))
             num_inference_steps = len(list(filter(lambda ts: ts >= discrete_timestep_cutoff, timesteps)))
             timesteps = timesteps[:num_inference_steps]
 
-        # 9. Optionally get Guidance Scale Embedding
-        timestep_cond = None
-        # Skip guidance scale embedding for custom UNet - not typically used in SDXL
         timestep_cond = None
 
+        # Set up NAG attention processors
         if self.do_normalized_attention_guidance:
             origin_attn_procs = getattr(self.unet, 'attn_processors', {})
-            self._set_nag_attn_processor(nag_scale, nag_tau, nag_alpha)
+            nag_sampler.nag_scale = nag_scale
+            nag_sampler.nag_tau = nag_tau
+            nag_sampler.nag_alpha = nag_alpha
+            nag_sampler.activate(self.unet)
             attn_procs_recovered = False
 
         self._num_timesteps = len(timesteps)
@@ -719,67 +602,62 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                 if self.interrupt:
                     continue
 
-                # expand the latents if we are doing classifier free guidance
+                # Expand latents for guidance
                 latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
 
                 if self.do_normalized_attention_guidance and nag_negative_prompt_embeds is not None:
-                    # Ensure latent_model_input matches the batch size of prompt_embeds
                     target_batch_size = prompt_embeds.shape[0]
                     current_latent_batch_size = latent_model_input.shape[0]
 
                     if target_batch_size > current_latent_batch_size:
                         num_latents_to_add = target_batch_size - current_latent_batch_size
-                        # Repeat the first latent to match the required number of additional latents
                         latent_model_input = torch.cat([latent_model_input, latents[0:1].repeat(num_latents_to_add, 1, 1, 1)], dim=0)
 
                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
 
                 # Check if we should disable NAG for this timestep
                 if t < math.floor((1 - nag_end) * 999) and self.do_normalized_attention_guidance and not attn_procs_recovered:
-                    self.unet.set_attn_processor(origin_attn_procs)
+                    if hasattr(self.unet, 'set_attn_processor'):
+                        self.unet.set_attn_processor(origin_attn_procs)
+                    elif hasattr(self.unet, 'model') and hasattr(self.unet.model, 'set_attn_processor'):
+                        self.unet.model.set_attn_processor(origin_attn_procs)
                     prompt_embeds = prompt_embeds[:len(latent_model_input)]
                     attn_procs_recovered = True
 
-                # predict the noise residual
+                # Predict noise residual
                 added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
                 if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
                     added_cond_kwargs["image_embeds"] = image_embeds
 
-                # Use ComfyUI model interface
+                # Handle different UNet interfaces
                 if hasattr(self.unet, 'model') and hasattr(self.unet.model, 'apply_model'):
-                    # ComfyUI wrapped model - convert Diffusers conditioning to ComfyUI format
-                    # For SDXL, we need to pass the additional conditioning as separate parameters
+                    # ComfyUI wrapped model
                     comfy_kwargs = {}
                     if "text_embeds" in added_cond_kwargs and "time_ids" in added_cond_kwargs:
-                        # Convert Diffusers SDXL conditioning to ComfyUI format
                         pooled_output = added_cond_kwargs["text_embeds"]
                         time_ids = added_cond_kwargs["time_ids"]
                         
-                        # Ensure batch sizes match latent_model_input
+                        # Ensure batch sizes match
                         target_batch_size = latent_model_input.shape[0]
                         if pooled_output.shape[0] != target_batch_size:
                             if pooled_output.shape[0] < target_batch_size:
-                                # Repeat to match target batch size
                                 repeat_factor = target_batch_size // pooled_output.shape[0]
                                 remainder = target_batch_size % pooled_output.shape[0]
                                 pooled_output = torch.cat([pooled_output.repeat(repeat_factor, 1)] + 
                                                         ([pooled_output[:remainder]] if remainder > 0 else []), dim=0)
                             else:
-                                # Truncate to match target batch size
                                 pooled_output = pooled_output[:target_batch_size]
                         
                         if time_ids.shape[0] != target_batch_size:
                             if time_ids.shape[0] < target_batch_size:
-                                # Repeat to match target batch size
                                 repeat_factor = target_batch_size // time_ids.shape[0]
                                 remainder = target_batch_size % time_ids.shape[0]
                                 time_ids = torch.cat([time_ids.repeat(repeat_factor, 1)] + 
                                                    ([time_ids[:remainder]] if remainder > 0 else []), dim=0)
                             else:
-                                # Truncate to match target batch size
                                 time_ids = time_ids[:target_batch_size]
                         
-                        # Extract dimensions from time_ids (original_size, crops_coords, target_size)
+                        # Extract dimensions from time_ids
                         if time_ids.shape[-1] >= 6:
                             height = int(time_ids[0, 0].item())
                             width = int(time_ids[0, 1].item())
@@ -799,17 +677,15 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                                 "device": latent_model_input.device,
                             })
                     
-                    # Also ensure prompt_embeds batch size matches latent_model_input
+                    # Ensure prompt_embeds batch size matches
                     target_batch_size = latent_model_input.shape[0]
                     if prompt_embeds.shape[0] != target_batch_size:
                         if prompt_embeds.shape[0] < target_batch_size:
-                            # Repeat to match target batch size
                             repeat_factor = target_batch_size // prompt_embeds.shape[0]
                             remainder = target_batch_size % prompt_embeds.shape[0]
                             prompt_embeds = torch.cat([prompt_embeds.repeat(repeat_factor, 1, 1)] + 
                                                     ([prompt_embeds[:remainder]] if remainder > 0 else []), dim=0)
                         else:
-                            # Truncate to match target batch size
                             prompt_embeds = prompt_embeds[:target_batch_size]
                     
                     noise_pred = self.unet.model.apply_model(
@@ -830,56 +706,38 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                         return_dict=False,
                     )[0]
 
-                # perform guidance
+                # Perform guidance
                 if self.do_classifier_free_guidance:
                     if noise_pred.shape[0] >= 2:
                         noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                         noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
-                        
-                        # Debug guidance for first few steps
-
                     else:
-                        print(f"[NAG DEBUG] Warning: Expected at least 2 noise predictions for CFG, got {noise_pred.shape[0]}")
+                        print(f"[NAG] Warning: Expected at least 2 noise predictions for CFG, got {noise_pred.shape[0]}")
                 
-                # Handle NAG guidance if enabled
+                # Handle NAG guidance
                 if self.do_normalized_attention_guidance and noise_pred.shape[0] >= 3:
-                    # For NAG, we have [uncond, text, nag_uncond] predictions
-                    # Apply NAG guidance between text and nag_uncond
                     noise_pred_uncond, noise_pred_text, noise_pred_nag = noise_pred.chunk(3)
                     
-                    # First apply CFG
+                    # Apply CFG first
                     noise_pred_cfg = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
                     
                     # Apply NAG guidance
                     noise_pred = noise_pred_cfg + self._nag_scale * (noise_pred_text - noise_pred_nag)
-                    
-
 
                 if self.do_classifier_free_guidance and self.guidance_rescale > 0.0:
-                    # Based on 3.4. in https://arxiv.org/pdf/2305.08891.pdf
                     noise_pred = rescale_noise_cfg(noise_pred, noise_pred_text, guidance_rescale=self.guidance_rescale)
 
-                # compute the previous noisy sample x_t -> x_t-1
+                # Compute previous noisy sample
                 latents_dtype = latents.dtype
                 
-                # Check if we have the dummy SchedulerWrapper from Fooocus
+                # Handle different scheduler types
                 if type(self.scheduler).__name__ == 'SchedulerWrapper':
-                    # Use a simple, stable denoising step instead of complex DDIM
-                    # This is much more stable and less likely to explode
-                    
-                    # Simple denoising step: gradually reduce noise
-                    step_ratio = (1000 - t) / 1000.0  # How far through denoising we are (0 to 1)
-                    
-                    # Use a more aggressive step size that decreases over time
-                    # Early steps need to be more aggressive to remove noise effectively
-                    step_size = 0.05 * (1.0 - step_ratio * 0.7)  # Start at 0.05, end at ~0.015
-                    
-                    # Simple step: move latents towards less noisy version
+                    # Simple denoising step for Fooocus SchedulerWrapper
+                    step_ratio = (1000 - t) / 1000.0
+                    step_size = 0.05 * (1.0 - step_ratio * 0.7)
                     latents = latents - step_size * noise_pred
-                    
-
                 else:
-                    # Use the real scheduler
+                    # Use real scheduler
                     scheduler_output = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)
                     if hasattr(scheduler_output, 'prev_sample'):
                         latents = scheduler_output.prev_sample
@@ -888,7 +746,7 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     else:
                         latents = scheduler_output
 
-                # --- add these three lines ---
+                # Callback handling
                 if callback is not None:
                     try:
                         preview_img = safe_decode(latents[:1], self.vae, width=width, height=height)
@@ -896,13 +754,10 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                         callback(i, t, preview_np)
                     except Exception as e:
                         print(f"[Preview Callback] Failed at step {i}: {e}")
+
                 if latents.dtype != latents_dtype:
                     if torch.backends.mps.is_available():
-                        # some platforms (eg. apple mps) misbehave due to a pytorch bug: https://github.com/pytorch/pytorch/pull/99272
                         latents = latents.to(latents_dtype)
-
-                if callback is not None:
-                    callback(i, t, latents)
 
                 if callback_on_step_end is not None:
                     callback_kwargs = {}
@@ -914,25 +769,22 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
                     prompt_embeds = callback_outputs.pop("prompt_embeds", prompt_embeds)
                     negative_prompt_embeds = callback_outputs.pop("negative_prompt_embeds", negative_prompt_embeds)
                     add_text_embeds = callback_outputs.pop("add_text_embeds", add_text_embeds)
-                    negative_pooled_prompt_embeds = callback_outputs.pop(
-                        "negative_pooled_prompt_embeds", negative_pooled_prompt_embeds
-                    )
+                    negative_pooled_prompt_embeds = callback_outputs.pop("negative_pooled_prompt_embeds", negative_pooled_prompt_embeds)
                     add_time_ids = callback_outputs.pop("add_time_ids", add_time_ids)
-                    negative_add_time_ids = callback_outputs.pop("negative_add_time_ids", negative_add_time_ids)
 
-                # call the callback, if provided
+                # Progress bar update
                 if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % self.scheduler.order == 0):
                     progress_bar.update()
-                    if callback is not None and i % callback_steps == 0:
-                        step_idx = i // getattr(self.scheduler, "order", 1)
-                        callback(step_idx, t, latents)
 
                 if XLA_AVAILABLE:
                     xm.mark_step()
 
-        # Always return latents for Fooocus integration
+        # Cleanup NAG processors
+        if self.do_normalized_attention_guidance:
+            nag_sampler.deactivate()
+
+        # Return latents for Fooocus integration
         if not return_dict:
-            # Ensure we return the right batch size (should be 1 for single image)
             if latents.shape[0] > 1:
                 latents = latents[:1]  # Take only the first sample
             return (latents,)
@@ -942,4 +794,3 @@ class NAGStableDiffusionXLPipeline(StableDiffusionXLPipeline):
         self.maybe_free_model_hooks()
 
         return StableDiffusionXLPipelineOutput(images=[final_image])
-
