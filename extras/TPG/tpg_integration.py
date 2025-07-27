@@ -371,6 +371,8 @@ def patch_sampling_for_tpg():
     """
     Patch the sampling function to include TPG support
     """
+    global _original_unet_forward
+    
     if not is_tpg_enabled():
         return False
     
@@ -382,8 +384,6 @@ def patch_sampling_for_tpg():
         if set(applied_layers) == set(all_layers):
             # If all layers are selected, use sampling function approach (more efficient)
             import ldm_patched.modules.samplers as samplers
-            
-            global _original_unet_forward
             
             if _original_unet_forward is None:
                 _original_unet_forward = samplers.sampling_function
@@ -397,7 +397,6 @@ def patch_sampling_for_tpg():
             else:
                 # Fallback to sampling function approach
                 import ldm_patched.modules.samplers as samplers
-                global _original_unet_forward
                 if _original_unet_forward is None:
                     _original_unet_forward = samplers.sampling_function
                     samplers.sampling_function = create_tpg_sampling_function(_original_unet_forward)
@@ -472,12 +471,13 @@ def unpatch_sampling_for_tpg():
     """
     Restore the original sampling function and attention processors
     """
+    global _original_unet_forward
+    
     try:
         success = True
         
         # Restore sampling function if it was patched
         import ldm_patched.modules.samplers as samplers
-        global _original_unet_forward
         
         if _original_unet_forward is not None:
             samplers.sampling_function = _original_unet_forward
