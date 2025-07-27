@@ -9,7 +9,7 @@ class TruncAdaLayerNorm(AdaLayerNorm):
             self, x: torch.Tensor, timestep: Optional[torch.Tensor] = None, temb: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         batch_size = x.shape[0]
-        return self.forward_old(
+        return super().forward(
             x, 
             temb[:batch_size] if temb is not None else None,
         )
@@ -18,7 +18,7 @@ class TruncAdaLayerNorm(AdaLayerNorm):
 class TruncAdaLayerNormContinuous(AdaLayerNormContinuous):
     def forward(self, x: torch.Tensor, conditioning_embedding: torch.Tensor) -> torch.Tensor:
         batch_size = x.shape[0]
-        return self.forward_old(x, conditioning_embedding[:batch_size])
+        return super().forward(x, conditioning_embedding[:batch_size])
 
 
 class TruncAdaLayerNormZero(AdaLayerNormZero):
@@ -31,7 +31,7 @@ class TruncAdaLayerNormZero(AdaLayerNormZero):
             emb: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         batch_size = x.shape[0]
-        return self.forward_old(
+        return super().forward(
             x,
             timestep[:batch_size] if timestep is not None else None,
             class_labels[:batch_size] if class_labels is not None else None,
@@ -47,7 +47,7 @@ class TruncSD35AdaLayerNormZeroX(SD35AdaLayerNormZeroX):
             emb: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, ...]:
         batch_size = hidden_states.shape[0]
-        return self.forward_old(
+        return super().forward(
             hidden_states,
             emb[:batch_size] if emb is not None else None,
         )

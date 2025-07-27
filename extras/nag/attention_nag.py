@@ -43,7 +43,7 @@ class NAGAttnProcessor2_0:
             hidden_states.shape if encoder_hidden_states is None else encoder_hidden_states.shape
         )
 
-        apply_guidance = self.nag_scale > 1 and encoder_hidden_states is not None
+        apply_guidance = self.nag_scale >= 1 and encoder_hidden_states is not None
         if apply_guidance:
             origin_batch_size = batch_size - len(hidden_states)
             assert batch_size / origin_batch_size in [2, 3, 4]
@@ -100,14 +100,33 @@ class NAGAttnProcessor2_0:
                 hidden_states_positive = hidden_states[:origin_batch_size]
             else:
                 hidden_states_positive = hidden_states[origin_batch_size:2 * origin_batch_size]
-            hidden_states_guidance = hidden_states_positive * self.nag_scale - hidden_states_negative * (self.nag_scale - 1)
+            # Apply extremely conservative NAG guidance formula
+            if self.nag_scale <= 1.0:
+                # At scale 1.0 or below, apply ultra-minimal guidance
+                guidance_strength = 0.001  # 0.1% effect
+                hidden_states_guidance = hidden_states_positive + (hidden_states_positive - hidden_states_negative) * guidance_strength
+            else:
+                # For higher scales, use very conservative NAG formula
+                conservative_scale = 1.0 + (self.nag_scale - 1.0) * 0.05  # 95% reduction
+                hidden_states_guidance = hidden_states_positive * conservative_scale - hidden_states_negative * (conservative_scale - 1)
+            
+            # Apply normalization with safety checks (more conservative)
             norm_positive = torch.norm(hidden_states_positive, p=1, dim=-1, keepdim=True).expand(*hidden_states_positive.shape)
             norm_guidance = torch.norm(hidden_states_guidance, p=1, dim=-1, keepdim=True).expand(*hidden_states_guidance.shape)
 
-            scale = norm_guidance / norm_positive
-            hidden_states_guidance = hidden_states_guidance * torch.minimum(scale, scale.new_ones(1) * self.nag_tau) / scale
+            # Prevent division by zero with larger epsilon
+            norm_positive = torch.clamp(norm_positive, min=1e-6)
+            norm_guidance = torch.clamp(norm_guidance, min=1e-6)
 
-            hidden_states_guidance = hidden_states_guidance * self.nag_alpha + hidden_states_positive * (1 - self.nag_alpha)
+            scale = norm_guidance / norm_positive
+            # Much more conservative tau clamping
+            conservative_tau = min(self.nag_tau, 1.5)  # Cap tau at 1.5 to prevent extreme effects
+            scale = torch.clamp(scale, min=0.5, max=conservative_tau)  # Narrower range
+            hidden_states_guidance = hidden_states_guidance * torch.minimum(scale, scale.new_ones(1) * conservative_tau) / scale
+
+            # Apply ultra-conservative alpha blending
+            conservative_alpha = self.nag_alpha * 0.01  # 99% reduction
+            hidden_states_guidance = hidden_states_guidance * conservative_alpha + hidden_states_positive * (1 - conservative_alpha)
 
             if batch_size == 2 * origin_batch_size:
                 hidden_states = hidden_states_guidance
