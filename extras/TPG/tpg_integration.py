@@ -159,6 +159,8 @@ def create_tpg_unet_wrapper(original_apply_model):
     Create a TPG-enhanced UNet wrapper that applies token perturbation guidance
     This wraps the apply_model method which has the signature:
     apply_model(input_x, timestep_, **c)
+    
+    Instead of expanding batch size, we make separate calls to avoid tensor size issues.
     """
     def tpg_apply_model(input_x, timestep_, **c):
         # Check if TPG should be applied
@@ -174,9 +176,10 @@ def create_tpg_unet_wrapper(original_apply_model):
                 encoder_hidden_states = c['c_crossattn']
                 
                 # Check if we have the right batch size for guidance (uncond + cond)
-                if encoder_hidden_states.shape[0] == 2:
-                    # Duplicate the conditional part for TPG
+                if encoder_hidden_states.shape[0] == 2 and input_x.shape[0] == 2:
+                    # Split conditioning and input
                     uncond_embeds, cond_embeds = encoder_hidden_states.chunk(2)
+                    uncond_sample, cond_sample = input_x.chunk(2)
                     
                     # Apply token shuffling to create perturbed embeddings
                     step = int(timestep_.mean().item()) if hasattr(timestep_, 'mean') else None
@@ -186,41 +189,53 @@ def create_tpg_unet_wrapper(original_apply_model):
                         shuffle_strength=_tpg_config.get('shuffle_strength', 1.0)
                     )
                     
-                    # Create the full batch: [uncond, cond, cond_shuffled]
-                    encoder_hidden_states_tpg = torch.cat([uncond_embeds, cond_embeds, cond_embeds_shuffled], dim=0)
+                    # Make separate calls to avoid batch size issues
                     
-                    # Duplicate latents accordingly
-                    if input_x.shape[0] == 2:
-                        uncond_sample, cond_sample = input_x.chunk(2)
-                        input_x_tpg = torch.cat([uncond_sample, cond_sample, cond_sample], dim=0)
-                    else:
-                        input_x_tpg = input_x
-                    
-                    # Handle other conditioning that might need duplication
-                    new_c = {}
+                    # 1. Get unconditional prediction
+                    uncond_c = {}
                     for key, value in c.items():
                         if key == 'c_crossattn':
-                            new_c[key] = encoder_hidden_states_tpg
+                            uncond_c[key] = uncond_embeds
                         elif isinstance(value, torch.Tensor) and value.shape[0] == 2:
-                            uncond_val, cond_val = value.chunk(2)
-                            new_c[key] = torch.cat([uncond_val, cond_val, cond_val], dim=0)
+                            uncond_val, _ = value.chunk(2)
+                            uncond_c[key] = uncond_val
                         else:
-                            new_c[key] = value
+                            uncond_c[key] = value
                     
-                    # Call original apply_model with expanded batch
-                    noise_pred = original_apply_model(input_x_tpg, timestep_, **new_c)
+                    noise_pred_uncond = original_apply_model(uncond_sample, timestep_, **uncond_c)
+                    
+                    # 2. Get conditional prediction
+                    cond_c = {}
+                    for key, value in c.items():
+                        if key == 'c_crossattn':
+                            cond_c[key] = cond_embeds
+                        elif isinstance(value, torch.Tensor) and value.shape[0] == 2:
+                            _, cond_val = value.chunk(2)
+                            cond_c[key] = cond_val
+                        else:
+                            cond_c[key] = value
+                    
+                    noise_pred_cond = original_apply_model(cond_sample, timestep_, **cond_c)
+                    
+                    # 3. Get perturbed prediction
+                    perturb_c = {}
+                    for key, value in c.items():
+                        if key == 'c_crossattn':
+                            perturb_c[key] = cond_embeds_shuffled
+                        elif isinstance(value, torch.Tensor) and value.shape[0] == 2:
+                            _, cond_val = value.chunk(2)
+                            perturb_c[key] = cond_val
+                        else:
+                            perturb_c[key] = value
+                    
+                    noise_pred_perturb = original_apply_model(cond_sample, timestep_, **perturb_c)
                     
                     # Apply TPG guidance
-                    if noise_pred.shape[0] == 3:
-                        noise_pred_uncond, noise_pred_cond, noise_pred_tpg = noise_pred.chunk(3)
-                        
-                        # Apply TPG: enhance conditional prediction using perturbation difference
-                        noise_pred_enhanced = noise_pred_cond + tpg_scale * (noise_pred_cond - noise_pred_tpg)
-                        
-                        # Return in expected format (uncond, enhanced_cond)
-                        return torch.cat([noise_pred_uncond, noise_pred_enhanced], dim=0)
-                    else:
-                        return noise_pred
+                    # Enhance conditional prediction using perturbation difference
+                    noise_pred_enhanced = noise_pred_cond + tpg_scale * (noise_pred_cond - noise_pred_perturb)
+                    
+                    # Return in expected format (uncond, enhanced_cond) with batch size 2
+                    return torch.cat([noise_pred_uncond, noise_pred_enhanced], dim=0)
                 else:
                     # Standard call without TPG
                     return original_apply_model(input_x, timestep_, **c)
