@@ -54,13 +54,13 @@ def is_tpg_enabled():
 
 def shuffle_tokens(x, step=None, seed_offset=0, shuffle_strength=None):
     """
-    Shuffle tokens for TPG - creates different shuffling at each step
+    Enhanced token perturbation for TPG - creates stronger degradation for better guidance
     
     Args:
-        x: Token embeddings to shuffle [batch, seq_len, hidden_dim]
-        step: Current sampling step (for step-dependent shuffling)
+        x: Token embeddings to perturb [batch, seq_len, hidden_dim]
+        step: Current sampling step (for step-dependent perturbation)
         seed_offset: Offset for reproducible randomness
-        shuffle_strength: How much to shuffle (0.0 = no shuffle, 1.0 = full shuffle)
+        shuffle_strength: How much to perturb (0.0 = no perturbation, 1.0 = full perturbation)
     """
     try:
         if shuffle_strength is None:
@@ -71,49 +71,103 @@ def shuffle_tokens(x, step=None, seed_offset=0, shuffle_strength=None):
         
         b, n = x.shape[:2]
         
-        # Create different shuffling for each step
+        # Create different perturbation for each step
         if step is not None:
-            # Use step-based seed for reproducible but different shuffling each step
+            # Use step-based seed for reproducible but different perturbation each step
             generator = torch.Generator(device=x.device)
             generator.manual_seed(hash((step + seed_offset)) % (2**32))
             
-            # Adaptive shuffle strength based on sampling progress
+            # Adaptive perturbation strength based on sampling progress
             if _tpg_config.get('adaptive_strength', True) and step is not None:
-                # Stronger shuffling early, weaker later
+                # Stronger perturbation early, weaker later
                 progress = step / 50.0  # Assume ~50 steps
-                adaptive_strength = shuffle_strength * (1.0 - 0.5 * min(1.0, progress))
+                adaptive_strength = shuffle_strength * (1.2 - 0.4 * min(1.0, progress))  # More aggressive
             else:
                 adaptive_strength = shuffle_strength
-            
-            if adaptive_strength < 1.0:
-                # Partial shuffling: only shuffle a portion of tokens
-                num_to_shuffle = max(1, int(n * adaptive_strength))
-                indices_to_shuffle = torch.randperm(n, device=x.device, generator=generator)[:num_to_shuffle]
-                shuffled_indices = torch.randperm(num_to_shuffle, device=x.device, generator=generator)
-                
-                result = x.clone()
-                result[:, indices_to_shuffle] = x[:, indices_to_shuffle[shuffled_indices]]
-                return result
-            else:
-                # Full shuffling
-                permutation = torch.randperm(n, device=x.device, generator=generator)
-                return x[:, permutation]
         else:
-            # Random shuffling if no step provided
-            if shuffle_strength < 1.0:
-                num_to_shuffle = max(1, int(n * shuffle_strength))
-                indices_to_shuffle = torch.randperm(n, device=x.device)[:num_to_shuffle]
-                shuffled_indices = torch.randperm(num_to_shuffle, device=x.device)
-                
-                result = x.clone()
-                result[:, indices_to_shuffle] = x[:, indices_to_shuffle[shuffled_indices]]
-                return result
-            else:
-                permutation = torch.randperm(n, device=x.device)
-                return x[:, permutation]
+            generator = torch.Generator(device=x.device)
+            adaptive_strength = shuffle_strength
+        
+        result = x.clone()
+        
+        # Apply multiple perturbation techniques for stronger effect
+        
+        # 1. Token shuffling (reorder tokens)
+        if adaptive_strength > 0.3:
+            shuffle_ratio = min(1.0, adaptive_strength * 1.2)  # More aggressive shuffling
+            num_to_shuffle = max(1, int(n * shuffle_ratio))
+            indices_to_shuffle = torch.randperm(n, device=x.device, generator=generator)[:num_to_shuffle]
+            shuffled_indices = torch.randperm(num_to_shuffle, device=x.device, generator=generator)
+            result[:, indices_to_shuffle] = result[:, indices_to_shuffle[shuffled_indices]]
+        
+        # 2. Token dropout (zero out some tokens)
+        if adaptive_strength > 0.5:
+            dropout_ratio = adaptive_strength * 0.3  # Up to 30% dropout
+            num_to_drop = int(n * dropout_ratio)
+            if num_to_drop > 0:
+                indices_to_drop = torch.randperm(n, device=x.device, generator=generator)[:num_to_drop]
+                result[:, indices_to_drop] = 0
+        
+        # 3. Token duplication (duplicate some tokens to create redundancy)
+        if adaptive_strength > 0.4:
+            dup_ratio = adaptive_strength * 0.2  # Up to 20% duplication
+            num_to_dup = int(n * dup_ratio)
+            if num_to_dup > 0:
+                source_indices = torch.randperm(n, device=x.device, generator=generator)[:num_to_dup]
+                target_indices = torch.randperm(n, device=x.device, generator=generator)[:num_to_dup]
+                result[:, target_indices] = result[:, source_indices]
+        
+        # 4. Noise injection (add small amount of noise to embeddings)
+        if adaptive_strength > 0.6:
+            noise_scale = adaptive_strength * 0.1  # Small noise scale
+            noise = torch.randn_like(result, generator=generator) * noise_scale
+            result = result + noise
+        
+        # 5. Token reversal (reverse order of some token sequences)
+        if adaptive_strength > 0.7:
+            reversal_ratio = adaptive_strength * 0.4  # Up to 40% reversal
+            chunk_size = max(2, n // 10)  # Reverse in chunks
+            num_chunks = n // chunk_size
+            num_to_reverse = int(num_chunks * reversal_ratio)
+            
+            if num_to_reverse > 0:
+                chunks_to_reverse = torch.randperm(num_chunks, device=x.device, generator=generator)[:num_to_reverse]
+                for chunk_idx in chunks_to_reverse:
+                    start_idx = chunk_idx * chunk_size
+                    end_idx = min(start_idx + chunk_size, n)
+                    result[:, start_idx:end_idx] = torch.flip(result[:, start_idx:end_idx], dims=[1])
+        
+        # 6. Embedding scaling (scale some embeddings to create stronger disruption)
+        if adaptive_strength > 0.8:
+            scale_ratio = adaptive_strength * 0.3  # Up to 30% scaling
+            num_to_scale = int(n * scale_ratio)
+            if num_to_scale > 0:
+                indices_to_scale = torch.randperm(n, device=x.device, generator=generator)[:num_to_scale]
+                # Scale embeddings by random factors between 0.5 and 1.5
+                scale_factors = 0.5 + torch.rand(num_to_scale, device=x.device, generator=generator)
+                result[:, indices_to_scale] = result[:, indices_to_scale] * scale_factors.unsqueeze(0).unsqueeze(-1)
+        
+        # 7. Token mixing (blend tokens together)
+        if adaptive_strength > 0.9:
+            mix_ratio = adaptive_strength * 0.2  # Up to 20% mixing
+            num_pairs = int(n * mix_ratio / 2)
+            if num_pairs > 0:
+                indices = torch.randperm(n, device=x.device, generator=generator)[:num_pairs*2]
+                for i in range(0, len(indices), 2):
+                    if i + 1 < len(indices):
+                        idx1, idx2 = indices[i], indices[i+1]
+                        # Mix the two tokens with random weights
+                        weight = torch.rand(1, device=x.device, generator=generator).item()
+                        mixed1 = weight * result[:, idx1] + (1 - weight) * result[:, idx2]
+                        mixed2 = (1 - weight) * result[:, idx1] + weight * result[:, idx2]
+                        result[:, idx1] = mixed1
+                        result[:, idx2] = mixed2
+        
+        print(f"[TPG DEBUG] Applied enhanced token perturbation: strength={adaptive_strength:.3f}, step={step}")
+        return result
                 
     except Exception as e:
-        logger.warning(f"[TPG] Token shuffling error: {e}")
+        logger.warning(f"[TPG] Enhanced token perturbation error: {e}")
         return x
 
 def apply_tpg_to_conditioning(cond_list, step=None):
@@ -162,53 +216,114 @@ def create_tpg_sampling_function(original_sampling_function):
     """
     def tpg_sampling_function(model, x, timestep, uncond, cond, cond_scale, model_options={}, seed=None):
         # Check if TPG should be applied
-        if not is_tpg_enabled() or len(cond) == 0:
+        if not is_tpg_enabled():
+            print("[TPG DEBUG] TPG is disabled, using original sampling")
+            return original_sampling_function(model, x, timestep, uncond, cond, cond_scale, model_options, seed)
+        
+        if len(cond) == 0:
+            print("[TPG DEBUG] No conditioning, using original sampling")
             return original_sampling_function(model, x, timestep, uncond, cond, cond_scale, model_options, seed)
         
         try:
             tpg_scale = _tpg_config.get('scale', 3.0)
+            print(f"[TPG DEBUG] Applying TPG with scale={tpg_scale}")
             
-            # Create perturbed conditioning by shuffling tokens
+            # Get the original CFG result first
+            cfg_result = original_sampling_function(model, x, timestep, uncond, cond, cond_scale, model_options, seed)
+            print(f"[TPG DEBUG] Got CFG result with shape: {cfg_result.shape}")
+            
+            # Import calc_cond_uncond_batch locally to avoid circular imports
+            from ldm_patched.modules.samplers import calc_cond_uncond_batch
+            
+            # Create perturbed conditioning by shuffling tokens in text embeddings
             tpg_cond = []
-            for c in cond:
+            tokens_shuffled = False
+            
+            for i, c in enumerate(cond):
                 new_c = c.copy()
+                
+                # Look for text conditioning in different possible locations
                 if 'model_conds' in new_c:
                     for key, model_cond in new_c['model_conds'].items():
                         if hasattr(model_cond, 'cond') and isinstance(model_cond.cond, torch.Tensor):
+                            original_shape = model_cond.cond.shape
+                            print(f"[TPG DEBUG] Found conditioning tensor '{key}' with shape: {original_shape}")
+                            
                             # Create shuffled version
                             import copy
                             new_model_cond = copy.deepcopy(model_cond)
                             
                             # Apply token shuffling
                             step = int(timestep.mean().item()) if hasattr(timestep, 'mean') else None
-                            new_model_cond.cond = shuffle_tokens(
+                            shuffled_cond = shuffle_tokens(
                                 model_cond.cond,
                                 step=step,
                                 shuffle_strength=_tpg_config.get('shuffle_strength', 1.0)
                             )
+                            
+                            # Verify shuffling actually happened
+                            if not torch.equal(model_cond.cond, shuffled_cond):
+                                print(f"[TPG DEBUG] Successfully shuffled tokens for '{key}'")
+                                tokens_shuffled = True
+                            else:
+                                print(f"[TPG DEBUG] Warning: Token shuffling had no effect for '{key}'")
+                            
+                            new_model_cond.cond = shuffled_cond
                             new_c['model_conds'][key] = new_model_cond
+                
                 tpg_cond.append(new_c)
             
-            # Get predictions for all conditions
-            # 1. Standard CFG prediction
-            cfg_result = original_sampling_function(model, x, timestep, uncond, cond, cond_scale, model_options, seed)
+            if not tokens_shuffled:
+                print("[TPG DEBUG] Warning: No tokens were shuffled, TPG may have no effect")
+                return cfg_result
             
-            # Import calc_cond_uncond_batch locally to avoid circular imports
-            from ldm_patched.modules.samplers import calc_cond_uncond_batch
-            
-            # 2. Get conditional prediction without CFG
+            # Get conditional prediction without CFG (for comparison)
+            print("[TPG DEBUG] Getting conditional prediction...")
             cond_pred, _ = calc_cond_uncond_batch(model, cond, None, x, timestep, model_options)
             
-            # 3. Get perturbed prediction
+            # Get perturbed prediction
+            print("[TPG DEBUG] Getting perturbed prediction...")
             tpg_pred, _ = calc_cond_uncond_batch(model, tpg_cond, None, x, timestep, model_options)
             
-            # Apply TPG guidance
-            # Enhance the CFG result using the difference between normal and perturbed conditional predictions
-            tpg_enhanced = cfg_result + tpg_scale * (cond_pred - tpg_pred)
+            # Calculate the difference
+            pred_diff = cond_pred - tpg_pred
+            diff_magnitude = torch.abs(pred_diff).mean().item()
+            print(f"[TPG DEBUG] Prediction difference magnitude: {diff_magnitude}")
+            
+            if diff_magnitude < 1e-6:
+                print("[TPG DEBUG] Warning: Very small prediction difference, TPG effect may be minimal")
+            
+            # Apply TPG guidance with enhanced scaling
+            # Use non-linear scaling for stronger effect
+            base_enhancement = tpg_scale * pred_diff
+            
+            # Apply adaptive scaling based on difference magnitude
+            if diff_magnitude > 1e-4:
+                # Amplify the effect when there's a meaningful difference
+                amplification_factor = min(2.0, 1.0 + (diff_magnitude * 1000))
+                print(f"[TPG DEBUG] Applying amplification factor: {amplification_factor:.3f}")
+                tpg_enhancement = base_enhancement * amplification_factor
+            else:
+                tpg_enhancement = base_enhancement
+            
+            enhancement_magnitude = torch.abs(tpg_enhancement).mean().item()
+            print(f"[TPG DEBUG] TPG enhancement magnitude: {enhancement_magnitude}")
+            
+            tpg_enhanced = cfg_result + tpg_enhancement
+            
+            # Verify the result is different from original
+            result_diff = torch.abs(tpg_enhanced - cfg_result).mean().item()
+            print(f"[TPG DEBUG] Final result difference from CFG: {result_diff}")
+            
+            if result_diff < 1e-6:
+                print("[TPG DEBUG] Warning: TPG had minimal effect on final result")
+            else:
+                print(f"[TPG DEBUG] TPG successfully applied with effect magnitude: {result_diff}")
             
             return tpg_enhanced
             
         except Exception as e:
+            print(f"[TPG DEBUG] Error in TPG sampling: {e}")
             logger.warning(f"[TPG] Error in TPG sampling, falling back to original: {e}")
             import traceback
             traceback.print_exc()

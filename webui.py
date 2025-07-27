@@ -760,22 +760,22 @@ with shared.gradio_root:
                 with gr.Accordion(label='Token Perturbation Guidance (TPG)', open=False):
                     tpg_enabled = gr.Checkbox(label='Enable TPG', value=False,
                                              info='Enable Token Perturbation Guidance for enhanced image quality')
-                    tpg_scale = gr.Slider(label='TPG Scale', minimum=0.0, maximum=10.0, step=0.1,
-                                         value=3.0, visible=False,
-                                         info='Strength of TPG guidance (higher = stronger effect)')
+                    tpg_scale = gr.Slider(label='TPG Scale', minimum=0.0, maximum=15.0, step=0.1,
+                                         value=5.0, visible=False,
+                                         info='Strength of TPG guidance (higher = stronger effect, try 5-10 for noticeable results)')
                     tpg_applied_layers = gr.CheckboxGroup(label='Applied Layers', 
                                                          choices=['down', 'mid', 'up'], 
                                                          value=['mid', 'up'], visible=False,
                                                          info='Which UNet layers to apply TPG to')
-                    tpg_shuffle_strength = gr.Slider(label='Shuffle Strength', minimum=0.0, maximum=1.0, step=0.01,
-                                                    value=1.0, visible=False,
-                                                    info='How much to shuffle tokens (0.0 = no shuffle, 1.0 = full shuffle)')
+                    tpg_shuffle_strength = gr.Slider(label='Perturbation Strength', minimum=0.0, maximum=2.0, step=0.01,
+                                                    value=1.5, visible=False,
+                                                    info='How aggressively to perturb tokens (higher = stronger effect)')
                     tpg_adaptive_strength = gr.Checkbox(label='Adaptive Strength', value=True, visible=False,
                                                        info='Use adaptive strength during sampling')
                     tpg_preset = gr.Dropdown(label='TPG Preset', 
-                                           choices=['Custom', 'General', 'Artistic', 'Photorealistic', 'Detailed'],
-                                           value='General', visible=False,
-                                           info='Predefined TPG settings for different use cases')
+                                           choices=['Custom', 'Subtle', 'Moderate', 'Strong', 'Extreme'],
+                                           value='Moderate', visible=False,
+                                           info='Predefined TPG settings for different effect strengths')
                     tpg_status = gr.Textbox(label='TPG Status', interactive=False, 
                                            value='TPG: Disabled', visible=False)
                     
@@ -787,10 +787,10 @@ with shared.gradio_root:
                             return gr.update(), gr.update(), gr.update(), gr.update()
                         
                         presets = {
-                            'General': {'scale': 3.0, 'layers': ['mid', 'up'], 'shuffle': 1.0, 'adaptive': True},
-                            'Artistic': {'scale': 4.0, 'layers': ['mid', 'up'], 'shuffle': 1.0, 'adaptive': True},
-                            'Photorealistic': {'scale': 2.5, 'layers': ['up'], 'shuffle': 0.8, 'adaptive': True},
-                            'Detailed': {'scale': 3.5, 'layers': ['mid', 'up'], 'shuffle': 1.0, 'adaptive': True}
+                            'Subtle': {'scale': 3.0, 'layers': ['up'], 'shuffle': 1.0, 'adaptive': True},
+                            'Moderate': {'scale': 5.0, 'layers': ['mid', 'up'], 'shuffle': 1.5, 'adaptive': True},
+                            'Strong': {'scale': 8.0, 'layers': ['mid', 'up'], 'shuffle': 1.8, 'adaptive': True},
+                            'Extreme': {'scale': 12.0, 'layers': ['down', 'mid', 'up'], 'shuffle': 2.0, 'adaptive': True}
                         }
                         
                         if preset in presets:
