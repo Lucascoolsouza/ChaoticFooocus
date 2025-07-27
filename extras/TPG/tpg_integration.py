@@ -90,19 +90,18 @@ def shuffle_tokens(x, step=None, seed_offset=0, shuffle_strength=None):
         
         result = x.clone()
         
-        # Apply multiple perturbation techniques for stronger effect
+        # Apply EXTREMELY aggressive perturbation techniques
         
-        # 1. Token shuffling (reorder tokens)
-        if adaptive_strength > 0.3:
-            shuffle_ratio = min(1.0, adaptive_strength * 1.2)  # More aggressive shuffling
-            num_to_shuffle = max(1, int(n * shuffle_ratio))
-            indices_to_shuffle = torch.randperm(n, device=x.device, generator=generator)[:num_to_shuffle]
-            shuffled_indices = torch.randperm(num_to_shuffle, device=x.device, generator=generator)
-            result[:, indices_to_shuffle] = result[:, indices_to_shuffle[shuffled_indices]]
+        # 1. Token shuffling (reorder tokens) - ALWAYS apply, much more aggressive
+        shuffle_ratio = min(1.0, adaptive_strength * 2.0)  # Much more aggressive shuffling
+        num_to_shuffle = max(int(n * 0.5), int(n * shuffle_ratio))  # At least 50% shuffling
+        indices_to_shuffle = torch.randperm(n, device=x.device, generator=generator)[:num_to_shuffle]
+        shuffled_indices = torch.randperm(num_to_shuffle, device=x.device, generator=generator)
+        result[:, indices_to_shuffle] = result[:, indices_to_shuffle[shuffled_indices]]
         
-        # 2. Token dropout (zero out some tokens)
-        if adaptive_strength > 0.5:
-            dropout_ratio = adaptive_strength * 0.3  # Up to 30% dropout
+        # 2. Token dropout (zero out some tokens) - Much more aggressive
+        if adaptive_strength > 0.2:  # Apply earlier
+            dropout_ratio = adaptive_strength * 0.6  # Up to 60% dropout
             num_to_drop = int(n * dropout_ratio)
             if num_to_drop > 0:
                 indices_to_drop = torch.randperm(n, device=x.device, generator=generator)[:num_to_drop]
@@ -117,9 +116,9 @@ def shuffle_tokens(x, step=None, seed_offset=0, shuffle_strength=None):
                 target_indices = torch.randperm(n, device=x.device, generator=generator)[:num_to_dup]
                 result[:, target_indices] = result[:, source_indices]
         
-        # 4. Noise injection (add small amount of noise to embeddings)
-        if adaptive_strength > 0.6:
-            noise_scale = adaptive_strength * 0.1  # Small noise scale
+        # 4. Noise injection (add MUCH more noise to embeddings)
+        if adaptive_strength > 0.3:  # Apply earlier
+            noise_scale = adaptive_strength * 0.5  # Much larger noise scale
             noise = torch.randn_like(result, generator=generator) * noise_scale
             result = result + noise
         
@@ -147,9 +146,9 @@ def shuffle_tokens(x, step=None, seed_offset=0, shuffle_strength=None):
                 scale_factors = 0.5 + torch.rand(num_to_scale, device=x.device, generator=generator)
                 result[:, indices_to_scale] = result[:, indices_to_scale] * scale_factors.unsqueeze(0).unsqueeze(-1)
         
-        # 7. Token mixing (blend tokens together)
-        if adaptive_strength > 0.9:
-            mix_ratio = adaptive_strength * 0.2  # Up to 20% mixing
+        # 7. Token mixing (blend tokens together) - Much more aggressive
+        if adaptive_strength > 0.4:  # Apply much earlier
+            mix_ratio = adaptive_strength * 0.8  # Up to 80% mixing
             num_pairs = int(n * mix_ratio / 2)
             if num_pairs > 0:
                 indices = torch.randperm(n, device=x.device, generator=generator)[:num_pairs*2]
@@ -162,6 +161,23 @@ def shuffle_tokens(x, step=None, seed_offset=0, shuffle_strength=None):
                         mixed2 = (1 - weight) * result[:, idx1] + weight * result[:, idx2]
                         result[:, idx1] = mixed1
                         result[:, idx2] = mixed2
+        
+        # 8. EXTREME: Complete token replacement (replace tokens with random ones)
+        if adaptive_strength > 0.8:
+            replace_ratio = (adaptive_strength - 0.8) * 0.5  # Up to 10% complete replacement
+            num_to_replace = int(n * replace_ratio)
+            if num_to_replace > 0:
+                indices_to_replace = torch.randperm(n, device=x.device, generator=generator)[:num_to_replace]
+                replacement_indices = torch.randperm(n, device=x.device, generator=generator)[:num_to_replace]
+                result[:, indices_to_replace] = result[:, replacement_indices]
+        
+        # 9. NUCLEAR OPTION: Completely randomize some embeddings
+        if adaptive_strength > 1.5:  # Only at very high strengths
+            random_ratio = (adaptive_strength - 1.5) * 0.2  # Up to 10% randomization
+            num_to_randomize = int(n * random_ratio)
+            if num_to_randomize > 0:
+                indices_to_randomize = torch.randperm(n, device=x.device, generator=generator)[:num_to_randomize]
+                result[:, indices_to_randomize] = torch.randn_like(result[:, indices_to_randomize], generator=generator)
         
         print(f"[TPG DEBUG] Applied enhanced token perturbation: strength={adaptive_strength:.3f}, step={step}")
         return result
@@ -293,23 +309,45 @@ def create_tpg_sampling_function(original_sampling_function):
             if diff_magnitude < 1e-6:
                 print("[TPG DEBUG] Warning: Very small prediction difference, TPG effect may be minimal")
             
-            # Apply TPG guidance with enhanced scaling
-            # Use non-linear scaling for stronger effect
-            base_enhancement = tpg_scale * pred_diff
+            # Apply MUCH more aggressive TPG guidance
+            print(f"[TPG DEBUG] Original CFG result magnitude: {torch.abs(cfg_result).mean().item()}")
             
-            # Apply adaptive scaling based on difference magnitude
-            if diff_magnitude > 1e-4:
-                # Amplify the effect when there's a meaningful difference
-                amplification_factor = min(2.0, 1.0 + (diff_magnitude * 1000))
-                print(f"[TPG DEBUG] Applying amplification factor: {amplification_factor:.3f}")
-                tpg_enhancement = base_enhancement * amplification_factor
+            # Method 1: Direct replacement approach (most aggressive)
+            if diff_magnitude > 1e-6:
+                # Calculate enhancement with much stronger scaling
+                base_enhancement = tpg_scale * pred_diff
+                
+                # Apply extreme amplification
+                amplification_factor = min(5.0, 2.0 + (diff_magnitude * 5000))  # Much more aggressive
+                print(f"[TPG DEBUG] Applying extreme amplification factor: {amplification_factor:.3f}")
+                
+                # Multiple enhancement methods
+                # 1. Standard additive enhancement
+                additive_enhancement = base_enhancement * amplification_factor
+                
+                # 2. Multiplicative enhancement (scales the entire result)
+                multiplicative_factor = 1.0 + (tpg_scale * 0.1)  # Up to 50% scaling
+                multiplicative_enhancement = cfg_result * multiplicative_factor
+                
+                # 3. Directional enhancement (push away from perturbed result)
+                directional_enhancement = cfg_result + tpg_scale * (cfg_result - tpg_pred)
+                
+                # 4. Hybrid approach - combine all methods
+                tpg_enhanced = (
+                    cfg_result * 0.3 +  # 30% original
+                    (cfg_result + additive_enhancement) * 0.4 +  # 40% additive
+                    multiplicative_enhancement * 0.2 +  # 20% multiplicative  
+                    directional_enhancement * 0.1  # 10% directional
+                )
+                
+                enhancement_magnitude = torch.abs(tpg_enhanced - cfg_result).mean().item()
+                print(f"[TPG DEBUG] Hybrid TPG enhancement magnitude: {enhancement_magnitude}")
+                
             else:
-                tpg_enhancement = base_enhancement
-            
-            enhancement_magnitude = torch.abs(tpg_enhancement).mean().item()
-            print(f"[TPG DEBUG] TPG enhancement magnitude: {enhancement_magnitude}")
-            
-            tpg_enhanced = cfg_result + tpg_enhancement
+                # Fallback: if difference is too small, apply direct scaling
+                print("[TPG DEBUG] Small difference detected, applying direct scaling")
+                scaling_factor = 1.0 + (tpg_scale * 0.2)  # Up to 3x scaling
+                tpg_enhanced = cfg_result * scaling_factor
             
             # Verify the result is different from original
             result_diff = torch.abs(tpg_enhanced - cfg_result).mean().item()
