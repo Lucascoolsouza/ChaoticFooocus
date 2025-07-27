@@ -369,13 +369,18 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
     # NAG Integration
     if nag_enabled and nag_scale > 1.0:
         try:
-            from extras.nag.pipeline_sdxl_nag import nag_sampler
+            from extras.nag.nag_integration import enable_nag
             
             print(f"[NAG] Enabling NAG with scale={nag_scale}, tau={nag_tau}, alpha={nag_alpha}")
-            nag_sampler.nag_scale = nag_scale
-            nag_sampler.nag_tau = nag_tau
-            nag_sampler.nag_alpha = nag_alpha
-            nag_sampler.activate(final_unet)
+            print(f"[NAG] NAG negative prompt: '{nag_negative_prompt}'")
+            
+            enable_nag(
+                scale=nag_scale,
+                tau=nag_tau,
+                alpha=nag_alpha,
+                negative_prompt=nag_negative_prompt,
+                end=nag_end
+            )
         except Exception as e:
             print(f"[NAG] Error enabling NAG: {e}")
             import traceback
@@ -516,9 +521,9 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
     # NAG Cleanup
     if nag_enabled and nag_scale > 1.0:
         try:
-            from extras.nag.pipeline_sdxl_nag import nag_sampler
+            from extras.nag.nag_integration import disable_nag
             print("[NAG] Disabling NAG after generation")
-            nag_sampler.deactivate()
+            disable_nag()
         except Exception as e:
             print(f"[NAG] Error disabling NAG: {e}")
     
