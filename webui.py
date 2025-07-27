@@ -760,14 +760,14 @@ with shared.gradio_root:
                 with gr.Accordion(label='Token Perturbation Guidance (TPG)', open=False):
                     tpg_enabled = gr.Checkbox(label='Enable TPG', value=False,
                                              info='Enable Token Perturbation Guidance for enhanced image quality')
-                    tpg_scale = gr.Slider(label='TPG Scale', minimum=0.0, maximum=5.0, step=0.01,
+                    tpg_scale = gr.Slider(label='TPG Scale', minimum=0.0, maximum=1.0, step=0.01,
                                          value=0.5, visible=False,
                                          info='Strength of TPG guidance (higher = stronger effect)')
                     tpg_applied_layers = gr.CheckboxGroup(label='Applied Layers', 
                                                          choices=['down', 'mid', 'up'], 
                                                          value=['mid', 'up'], visible=False,
                                                          info='Which UNet layers to apply TPG to')
-                    tpg_shuffle_strength = gr.Slider(label='Perturbation Strength', minimum=0.0, maximum=5.0, step=0.01,
+                    tpg_shuffle_strength = gr.Slider(label='Perturbation Strength', minimum=0.0, maximum=1.0, step=0.01,
                                                     value=0.2, visible=False,
                                                     info='How aggressively to perturb tokens (higher = stronger effect)')
                     tpg_adaptive_strength = gr.Checkbox(label='Adaptive Strength', value=True, visible=False,
