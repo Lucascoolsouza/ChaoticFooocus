@@ -1275,6 +1275,9 @@ with shared.gradio_root:
         
         # TPG controls
         ctrls += [tpg_enabled, tpg_scale, tpg_applied_layers, tpg_shuffle_strength, tpg_adaptive_strength]
+        
+        # NAG controls
+        ctrls += [nag_enabled, nag_scale, nag_tau, nag_alpha, nag_negative_prompt, nag_end]
 
         ctrls += ip_ctrls
         ctrls += [debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox,

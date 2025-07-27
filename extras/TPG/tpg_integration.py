@@ -458,19 +458,33 @@ def create_tpg_sampling_function(original_sampling_function):
             # AGGRESSIVE TPG guidance with non-linear scaling
             base_enhancement = tpg_scale * combined_diff
             
-            # Add magnitude-based amplification
-            enhancement_magnitude = torch.norm(base_enhancement, dim=(-3, -2, -1), keepdim=True)
-            normalized_enhancement = base_enhancement / (enhancement_magnitude + 1e-8)
-            
-            # Non-linear amplification: stronger effects get even stronger
-            amplification_factor = 1.0 + (enhancement_magnitude / (enhancement_magnitude + 0.1)) * 0.5
-            amplified_enhancement = normalized_enhancement * enhancement_magnitude * amplification_factor
-            
-            # Apply directional bias for more dramatic effects
-            step_progress = int(timestep.mean().item()) / 50.0 if hasattr(timestep, 'mean') else 0.5
-            directional_boost = 1.0 + (1.0 - step_progress) * 0.3  # Stronger early in sampling
-            
-            tpg_enhanced = cfg_result + amplified_enhancement * directional_boost
+            # Add magnitude-based amplification (robust dimension handling)
+            try:
+                # Try to compute norm across spatial dimensions if they exist
+                if len(base_enhancement.shape) >= 4:  # [B, C, H, W] format
+                    enhancement_magnitude = torch.norm(base_enhancement, dim=(-2, -1), keepdim=True)
+                elif len(base_enhancement.shape) >= 3:  # [B, H, W] or [B, C, L] format
+                    enhancement_magnitude = torch.norm(base_enhancement, dim=-1, keepdim=True)
+                else:  # Fallback for other shapes
+                    enhancement_magnitude = torch.norm(base_enhancement, keepdim=True)
+                
+                normalized_enhancement = base_enhancement / (enhancement_magnitude + 1e-8)
+                
+                # Non-linear amplification: stronger effects get even stronger
+                amplification_factor = 1.0 + (enhancement_magnitude / (enhancement_magnitude + 0.1)) * 0.5
+                amplified_enhancement = normalized_enhancement * enhancement_magnitude * amplification_factor
+                
+                # Apply directional bias for more dramatic effects
+                step_progress = int(timestep.mean().item()) / 50.0 if hasattr(timestep, 'mean') else 0.5
+                directional_boost = 1.0 + (1.0 - step_progress) * 0.3  # Stronger early in sampling
+                
+                tpg_enhanced = cfg_result + amplified_enhancement * directional_boost
+                
+            except Exception as norm_error:
+                print(f"[TPG] Error in magnitude amplification: {norm_error}")
+                print(f"[TPG] base_enhancement shape: {base_enhancement.shape}")
+                # Fallback to simple enhancement without amplification
+                tpg_enhanced = cfg_result + base_enhancement
             
             return tpg_enhanced
             

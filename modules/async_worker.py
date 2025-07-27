@@ -165,6 +165,33 @@ class AsyncTask:
         
         print(f"[DEBUG] TPG params: enabled={self.tpg_enabled}, scale={self.tpg_scale}, layers={self.tpg_applied_layers}")
 
+        # NAG parameters (popped in reverse order from webui.py)
+        print(f"[DEBUG] Args remaining before NAG: {len(args)}")
+        
+        # Pop all 6 NAG parameters
+        nag_params = []
+        try:
+            for i in range(6):
+                param = args.pop()
+                nag_params.append(param)
+                print(f"[DEBUG] Popped NAG param {i}: {param} (type: {type(param)})")
+        except IndexError as e:
+            print(f"[DEBUG] Error popping NAG parameter {i}: {e}")
+            print(f"[DEBUG] Args remaining: {len(args)}")
+            # Fill remaining with defaults
+            while len(nag_params) < 6:
+                nag_params.append(None)
+        
+        # Assign in correct order matching webui ctrls order with defaults
+        self.nag_enabled = nag_params[0] if nag_params[0] is not None else False
+        self.nag_scale = nag_params[1] if nag_params[1] is not None else 1.5
+        self.nag_tau = nag_params[2] if nag_params[2] is not None else 5.0
+        self.nag_alpha = nag_params[3] if nag_params[3] is not None else 0.5
+        self.nag_negative_prompt = nag_params[4] if nag_params[4] is not None else ""
+        self.nag_end = nag_params[5] if nag_params[5] is not None else 1.0
+        
+        print(f"[DEBUG] NAG params: enabled={self.nag_enabled}, scale={self.nag_scale}, tau={self.nag_tau}, alpha={self.nag_alpha}")
+
         self.cn_tasks = {x: [] for x in ip_list}
         for _ in range(modules.config.default_controlnet_image_count):
             cn_img = args.pop()
@@ -413,7 +440,14 @@ def worker():
             tpg_scale=async_task.tpg_scale,
             tpg_applied_layers=async_task.tpg_applied_layers,
             tpg_shuffle_strength=async_task.tpg_shuffle_strength,
-            tpg_adaptive_strength=async_task.tpg_adaptive_strength
+            tpg_adaptive_strength=async_task.tpg_adaptive_strength,
+            
+            nag_enabled=async_task.nag_enabled,
+            nag_scale=async_task.nag_scale,
+            nag_tau=async_task.nag_tau,
+            nag_alpha=async_task.nag_alpha,
+            nag_negative_prompt=async_task.nag_negative_prompt,
+            nag_end=async_task.nag_end
         )
 
         if imgs is None:
