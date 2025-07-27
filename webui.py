@@ -827,6 +827,79 @@ with shared.gradio_root:
                                              outputs=tpg_status,
                                              queue=False, show_progress=False)
                 
+                with gr.Accordion(label='Normalized Attention Guidance (NAG)', open=False):
+                    nag_enabled = gr.Checkbox(label='Enable NAG', value=False,
+                                             info='Enable Normalized Attention Guidance for improved attention control')
+                    nag_scale = gr.Slider(label='NAG Scale', minimum=1.0, maximum=3.0, step=0.1,
+                                         value=1.5, visible=False,
+                                         info='Strength of NAG guidance (higher = stronger effect)')
+                    nag_tau = gr.Slider(label='NAG Tau', minimum=1.0, maximum=10.0, step=0.5,
+                                       value=5.0, visible=False,
+                                       info='Normalization threshold for attention guidance')
+                    nag_alpha = gr.Slider(label='NAG Alpha', minimum=0.0, maximum=1.0, step=0.05,
+                                         value=0.5, visible=False,
+                                         info='Blending factor between original and guided attention')
+                    nag_negative_prompt = gr.Textbox(label='NAG Negative Prompt', 
+                                                    placeholder='Optional negative prompt for NAG (uses main negative if empty)',
+                                                    visible=False, lines=2,
+                                                    info='Specific negative prompt for NAG guidance')
+                    nag_end = gr.Slider(label='NAG End Step', minimum=0.0, maximum=1.0, step=0.05,
+                                       value=1.0, visible=False,
+                                       info='When to stop applying NAG (1.0 = apply throughout)')
+                    nag_preset = gr.Dropdown(label='NAG Preset', 
+                                           choices=['Custom', 'Light', 'Moderate', 'Strong'],
+                                           value='Moderate', visible=False,
+                                           info='Predefined NAG settings for different effect strengths')
+                    nag_status = gr.Textbox(label='NAG Status', interactive=False, 
+                                           value='NAG: Disabled', visible=False)
+                    
+                    def update_nag_visibility(enabled):
+                        return [gr.update(visible=enabled)] * 7
+                    
+                    def update_nag_preset(preset):
+                        if preset == 'Custom':
+                            return gr.update(), gr.update(), gr.update(), gr.update()
+                        
+                        presets = {
+                            'Light': {'scale': 1.2, 'tau': 3.0, 'alpha': 0.3, 'end': 0.8},
+                            'Moderate': {'scale': 1.5, 'tau': 5.0, 'alpha': 0.5, 'end': 1.0},
+                            'Strong': {'scale': 2.0, 'tau': 7.0, 'alpha': 0.7, 'end': 1.0}
+                        }
+                        
+                        if preset in presets:
+                            p = presets[preset]
+                            return (gr.update(value=p['scale']), 
+                                   gr.update(value=p['tau']),
+                                   gr.update(value=p['alpha']),
+                                   gr.update(value=p['end']))
+                        
+                        return gr.update(), gr.update(), gr.update(), gr.update()
+                    
+                    def update_nag_status(enabled, scale, tau, alpha, end):
+                        if not enabled:
+                            return "NAG: Disabled"
+                        
+                        return f"NAG: Enabled | Scale: {scale} | Tau: {tau} | Alpha: {alpha} | End: {end}"
+                    
+                    nag_enabled.change(update_nag_visibility, 
+                                      inputs=nag_enabled,
+                                      outputs=[nag_scale, nag_tau, nag_alpha, nag_negative_prompt, 
+                                              nag_end, nag_preset, nag_status],
+                                      queue=False, show_progress=False)
+                    
+                    nag_preset.change(update_nag_preset,
+                                     inputs=nag_preset,
+                                     outputs=[nag_scale, nag_tau, nag_alpha, nag_end],
+                                     queue=False, show_progress=False)
+                    
+                    # Update status when any NAG parameter changes
+                    nag_inputs = [nag_enabled, nag_scale, nag_tau, nag_alpha, nag_end]
+                    for input_component in nag_inputs:
+                        input_component.change(update_nag_status,
+                                             inputs=nag_inputs,
+                                             outputs=nag_status,
+                                             queue=False, show_progress=False)
+                
                 with gr.Accordion(label='Detail Enhancement', open=False):
                     detail_daemon_enabled = gr.Checkbox(label='Enable Detail Daemon', value=False,
                                                         info='Apply detail enhancement to generated images')

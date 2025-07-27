@@ -146,6 +146,27 @@ class TPGSampler:
 # Global TPG sampler instance
 tpg_sampler = TPGSampler()
 
+class StableDiffusionXLTPGPipeline:
+    """
+    Placeholder TPG Pipeline class for compatibility with async_worker imports
+    This maintains compatibility while the main TPG functionality is handled by tpg_integration.py
+    """
+    
+    def __init__(self, *args, **kwargs):
+        """Initialize TPG pipeline - placeholder for compatibility"""
+        pass
+    
+    @classmethod
+    def from_pretrained(cls, *args, **kwargs):
+        """Create TPG pipeline from pretrained model - placeholder for compatibility"""
+        return cls()
+    
+    def __call__(self, *args, **kwargs):
+        """TPG pipeline call - placeholder for compatibility"""
+        # The actual TPG functionality is handled by tpg_integration.py
+        # This is just for import compatibility
+        raise NotImplementedError("TPG functionality is handled by tpg_integration.py")
+
 def shuffle_tokens(x, step=None, seed_offset=0, shuffle_strength=1.0):
     """Shuffle tokens for TPG - creates different shuffling at each step
     
