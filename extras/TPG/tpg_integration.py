@@ -154,82 +154,87 @@ def apply_tpg_to_conditioning(cond_list, step=None):
         logger.warning(f"[TPG] Error applying TPG to conditioning: {e}")
         return cond_list
 
-def create_tpg_unet_wrapper(original_unet):
+def create_tpg_unet_wrapper(original_apply_model):
     """
     Create a TPG-enhanced UNet wrapper that applies token perturbation guidance
+    This wraps the apply_model method which has the signature:
+    apply_model(input_x, timestep_, **c)
     """
-    def tpg_unet_forward(sample, timestep, encoder_hidden_states, **kwargs):
+    def tpg_apply_model(input_x, timestep_, **c):
         # Check if TPG should be applied
-        if not is_tpg_enabled() or encoder_hidden_states is None:
-            return original_unet(sample, timestep, encoder_hidden_states, **kwargs)
+        if not is_tpg_enabled():
+            return original_apply_model(input_x, timestep_, **c)
         
         try:
             tpg_scale = _tpg_config.get('scale', 3.0)
             
-            # Check if we have the right batch size for guidance (uncond + cond)
-            if encoder_hidden_states.shape[0] == 2:
-                # Duplicate the conditional part for TPG
-                uncond_embeds, cond_embeds = encoder_hidden_states.chunk(2)
+            # Extract conditioning from kwargs
+            # In Fooocus, conditioning is passed as c_crossattn in the c dict
+            if 'c_crossattn' in c and c['c_crossattn'] is not None:
+                encoder_hidden_states = c['c_crossattn']
                 
-                # Apply token shuffling to create perturbed embeddings
-                step = int(timestep.mean().item()) if hasattr(timestep, 'mean') else None
-                cond_embeds_shuffled = shuffle_tokens(
-                    cond_embeds, 
-                    step=step,
-                    shuffle_strength=_tpg_config.get('shuffle_strength', 1.0)
-                )
-                
-                # Create the full batch: [uncond, cond, cond_shuffled]
-                encoder_hidden_states_tpg = torch.cat([uncond_embeds, cond_embeds, cond_embeds_shuffled], dim=0)
-                
-                # Duplicate latents accordingly
-                if sample.shape[0] == 2:
-                    uncond_sample, cond_sample = sample.chunk(2)
-                    sample_tpg = torch.cat([uncond_sample, cond_sample, cond_sample], dim=0)
-                else:
-                    sample_tpg = sample
-                
-                # Handle other kwargs that might need duplication
-                new_kwargs = {}
-                for key, value in kwargs.items():
-                    if key == 'added_cond_kwargs' and isinstance(value, dict):
-                        new_added_cond_kwargs = {}
-                        for k, v in value.items():
-                            if isinstance(v, torch.Tensor) and v.shape[0] == 2:
-                                uncond_v, cond_v = v.chunk(2)
-                                new_added_cond_kwargs[k] = torch.cat([uncond_v, cond_v, cond_v], dim=0)
-                            else:
-                                new_added_cond_kwargs[k] = v
-                        new_kwargs[key] = new_added_cond_kwargs
-                    elif isinstance(value, torch.Tensor) and value.shape[0] == 2:
-                        uncond_val, cond_val = value.chunk(2)
-                        new_kwargs[key] = torch.cat([uncond_val, cond_val, cond_val], dim=0)
+                # Check if we have the right batch size for guidance (uncond + cond)
+                if encoder_hidden_states.shape[0] == 2:
+                    # Duplicate the conditional part for TPG
+                    uncond_embeds, cond_embeds = encoder_hidden_states.chunk(2)
+                    
+                    # Apply token shuffling to create perturbed embeddings
+                    step = int(timestep_.mean().item()) if hasattr(timestep_, 'mean') else None
+                    cond_embeds_shuffled = shuffle_tokens(
+                        cond_embeds, 
+                        step=step,
+                        shuffle_strength=_tpg_config.get('shuffle_strength', 1.0)
+                    )
+                    
+                    # Create the full batch: [uncond, cond, cond_shuffled]
+                    encoder_hidden_states_tpg = torch.cat([uncond_embeds, cond_embeds, cond_embeds_shuffled], dim=0)
+                    
+                    # Duplicate latents accordingly
+                    if input_x.shape[0] == 2:
+                        uncond_sample, cond_sample = input_x.chunk(2)
+                        input_x_tpg = torch.cat([uncond_sample, cond_sample, cond_sample], dim=0)
                     else:
-                        new_kwargs[key] = value
-                
-                # Call original UNet with expanded batch
-                noise_pred = original_unet(sample_tpg, timestep, encoder_hidden_states_tpg, **new_kwargs)
-                
-                # Apply TPG guidance
-                if noise_pred.shape[0] == 3:
-                    noise_pred_uncond, noise_pred_cond, noise_pred_tpg = noise_pred.chunk(3)
+                        input_x_tpg = input_x
                     
-                    # Apply TPG: enhance conditional prediction using perturbation difference
-                    noise_pred_enhanced = noise_pred_cond + tpg_scale * (noise_pred_cond - noise_pred_tpg)
+                    # Handle other conditioning that might need duplication
+                    new_c = {}
+                    for key, value in c.items():
+                        if key == 'c_crossattn':
+                            new_c[key] = encoder_hidden_states_tpg
+                        elif isinstance(value, torch.Tensor) and value.shape[0] == 2:
+                            uncond_val, cond_val = value.chunk(2)
+                            new_c[key] = torch.cat([uncond_val, cond_val, cond_val], dim=0)
+                        else:
+                            new_c[key] = value
                     
-                    # Return in expected format (uncond, enhanced_cond)
-                    return torch.cat([noise_pred_uncond, noise_pred_enhanced], dim=0)
+                    # Call original apply_model with expanded batch
+                    noise_pred = original_apply_model(input_x_tpg, timestep_, **new_c)
+                    
+                    # Apply TPG guidance
+                    if noise_pred.shape[0] == 3:
+                        noise_pred_uncond, noise_pred_cond, noise_pred_tpg = noise_pred.chunk(3)
+                        
+                        # Apply TPG: enhance conditional prediction using perturbation difference
+                        noise_pred_enhanced = noise_pred_cond + tpg_scale * (noise_pred_cond - noise_pred_tpg)
+                        
+                        # Return in expected format (uncond, enhanced_cond)
+                        return torch.cat([noise_pred_uncond, noise_pred_enhanced], dim=0)
+                    else:
+                        return noise_pred
                 else:
-                    return noise_pred
+                    # Standard call without TPG
+                    return original_apply_model(input_x, timestep_, **c)
             else:
-                # Standard call without TPG
-                return original_unet(sample, timestep, encoder_hidden_states, **kwargs)
+                # No conditioning, standard call
+                return original_apply_model(input_x, timestep_, **c)
                 
         except Exception as e:
-            logger.warning(f"[TPG] Error in TPG UNet forward, falling back to original: {e}")
-            return original_unet(sample, timestep, encoder_hidden_states, **kwargs)
+            logger.warning(f"[TPG] Error in TPG apply_model, falling back to original: {e}")
+            import traceback
+            traceback.print_exc()
+            return original_apply_model(input_x, timestep_, **c)
     
-    return tpg_unet_forward
+    return tpg_apply_model
 
 def patch_unet_for_tpg():
     """
@@ -246,16 +251,19 @@ def patch_unet_for_tpg():
         
         # Store original if not already stored
         if _original_unet_forward is None and default_pipeline.final_unet is not None:
+            # In Fooocus, we need to patch the apply_model method
             if hasattr(default_pipeline.final_unet, 'model') and hasattr(default_pipeline.final_unet.model, 'apply_model'):
-                # ComfyUI style
+                # Fooocus/ComfyUI style - patch the model's apply_model method
                 _original_unet_forward = default_pipeline.final_unet.model.apply_model
                 default_pipeline.final_unet.model.apply_model = create_tpg_unet_wrapper(_original_unet_forward)
-            elif hasattr(default_pipeline.final_unet, 'forward'):
-                # Standard diffusers style
-                _original_unet_forward = default_pipeline.final_unet.forward
-                default_pipeline.final_unet.forward = create_tpg_unet_wrapper(_original_unet_forward)
+                print("[TPG] Patched model.apply_model for TPG")
+            elif hasattr(default_pipeline.final_unet, 'apply_model'):
+                # Direct apply_model method
+                _original_unet_forward = default_pipeline.final_unet.apply_model
+                default_pipeline.final_unet.apply_model = create_tpg_unet_wrapper(_original_unet_forward)
+                print("[TPG] Patched apply_model for TPG")
             else:
-                logger.warning("[TPG] Could not find UNet forward method to patch")
+                logger.warning("[TPG] Could not find apply_model method to patch")
                 return False
         
         print("[TPG] Successfully patched UNet for TPG")
@@ -263,11 +271,13 @@ def patch_unet_for_tpg():
         
     except Exception as e:
         logger.error(f"[TPG] Failed to patch UNet: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def unpatch_unet_for_tpg():
     """
-    Restore the original UNet forward method
+    Restore the original UNet apply_model method
     """
     try:
         import modules.default_pipeline as default_pipeline
@@ -276,21 +286,25 @@ def unpatch_unet_for_tpg():
         
         if _original_unet_forward is not None and default_pipeline.final_unet is not None:
             if hasattr(default_pipeline.final_unet, 'model') and hasattr(default_pipeline.final_unet.model, 'apply_model'):
-                # ComfyUI style
+                # Fooocus/ComfyUI style
                 default_pipeline.final_unet.model.apply_model = _original_unet_forward
-            elif hasattr(default_pipeline.final_unet, 'forward'):
-                # Standard diffusers style
-                default_pipeline.final_unet.forward = _original_unet_forward
+                print("[TPG] Restored model.apply_model")
+            elif hasattr(default_pipeline.final_unet, 'apply_model'):
+                # Direct apply_model method
+                default_pipeline.final_unet.apply_model = _original_unet_forward
+                print("[TPG] Restored apply_model")
             
             _original_unet_forward = None
             print("[TPG] Successfully restored original UNet")
             return True
         else:
-            print("[TPG] No original UNet forward method found to restore")
+            print("[TPG] No original UNet apply_model method found to restore")
             return False
             
     except Exception as e:
         logger.error(f"[TPG] Failed to restore UNet: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def enable_tpg(scale: float = 3.0, applied_layers: List[str] = None, 
