@@ -757,6 +757,77 @@ with shared.gradio_root:
                                       value=modules.config.default_sample_sharpness,
                                       info='Higher value means image and texture are sharper.')
                 
+                with gr.Accordion(label='Token Perturbation Guidance (TPG)', open=False):
+                    tpg_enabled = gr.Checkbox(label='Enable TPG', value=False,
+                                             info='Enable Token Perturbation Guidance for enhanced image quality')
+                    tpg_scale = gr.Slider(label='TPG Scale', minimum=0.0, maximum=10.0, step=0.1,
+                                         value=3.0, visible=False,
+                                         info='Strength of TPG guidance (higher = stronger effect)')
+                    tpg_applied_layers = gr.CheckboxGroup(label='Applied Layers', 
+                                                         choices=['down', 'mid', 'up'], 
+                                                         value=['mid', 'up'], visible=False,
+                                                         info='Which UNet layers to apply TPG to')
+                    tpg_shuffle_strength = gr.Slider(label='Shuffle Strength', minimum=0.0, maximum=1.0, step=0.01,
+                                                    value=1.0, visible=False,
+                                                    info='How much to shuffle tokens (0.0 = no shuffle, 1.0 = full shuffle)')
+                    tpg_adaptive_strength = gr.Checkbox(label='Adaptive Strength', value=True, visible=False,
+                                                       info='Use adaptive strength during sampling')
+                    tpg_preset = gr.Dropdown(label='TPG Preset', 
+                                           choices=['Custom', 'General', 'Artistic', 'Photorealistic', 'Detailed'],
+                                           value='General', visible=False,
+                                           info='Predefined TPG settings for different use cases')
+                    tpg_status = gr.Textbox(label='TPG Status', interactive=False, 
+                                           value='TPG: Disabled', visible=False)
+                    
+                    def update_tpg_visibility(enabled):
+                        return [gr.update(visible=enabled)] * 6
+                    
+                    def update_tpg_preset(preset):
+                        if preset == 'Custom':
+                            return gr.update(), gr.update(), gr.update(), gr.update()
+                        
+                        presets = {
+                            'General': {'scale': 3.0, 'layers': ['mid', 'up'], 'shuffle': 1.0, 'adaptive': True},
+                            'Artistic': {'scale': 4.0, 'layers': ['mid', 'up'], 'shuffle': 1.0, 'adaptive': True},
+                            'Photorealistic': {'scale': 2.5, 'layers': ['up'], 'shuffle': 0.8, 'adaptive': True},
+                            'Detailed': {'scale': 3.5, 'layers': ['mid', 'up'], 'shuffle': 1.0, 'adaptive': True}
+                        }
+                        
+                        if preset in presets:
+                            p = presets[preset]
+                            return (gr.update(value=p['scale']), 
+                                   gr.update(value=p['layers']),
+                                   gr.update(value=p['shuffle']),
+                                   gr.update(value=p['adaptive']))
+                        
+                        return gr.update(), gr.update(), gr.update(), gr.update()
+                    
+                    def update_tpg_status(enabled, scale, layers, shuffle, adaptive):
+                        if not enabled:
+                            return "TPG: Disabled"
+                        
+                        layer_str = ", ".join(layers) if layers else "none"
+                        return f"TPG: Enabled | Scale: {scale} | Layers: {layer_str} | Shuffle: {shuffle} | Adaptive: {adaptive}"
+                    
+                    tpg_enabled.change(update_tpg_visibility, 
+                                      inputs=tpg_enabled,
+                                      outputs=[tpg_scale, tpg_applied_layers, tpg_shuffle_strength, 
+                                              tpg_adaptive_strength, tpg_preset, tpg_status],
+                                      queue=False, show_progress=False)
+                    
+                    tpg_preset.change(update_tpg_preset,
+                                     inputs=tpg_preset,
+                                     outputs=[tpg_scale, tpg_applied_layers, tpg_shuffle_strength, tpg_adaptive_strength],
+                                     queue=False, show_progress=False)
+                    
+                    # Update status when any TPG parameter changes
+                    tpg_inputs = [tpg_enabled, tpg_scale, tpg_applied_layers, tpg_shuffle_strength, tpg_adaptive_strength]
+                    for input_component in tpg_inputs:
+                        input_component.change(update_tpg_status,
+                                             inputs=tpg_inputs,
+                                             outputs=tpg_status,
+                                             queue=False, show_progress=False)
+                
                 with gr.Accordion(label='Detail Enhancement', open=False):
                     detail_daemon_enabled = gr.Checkbox(label='Enable Detail Daemon', value=False,
                                                         info='Apply detail enhancement to generated images')
@@ -1129,6 +1200,9 @@ with shared.gradio_root:
         ctrls += [detail_daemon_enabled, detail_daemon_amount, detail_daemon_start, detail_daemon_end, 
                   detail_daemon_bias, detail_daemon_base_multiplier, detail_daemon_start_offset, detail_daemon_end_offset, 
                   detail_daemon_exponent, detail_daemon_fade, detail_daemon_mode, detail_daemon_smooth]
+        
+        # TPG controls
+        ctrls += [tpg_enabled, tpg_scale, tpg_applied_layers, tpg_shuffle_strength, tpg_adaptive_strength]
 
         ctrls += ip_ctrls
         ctrls += [debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox,

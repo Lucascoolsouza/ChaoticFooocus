@@ -139,6 +139,32 @@ class AsyncTask:
         
         print(f"[DEBUG] Detail daemon params: enabled={self.detail_daemon_enabled}, amount={self.detail_daemon_amount}, mode={self.detail_daemon_mode}")
 
+        # TPG parameters (popped in reverse order from webui.py)
+        print(f"[DEBUG] Args remaining before TPG: {len(args)}")
+        
+        # Pop all 5 TPG parameters
+        tpg_params = []
+        try:
+            for i in range(5):
+                param = args.pop()
+                tpg_params.append(param)
+                print(f"[DEBUG] Popped TPG param {i}: {param} (type: {type(param)})")
+        except IndexError as e:
+            print(f"[DEBUG] Error popping TPG parameter {i}: {e}")
+            print(f"[DEBUG] Args remaining: {len(args)}")
+            # Fill remaining with defaults
+            while len(tpg_params) < 5:
+                tpg_params.append(None)
+        
+        # Assign in correct order matching webui ctrls order with defaults
+        self.tpg_enabled = tpg_params[0] if tpg_params[0] is not None else False
+        self.tpg_scale = tpg_params[1] if tpg_params[1] is not None else 3.0
+        self.tpg_applied_layers = tpg_params[2] if tpg_params[2] is not None else ['mid', 'up']
+        self.tpg_shuffle_strength = tpg_params[3] if tpg_params[3] is not None else 1.0
+        self.tpg_adaptive_strength = tpg_params[4] if tpg_params[4] is not None else True
+        
+        print(f"[DEBUG] TPG params: enabled={self.tpg_enabled}, scale={self.tpg_scale}, layers={self.tpg_applied_layers}")
+
         self.cn_tasks = {x: [] for x in ip_list}
         for _ in range(modules.config.default_controlnet_image_count):
             cn_img = args.pop()
@@ -381,7 +407,13 @@ def worker():
             detail_daemon_exponent=async_task.detail_daemon_exponent,
             detail_daemon_fade=async_task.detail_daemon_fade,
             detail_daemon_mode=async_task.detail_daemon_mode,
-            detail_daemon_smooth=async_task.detail_daemon_smooth
+            detail_daemon_smooth=async_task.detail_daemon_smooth,
+            
+            tpg_enabled=async_task.tpg_enabled,
+            tpg_scale=async_task.tpg_scale,
+            tpg_applied_layers=async_task.tpg_applied_layers,
+            tpg_shuffle_strength=async_task.tpg_shuffle_strength,
+            tpg_adaptive_strength=async_task.tpg_adaptive_strength
         )
 
         if imgs is None:
