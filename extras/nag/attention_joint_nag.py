@@ -27,7 +27,7 @@ class NAGJointAttnProcessor2_0:
 
         batch_size = hidden_states.shape[0]
 
-        apply_guidance = self.nag_scale >= 1 and encoder_hidden_states is not None
+        apply_guidance = self.nag_scale > 1 and encoder_hidden_states is not None
         if apply_guidance:
             origin_batch_size = len(encoder_hidden_states) - batch_size
             assert len(encoder_hidden_states) / origin_batch_size in [2, 3, 4]
@@ -104,26 +104,13 @@ class NAGJointAttnProcessor2_0:
                 hidden_states_positive = hidden_states[:origin_batch_size]
             else:
                 hidden_states_positive = hidden_states[origin_batch_size:2 * origin_batch_size]
-            # Apply NAG guidance formula with scale 1.0 handling
-            if self.nag_scale == 1.0:
-                # When scale is 1.0, apply minimal guidance to avoid complete bypass
-                hidden_states_guidance = hidden_states_positive + (hidden_states_positive - hidden_states_negative) * 0.1
-            else:
-                hidden_states_guidance = hidden_states_positive * self.nag_scale - hidden_states_negative * (self.nag_scale - 1)
-            
-            # Apply normalization with safety checks
+            hidden_states_guidance = hidden_states_positive * self.nag_scale - hidden_states_negative * (self.nag_scale - 1)
             norm_positive = torch.norm(hidden_states_positive, p=1, dim=-1, keepdim=True).expand(*hidden_states_positive.shape)
             norm_guidance = torch.norm(hidden_states_guidance, p=1, dim=-1, keepdim=True).expand(*hidden_states_guidance.shape)
 
-            # Prevent division by zero
-            norm_positive = torch.clamp(norm_positive, min=1e-8)
-            norm_guidance = torch.clamp(norm_guidance, min=1e-8)
+            scale = norm_guidance / (norm_positive + 1e-7)
+            hidden_states_guidance = hidden_states_guidance * torch.minimum(scale, scale.new_ones(1) * self.nag_tau) / (scale + 1e-7)
 
-            scale = norm_guidance / norm_positive
-            scale = torch.clamp(scale, min=0.1, max=self.nag_tau)  # Prevent extreme scaling
-            hidden_states_guidance = hidden_states_guidance * torch.minimum(scale, scale.new_ones(1) * self.nag_tau) / scale
-
-            # Apply alpha blending
             hidden_states_guidance = hidden_states_guidance * self.nag_alpha + hidden_states_positive * (1 - self.nag_alpha)
 
             if batch_size == 2 * origin_batch_size:
@@ -232,26 +219,13 @@ class NAGPAGCFGJointAttnProcessor2_0:
 
         hidden_states_org_negative = hidden_states_org[-origin_batch_size:]
         hidden_states_org_positive = hidden_states_org[-2 * origin_batch_size:-origin_batch_size]
-        # Apply NAG guidance formula with scale 1.0 handling
-        if self.nag_scale == 1.0:
-            # When scale is 1.0, apply minimal guidance to avoid complete bypass
-            hidden_states_org_guidance = hidden_states_org_positive + (hidden_states_org_positive - hidden_states_org_negative) * 0.1
-        else:
-            hidden_states_org_guidance = hidden_states_org_positive * self.nag_scale - hidden_states_org_negative * (self.nag_scale - 1)
-        
-        # Apply normalization with safety checks
+        hidden_states_org_guidance = hidden_states_org_positive * self.nag_scale - hidden_states_org_negative * (self.nag_scale - 1)
         norm_positive = torch.norm(hidden_states_org_positive, p=1, dim=-1, keepdim=True).expand(*hidden_states_org_positive.shape)
         norm_guidance = torch.norm(hidden_states_org_guidance, p=1, dim=-1, keepdim=True).expand(*hidden_states_org_guidance.shape)
 
-        # Prevent division by zero
-        norm_positive = torch.clamp(norm_positive, min=1e-8)
-        norm_guidance = torch.clamp(norm_guidance, min=1e-8)
+        scale = norm_guidance / (norm_positive + 1e-7)
+        hidden_states_org_guidance = hidden_states_org_guidance * torch.minimum(scale, scale.new_ones(1) * self.nag_tau) / (scale + 1e-7)
 
-        scale = norm_guidance / norm_positive
-        scale = torch.clamp(scale, min=0.1, max=self.nag_tau)  # Prevent extreme scaling
-        hidden_states_org_guidance = hidden_states_org_guidance * torch.minimum(scale, scale.new_ones(1) * self.nag_tau) / scale
-
-        # Apply alpha blending
         hidden_states_org_guidance = hidden_states_org_guidance * self.nag_alpha + hidden_states_org_positive * (1 - self.nag_alpha)
 
         hidden_states_org = torch.cat((hidden_states_org[:origin_batch_size], hidden_states_org_guidance), dim=0)
