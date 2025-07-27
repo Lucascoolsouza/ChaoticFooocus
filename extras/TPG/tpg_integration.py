@@ -77,6 +77,73 @@ def force_token_perturbation(x, adaptive_strength=0.5):
         logger.warning(f"[TPG] Force perturbation error: {e}")
         return x
 
+class TPGAttentionProcessor:
+    """
+    Attention processor that applies TPG at the layer level
+    """
+    
+    def __init__(self, original_processor):
+        self.original_processor = original_processor
+    
+    def __call__(
+        self,
+        attn,
+        hidden_states,
+        encoder_hidden_states=None,
+        attention_mask=None,
+        temb=None,
+        scale: float = 1.0,
+    ):
+        """
+        Apply TPG at the attention level
+        """
+        if not is_tpg_enabled():
+            return self.original_processor(attn, hidden_states, encoder_hidden_states, attention_mask, temb, scale)
+        
+        # Get the batch size and check if we're doing guidance
+        batch_size = hidden_states.shape[0]
+        
+        # For TPG, we expect batch_size to be 2 (unconditional + conditional)
+        if batch_size == 2 and encoder_hidden_states is not None and encoder_hidden_states.shape[0] == 2:
+            # Split into unconditional and conditional parts
+            hidden_states_uncond, hidden_states_cond = hidden_states.chunk(2)
+            encoder_hidden_states_uncond, encoder_hidden_states_cond = encoder_hidden_states.chunk(2)
+            
+            # Process unconditional normally
+            out_uncond = self.original_processor(
+                attn, hidden_states_uncond, encoder_hidden_states_uncond, attention_mask, temb, scale
+            )
+            
+            # Process conditional normally
+            out_cond = self.original_processor(
+                attn, hidden_states_cond, encoder_hidden_states_cond, attention_mask, temb, scale
+            )
+            
+            # Apply token perturbation to encoder hidden states for this layer
+            tpg_scale = _tpg_config.get('scale', 0.5)
+            shuffle_strength = _tpg_config.get('shuffle_strength', 0.2)
+            
+            # Create perturbed encoder hidden states
+            encoder_hidden_states_perturbed = shuffle_tokens(
+                encoder_hidden_states_cond,
+                shuffle_strength=shuffle_strength
+            )
+            
+            # Process with perturbed conditioning
+            out_perturbed = self.original_processor(
+                attn, hidden_states_cond, encoder_hidden_states_perturbed, attention_mask, temb, scale
+            )
+            
+            # Apply TPG guidance at this layer
+            out_enhanced = out_cond + tpg_scale * (out_cond - out_perturbed)
+            
+            # Return combined result
+            return torch.cat([out_uncond, out_enhanced], dim=0)
+        
+        else:
+            # Standard processing without TPG
+            return self.original_processor(attn, hidden_states, encoder_hidden_states, attention_mask, temb, scale)
+
 def shuffle_tokens(x, step=None, seed_offset=0, shuffle_strength=None):
     """
     Enhanced token perturbation for TPG - creates stronger degradation for better guidance
@@ -308,45 +375,161 @@ def patch_sampling_for_tpg():
         return False
     
     try:
-        import ldm_patched.modules.samplers as samplers
+        # Check if we need layer-specific TPG
+        applied_layers = _tpg_config.get('applied_layers', ['mid', 'up'])
+        all_layers = ['down', 'mid', 'up']
         
-        global _original_unet_forward
+        if set(applied_layers) == set(all_layers):
+            # If all layers are selected, use sampling function approach (more efficient)
+            import ldm_patched.modules.samplers as samplers
+            
+            global _original_unet_forward
+            
+            if _original_unet_forward is None:
+                _original_unet_forward = samplers.sampling_function
+                samplers.sampling_function = create_tpg_sampling_function(_original_unet_forward)
+                print(f"[TPG] Patched sampling_function for TPG (all layers)")
+        else:
+            # If specific layers are selected, use attention processor approach
+            success = patch_attention_processors_for_tpg()
+            if success:
+                print(f"[TPG] Patched attention processors for TPG (layers: {applied_layers})")
+            else:
+                # Fallback to sampling function approach
+                import ldm_patched.modules.samplers as samplers
+                global _original_unet_forward
+                if _original_unet_forward is None:
+                    _original_unet_forward = samplers.sampling_function
+                    samplers.sampling_function = create_tpg_sampling_function(_original_unet_forward)
+                    print(f"[TPG] Fallback: Patched sampling_function for TPG")
         
-        # Store original if not already stored
-        if _original_unet_forward is None:
-            _original_unet_forward = samplers.sampling_function
-            samplers.sampling_function = create_tpg_sampling_function(_original_unet_forward)
-            print("[TPG] Patched sampling_function for TPG")
-        
-        print("[TPG] Successfully patched sampling function for TPG")
+        print("[TPG] Successfully patched for TPG")
         return True
         
     except Exception as e:
-        logger.error(f"[TPG] Failed to patch sampling function: {e}")
+        logger.error(f"[TPG] Failed to patch for TPG: {e}")
         import traceback
         traceback.print_exc()
         return False
 
-def unpatch_sampling_for_tpg():
+def patch_attention_processors_for_tpg():
     """
-    Restore the original sampling function
+    Patch attention processors for layer-specific TPG
     """
     try:
-        import ldm_patched.modules.samplers as samplers
+        import modules.default_pipeline as default_pipeline
         
+        if default_pipeline.final_unet is None:
+            return False
+        
+        applied_layers = _tpg_config.get('applied_layers', ['mid', 'up'])
+        
+        # Get current attention processors
+        current_processors = {}
+        
+        def get_processors_recursive(name, module):
+            if hasattr(module, "get_processor"):
+                current_processors[f"{name}.processor"] = module.get_processor(return_deprecated_lora=True)
+            
+            for sub_name, child in module.named_children():
+                get_processors_recursive(f"{name}.{sub_name}", child)
+        
+        for name, module in default_pipeline.final_unet.named_children():
+            get_processors_recursive(name, module)
+        
+        # Create TPG processors for selected layers only
+        tpg_processors = {}
+        for name, processor in current_processors.items():
+            # Check if this layer should have TPG applied
+            should_apply_tpg = any(layer_type in name for layer_type in applied_layers)
+            
+            if should_apply_tpg:
+                tpg_processors[name] = TPGAttentionProcessor(processor)
+            else:
+                tpg_processors[name] = processor
+        
+        # Set the processors
+        def set_processors_recursive(name, module, processors):
+            if hasattr(module, "set_processor"):
+                if not isinstance(processors, dict):
+                    module.set_processor(processors)
+                else:
+                    module.set_processor(processors.pop(f"{name}.processor"))
+            
+            for sub_name, child in module.named_children():
+                set_processors_recursive(f"{name}.{sub_name}", child, processors)
+        
+        for name, module in default_pipeline.final_unet.named_children():
+            set_processors_recursive(name, module, tpg_processors.copy())
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"[TPG] Failed to patch attention processors: {e}")
+        return False
+
+def unpatch_sampling_for_tpg():
+    """
+    Restore the original sampling function and attention processors
+    """
+    try:
+        success = True
+        
+        # Restore sampling function if it was patched
+        import ldm_patched.modules.samplers as samplers
         global _original_unet_forward
         
         if _original_unet_forward is not None:
             samplers.sampling_function = _original_unet_forward
             _original_unet_forward = None
             print("[TPG] Successfully restored original sampling function")
-            return True
-        else:
-            print("[TPG] No original sampling function found to restore")
-            return False
+        
+        # Restore attention processors if they were patched
+        try:
+            import modules.default_pipeline as default_pipeline
+            
+            if default_pipeline.final_unet is not None:
+                # Get current processors and restore any TPG processors to original
+                current_processors = {}
+                
+                def get_processors_recursive(name, module):
+                    if hasattr(module, "get_processor"):
+                        processor = module.get_processor(return_deprecated_lora=True)
+                        if isinstance(processor, TPGAttentionProcessor):
+                            current_processors[f"{name}.processor"] = processor.original_processor
+                        else:
+                            current_processors[f"{name}.processor"] = processor
+                    
+                    for sub_name, child in module.named_children():
+                        get_processors_recursive(f"{name}.{sub_name}", child)
+                
+                for name, module in default_pipeline.final_unet.named_children():
+                    get_processors_recursive(name, module)
+                
+                # Set the restored processors
+                def set_processors_recursive(name, module, processors):
+                    if hasattr(module, "set_processor"):
+                        if not isinstance(processors, dict):
+                            module.set_processor(processors)
+                        else:
+                            module.set_processor(processors.pop(f"{name}.processor"))
+                    
+                    for sub_name, child in module.named_children():
+                        set_processors_recursive(f"{name}.{sub_name}", child, processors)
+                
+                for name, module in default_pipeline.final_unet.named_children():
+                    set_processors_recursive(name, module, current_processors.copy())
+                
+                print("[TPG] Successfully restored original attention processors")
+        
+        except Exception as e:
+            logger.warning(f"[TPG] Failed to restore attention processors: {e}")
+            success = False
+        
+        return success
             
     except Exception as e:
-        logger.error(f"[TPG] Failed to restore sampling function: {e}")
+        logger.error(f"[TPG] Failed to restore TPG patches: {e}")
         import traceback
         traceback.print_exc()
         return False
