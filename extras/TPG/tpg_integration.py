@@ -154,170 +154,115 @@ def apply_tpg_to_conditioning(cond_list, step=None):
         logger.warning(f"[TPG] Error applying TPG to conditioning: {e}")
         return cond_list
 
-def create_tpg_unet_wrapper(original_apply_model):
+def create_tpg_sampling_function(original_sampling_function):
     """
-    Create a TPG-enhanced UNet wrapper that applies token perturbation guidance
-    This wraps the apply_model method which has the signature:
-    apply_model(input_x, timestep_, **c)
-    
-    Instead of expanding batch size, we make separate calls to avoid tensor size issues.
+    Create a TPG-enhanced sampling function that applies token perturbation guidance
+    This wraps the sampling_function which has the signature:
+    sampling_function(model, x, timestep, uncond, cond, cond_scale, model_options={}, seed=None)
     """
-    def tpg_apply_model(input_x, timestep_, **c):
+    def tpg_sampling_function(model, x, timestep, uncond, cond, cond_scale, model_options={}, seed=None):
         # Check if TPG should be applied
-        if not is_tpg_enabled():
-            return original_apply_model(input_x, timestep_, **c)
+        if not is_tpg_enabled() or len(cond) == 0:
+            return original_sampling_function(model, x, timestep, uncond, cond, cond_scale, model_options, seed)
         
         try:
             tpg_scale = _tpg_config.get('scale', 3.0)
             
-            # Extract conditioning from kwargs
-            # In Fooocus, conditioning is passed as c_crossattn in the c dict
-            if 'c_crossattn' in c and c['c_crossattn'] is not None:
-                encoder_hidden_states = c['c_crossattn']
-                
-                # Check if we have the right batch size for guidance (uncond + cond)
-                if encoder_hidden_states.shape[0] == 2 and input_x.shape[0] == 2:
-                    # Split conditioning and input
-                    uncond_embeds, cond_embeds = encoder_hidden_states.chunk(2)
-                    uncond_sample, cond_sample = input_x.chunk(2)
-                    
-                    # Apply token shuffling to create perturbed embeddings
-                    step = int(timestep_.mean().item()) if hasattr(timestep_, 'mean') else None
-                    cond_embeds_shuffled = shuffle_tokens(
-                        cond_embeds, 
-                        step=step,
-                        shuffle_strength=_tpg_config.get('shuffle_strength', 1.0)
-                    )
-                    
-                    # Make separate calls to avoid batch size issues
-                    
-                    # 1. Get unconditional prediction
-                    uncond_c = {}
-                    for key, value in c.items():
-                        if key == 'c_crossattn':
-                            uncond_c[key] = uncond_embeds
-                        elif isinstance(value, torch.Tensor) and value.shape[0] == 2:
-                            uncond_val, _ = value.chunk(2)
-                            uncond_c[key] = uncond_val
-                        else:
-                            uncond_c[key] = value
-                    
-                    noise_pred_uncond = original_apply_model(uncond_sample, timestep_, **uncond_c)
-                    
-                    # 2. Get conditional prediction
-                    cond_c = {}
-                    for key, value in c.items():
-                        if key == 'c_crossattn':
-                            cond_c[key] = cond_embeds
-                        elif isinstance(value, torch.Tensor) and value.shape[0] == 2:
-                            _, cond_val = value.chunk(2)
-                            cond_c[key] = cond_val
-                        else:
-                            cond_c[key] = value
-                    
-                    noise_pred_cond = original_apply_model(cond_sample, timestep_, **cond_c)
-                    
-                    # 3. Get perturbed prediction
-                    perturb_c = {}
-                    for key, value in c.items():
-                        if key == 'c_crossattn':
-                            perturb_c[key] = cond_embeds_shuffled
-                        elif isinstance(value, torch.Tensor) and value.shape[0] == 2:
-                            _, cond_val = value.chunk(2)
-                            perturb_c[key] = cond_val
-                        else:
-                            perturb_c[key] = value
-                    
-                    noise_pred_perturb = original_apply_model(cond_sample, timestep_, **perturb_c)
-                    
-                    # Apply TPG guidance
-                    # Enhance conditional prediction using perturbation difference
-                    noise_pred_enhanced = noise_pred_cond + tpg_scale * (noise_pred_cond - noise_pred_perturb)
-                    
-                    # Return in expected format (uncond, enhanced_cond) with batch size 2
-                    return torch.cat([noise_pred_uncond, noise_pred_enhanced], dim=0)
-                else:
-                    # Standard call without TPG
-                    return original_apply_model(input_x, timestep_, **c)
-            else:
-                # No conditioning, standard call
-                return original_apply_model(input_x, timestep_, **c)
-                
+            # Create perturbed conditioning by shuffling tokens
+            tpg_cond = []
+            for c in cond:
+                new_c = c.copy()
+                if 'model_conds' in new_c:
+                    for key, model_cond in new_c['model_conds'].items():
+                        if hasattr(model_cond, 'cond') and isinstance(model_cond.cond, torch.Tensor):
+                            # Create shuffled version
+                            import copy
+                            new_model_cond = copy.deepcopy(model_cond)
+                            
+                            # Apply token shuffling
+                            step = int(timestep.mean().item()) if hasattr(timestep, 'mean') else None
+                            new_model_cond.cond = shuffle_tokens(
+                                model_cond.cond,
+                                step=step,
+                                shuffle_strength=_tpg_config.get('shuffle_strength', 1.0)
+                            )
+                            new_c['model_conds'][key] = new_model_cond
+                tpg_cond.append(new_c)
+            
+            # Get predictions for all conditions
+            # 1. Standard CFG prediction
+            cfg_result = original_sampling_function(model, x, timestep, uncond, cond, cond_scale, model_options, seed)
+            
+            # Import calc_cond_uncond_batch locally to avoid circular imports
+            from ldm_patched.modules.samplers import calc_cond_uncond_batch
+            
+            # 2. Get conditional prediction without CFG
+            cond_pred, _ = calc_cond_uncond_batch(model, cond, None, x, timestep, model_options)
+            
+            # 3. Get perturbed prediction
+            tpg_pred, _ = calc_cond_uncond_batch(model, tpg_cond, None, x, timestep, model_options)
+            
+            # Apply TPG guidance
+            # Enhance the CFG result using the difference between normal and perturbed conditional predictions
+            tpg_enhanced = cfg_result + tpg_scale * (cond_pred - tpg_pred)
+            
+            return tpg_enhanced
+            
         except Exception as e:
-            logger.warning(f"[TPG] Error in TPG apply_model, falling back to original: {e}")
+            logger.warning(f"[TPG] Error in TPG sampling, falling back to original: {e}")
             import traceback
             traceback.print_exc()
-            return original_apply_model(input_x, timestep_, **c)
+            return original_sampling_function(model, x, timestep, uncond, cond, cond_scale, model_options, seed)
     
-    return tpg_apply_model
+    return tpg_sampling_function
 
-def patch_unet_for_tpg():
+def patch_sampling_for_tpg():
     """
-    Patch the UNet to include TPG support
+    Patch the sampling function to include TPG support
     """
     if not is_tpg_enabled():
         return False
     
     try:
-        # Import the default pipeline to access the UNet
-        import modules.default_pipeline as default_pipeline
+        import ldm_patched.modules.samplers as samplers
         
         global _original_unet_forward
         
         # Store original if not already stored
-        if _original_unet_forward is None and default_pipeline.final_unet is not None:
-            # In Fooocus, we need to patch the apply_model method
-            if hasattr(default_pipeline.final_unet, 'model') and hasattr(default_pipeline.final_unet.model, 'apply_model'):
-                # Fooocus/ComfyUI style - patch the model's apply_model method
-                _original_unet_forward = default_pipeline.final_unet.model.apply_model
-                default_pipeline.final_unet.model.apply_model = create_tpg_unet_wrapper(_original_unet_forward)
-                print("[TPG] Patched model.apply_model for TPG")
-            elif hasattr(default_pipeline.final_unet, 'apply_model'):
-                # Direct apply_model method
-                _original_unet_forward = default_pipeline.final_unet.apply_model
-                default_pipeline.final_unet.apply_model = create_tpg_unet_wrapper(_original_unet_forward)
-                print("[TPG] Patched apply_model for TPG")
-            else:
-                logger.warning("[TPG] Could not find apply_model method to patch")
-                return False
+        if _original_unet_forward is None:
+            _original_unet_forward = samplers.sampling_function
+            samplers.sampling_function = create_tpg_sampling_function(_original_unet_forward)
+            print("[TPG] Patched sampling_function for TPG")
         
-        print("[TPG] Successfully patched UNet for TPG")
+        print("[TPG] Successfully patched sampling function for TPG")
         return True
         
     except Exception as e:
-        logger.error(f"[TPG] Failed to patch UNet: {e}")
+        logger.error(f"[TPG] Failed to patch sampling function: {e}")
         import traceback
         traceback.print_exc()
         return False
 
-def unpatch_unet_for_tpg():
+def unpatch_sampling_for_tpg():
     """
-    Restore the original UNet apply_model method
+    Restore the original sampling function
     """
     try:
-        import modules.default_pipeline as default_pipeline
+        import ldm_patched.modules.samplers as samplers
         
         global _original_unet_forward
         
-        if _original_unet_forward is not None and default_pipeline.final_unet is not None:
-            if hasattr(default_pipeline.final_unet, 'model') and hasattr(default_pipeline.final_unet.model, 'apply_model'):
-                # Fooocus/ComfyUI style
-                default_pipeline.final_unet.model.apply_model = _original_unet_forward
-                print("[TPG] Restored model.apply_model")
-            elif hasattr(default_pipeline.final_unet, 'apply_model'):
-                # Direct apply_model method
-                default_pipeline.final_unet.apply_model = _original_unet_forward
-                print("[TPG] Restored apply_model")
-            
+        if _original_unet_forward is not None:
+            samplers.sampling_function = _original_unet_forward
             _original_unet_forward = None
-            print("[TPG] Successfully restored original UNet")
+            print("[TPG] Successfully restored original sampling function")
             return True
         else:
-            print("[TPG] No original UNet apply_model method found to restore")
+            print("[TPG] No original sampling function found to restore")
             return False
             
     except Exception as e:
-        logger.error(f"[TPG] Failed to restore UNet: {e}")
+        logger.error(f"[TPG] Failed to restore sampling function: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -335,14 +280,14 @@ def enable_tpg(scale: float = 3.0, applied_layers: List[str] = None,
         adaptive_strength=adaptive_strength
     )
     
-    return patch_unet_for_tpg()
+    return patch_sampling_for_tpg()
 
 def disable_tpg():
     """
-    Disable TPG and restore original UNet
+    Disable TPG and restore original sampling function
     """
     set_tpg_config(enabled=False)
-    return unpatch_unet_for_tpg()
+    return unpatch_sampling_for_tpg()
 
 # Context manager for temporary TPG usage
 class TPGContext:
@@ -374,7 +319,7 @@ class TPGContext:
         if self.was_enabled and self.original_config:
             # Restore original config
             set_tpg_config(**self.original_config)
-            patch_unet_for_tpg()
+            patch_sampling_for_tpg()
         else:
             # Disable TPG
             disable_tpg()
