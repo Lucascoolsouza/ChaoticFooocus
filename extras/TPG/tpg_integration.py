@@ -10,12 +10,12 @@ from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-# Global TPG configuration
+# Global TPG configuration - AGGRESSIVE defaults
 _tpg_config = {
     'enabled': False,
-    'scale': 3.0,
+    'scale': 5.0,  # Much stronger guidance scale
     'applied_layers': ['mid', 'up'],
-    'shuffle_strength': 1.0,
+    'shuffle_strength': 1.5,  # More aggressive shuffling
     'adaptive_strength': True
 }
 
@@ -54,7 +54,7 @@ def is_tpg_enabled():
 
 def force_token_perturbation(x, adaptive_strength=0.5):
     """
-    Apply simple token perturbation when normal shuffling fails
+    Apply AGGRESSIVE token perturbation when normal shuffling fails
     """
     try:
         if len(x.shape) < 2:
@@ -63,18 +63,29 @@ def force_token_perturbation(x, adaptive_strength=0.5):
         b, n = x.shape[:2]
         result = x.clone()
         
-        # Simple shuffling
-        permutation = torch.randperm(n, device=x.device)
-        result = result[:, permutation]
+        # AGGRESSIVE shuffling - multiple passes
+        for _ in range(3):  # Multiple shuffle passes
+            permutation = torch.randperm(n, device=x.device)
+            result = result[:, permutation]
         
-        # Add small amount of noise
-        noise = torch.randn(result.shape, device=result.device) * 0.02
+        # STRONG noise injection
+        noise_scale = adaptive_strength * 0.2  # 10x stronger than before
+        noise = torch.randn(result.shape, device=result.device) * noise_scale
         result = result + noise
+        
+        # Token magnitude perturbation
+        magnitude_noise = 1.0 + (torch.rand(result.shape[:2], device=result.device) - 0.5) * adaptive_strength
+        result = result * magnitude_noise.unsqueeze(-1)
+        
+        # Partial token zeroing for extreme effect
+        if adaptive_strength > 0.7:
+            zero_mask = torch.rand(result.shape[:2], device=result.device) < (adaptive_strength - 0.7) * 0.2
+            result[zero_mask.unsqueeze(-1).expand_as(result)] = 0
         
         return result
         
     except Exception as e:
-        logger.warning(f"[TPG] Force perturbation error: {e}")
+        logger.warning(f"[TPG] AGGRESSIVE force perturbation error: {e}")
         return x
 
 class TPGAttentionProcessor:
@@ -119,23 +130,47 @@ class TPGAttentionProcessor:
                 attn, hidden_states_cond, encoder_hidden_states_cond, attention_mask, temb, scale
             )
             
-            # Apply token perturbation to encoder hidden states for this layer
-            tpg_scale = _tpg_config.get('scale', 0.5)
-            shuffle_strength = _tpg_config.get('shuffle_strength', 0.2)
+            # Apply AGGRESSIVE token perturbation to encoder hidden states for this layer
+            tpg_scale = _tpg_config.get('scale', 0.5) * 2.0  # Double the guidance scale
+            shuffle_strength = _tpg_config.get('shuffle_strength', 0.2) * 1.5  # 50% stronger shuffling
             
-            # Create perturbed encoder hidden states
-            encoder_hidden_states_perturbed = shuffle_tokens(
+            # Create MULTIPLE perturbed versions for stronger guidance
+            encoder_hidden_states_perturbed1 = shuffle_tokens(
                 encoder_hidden_states_cond,
                 shuffle_strength=shuffle_strength
             )
             
-            # Process with perturbed conditioning
-            out_perturbed = self.original_processor(
-                attn, hidden_states_cond, encoder_hidden_states_perturbed, attention_mask, temb, scale
+            encoder_hidden_states_perturbed2 = shuffle_tokens(
+                encoder_hidden_states_cond,
+                shuffle_strength=shuffle_strength * 1.2,
+                seed_offset=42
             )
             
-            # Apply TPG guidance at this layer
-            out_enhanced = out_cond + tpg_scale * (out_cond - out_perturbed)
+            # Process with both perturbed conditioning
+            out_perturbed1 = self.original_processor(
+                attn, hidden_states_cond, encoder_hidden_states_perturbed1, attention_mask, temb, scale
+            )
+            
+            out_perturbed2 = self.original_processor(
+                attn, hidden_states_cond, encoder_hidden_states_perturbed2, attention_mask, temb, scale
+            )
+            
+            # AGGRESSIVE TPG guidance using multiple perturbations
+            guidance_diff1 = out_cond - out_perturbed1
+            guidance_diff2 = out_cond - out_perturbed2
+            
+            # Combine guidance signals for stronger effect
+            combined_guidance = (guidance_diff1 + guidance_diff2 * 0.7) / 1.7
+            
+            # Apply enhanced guidance with non-linear scaling
+            guidance_magnitude = torch.norm(combined_guidance, dim=-1, keepdim=True)
+            guidance_normalized = combined_guidance / (guidance_magnitude + 1e-8)
+            
+            # Non-linear amplification for stronger effects
+            amplified_magnitude = guidance_magnitude * (1.0 + tpg_scale * 0.5)
+            amplified_guidance = guidance_normalized * amplified_magnitude
+            
+            out_enhanced = out_cond + tpg_scale * amplified_guidance
             
             # Return combined result
             return torch.cat([out_uncond, out_enhanced], dim=0)
@@ -146,7 +181,7 @@ class TPGAttentionProcessor:
 
 def shuffle_tokens(x, step=None, seed_offset=0, shuffle_strength=None):
     """
-    Enhanced token perturbation for TPG - creates stronger degradation for better guidance
+    AGGRESSIVE token perturbation for TPG - creates much stronger degradation for better guidance
     
     Args:
         x: Token embeddings to perturb [batch, seq_len, hidden_dim]
@@ -169,48 +204,82 @@ def shuffle_tokens(x, step=None, seed_offset=0, shuffle_strength=None):
             generator = torch.Generator(device=x.device)
             generator.manual_seed(hash((step + seed_offset)) % (2**32))
             
-            # Adaptive perturbation strength based on sampling progress
+            # MORE AGGRESSIVE adaptive perturbation strength
             if _tpg_config.get('adaptive_strength', True) and step is not None:
-                # Stronger perturbation early, weaker later
+                # Much stronger perturbation early, still strong later
                 progress = step / 50.0  # Assume ~50 steps
-                adaptive_strength = shuffle_strength * (1.0 - 0.3 * min(1.0, progress))
+                adaptive_strength = shuffle_strength * (1.2 - 0.2 * min(1.0, progress))  # 1.2x to 1.0x strength
+                adaptive_strength = min(2.0, adaptive_strength)  # Cap at 2.0x
             else:
-                adaptive_strength = shuffle_strength
+                adaptive_strength = shuffle_strength * 1.5  # 50% stronger by default
         else:
             generator = torch.Generator(device=x.device)
-            adaptive_strength = shuffle_strength
+            adaptive_strength = shuffle_strength * 1.5
         
         result = x.clone()
         
-        # Apply simple token perturbation techniques
+        # AGGRESSIVE token perturbation techniques
         
-        # 1. Token shuffling (reorder tokens)
-        if adaptive_strength > 0.1:
-            shuffle_ratio = min(1.0, adaptive_strength)
-            num_to_shuffle = max(1, int(n * shuffle_ratio))
+        # 1. AGGRESSIVE Token shuffling (reorder tokens)
+        if adaptive_strength > 0.05:  # Lower threshold
+            shuffle_ratio = min(1.0, adaptive_strength * 1.2)  # More aggressive shuffling
+            num_to_shuffle = max(2, int(n * shuffle_ratio))  # Shuffle at least 2 tokens
             indices_to_shuffle = torch.randperm(n, device=x.device, generator=generator)[:num_to_shuffle]
             shuffled_indices = torch.randperm(num_to_shuffle, device=x.device, generator=generator)
             result[:, indices_to_shuffle] = result[:, indices_to_shuffle[shuffled_indices]]
         
-        # 2. Small noise injection
-        if adaptive_strength > 0.2:
-            noise_scale = adaptive_strength * 0.05  # Small noise scale
+        # 2. STRONGER noise injection
+        if adaptive_strength > 0.1:  # Lower threshold
+            noise_scale = adaptive_strength * 0.15  # 3x stronger noise
             noise = torch.randn(result.shape, device=result.device, generator=generator) * noise_scale
             result = result + noise
         
-        # 3. Token duplication (light)
-        if adaptive_strength > 0.5:
-            dup_ratio = adaptive_strength * 0.1  # Up to 10% duplication
+        # 3. AGGRESSIVE Token duplication and replacement
+        if adaptive_strength > 0.3:  # Lower threshold
+            dup_ratio = adaptive_strength * 0.25  # Up to 25% duplication (2.5x more)
             num_to_dup = int(n * dup_ratio)
             if num_to_dup > 0:
                 source_indices = torch.randperm(n, device=x.device, generator=generator)[:num_to_dup]
                 target_indices = torch.randperm(n, device=x.device, generator=generator)[:num_to_dup]
                 result[:, target_indices] = result[:, source_indices]
         
+        # 4. NEW: Token reversal (reverse order of segments)
+        if adaptive_strength > 0.4:
+            segment_size = max(2, n // 8)  # Reverse in segments
+            for i in range(0, n - segment_size, segment_size * 2):
+                end_idx = min(i + segment_size, n)
+                result[:, i:end_idx] = torch.flip(result[:, i:end_idx], dims=[1])
+        
+        # 5. NEW: Magnitude scaling (make some tokens stronger/weaker)
+        if adaptive_strength > 0.6:
+            scale_factor = 1.0 + (torch.rand(result.shape[:2], device=result.device, generator=generator) - 0.5) * adaptive_strength * 0.5
+            result = result * scale_factor.unsqueeze(-1)
+        
+        # 6. NEW: Token interpolation (blend neighboring tokens)
+        if adaptive_strength > 0.7:
+            blend_strength = adaptive_strength * 0.3
+            if n > 1:
+                shifted = torch.roll(result, shifts=1, dims=1)
+                result = result * (1 - blend_strength) + shifted * blend_strength
+        
+        # 7. NEW: Extreme perturbation for very high strength
+        if adaptive_strength > 1.0:
+            # Add structured chaos
+            chaos_strength = (adaptive_strength - 1.0) * 0.2
+            chaos_noise = torch.randn(result.shape, device=result.device, generator=generator) * chaos_strength
+            result = result + chaos_noise
+            
+            # Random token zeroing
+            zero_ratio = (adaptive_strength - 1.0) * 0.1
+            num_to_zero = int(n * zero_ratio)
+            if num_to_zero > 0:
+                zero_indices = torch.randperm(n, device=x.device, generator=generator)[:num_to_zero]
+                result[:, zero_indices] = 0
+        
         return result
                 
     except Exception as e:
-        logger.warning(f"[TPG] Enhanced token perturbation error: {e}")
+        logger.warning(f"[TPG] AGGRESSIVE token perturbation error: {e}")
         return x
 
 def apply_tpg_to_conditioning(cond_list, step=None):
@@ -324,15 +393,19 @@ def create_tpg_sampling_function(original_sampling_function):
                             if hasattr(model_cond, 'cond') and isinstance(model_cond.cond, torch.Tensor):
                                 import copy
                                 new_model_cond = copy.deepcopy(model_cond)
-                                # Simple emergency perturbation
+                                # AGGRESSIVE emergency perturbation
                                 emergency_cond = model_cond.cond.clone()
-                                # Add small amount of noise
-                                noise = torch.randn(emergency_cond.shape, device=emergency_cond.device) * 0.05
+                                # Add STRONG noise
+                                noise = torch.randn(emergency_cond.shape, device=emergency_cond.device) * 0.2  # 4x stronger
                                 emergency_cond = emergency_cond + noise
-                                # Simple shuffle
+                                # MULTIPLE shuffles
                                 b, n = emergency_cond.shape[:2]
-                                perm = torch.randperm(n, device=emergency_cond.device)
-                                emergency_cond = emergency_cond[:, perm]
+                                for _ in range(3):  # Triple shuffle
+                                    perm = torch.randperm(n, device=emergency_cond.device)
+                                    emergency_cond = emergency_cond[:, perm]
+                                # Add magnitude perturbation
+                                mag_noise = 1.0 + (torch.rand(emergency_cond.shape[:2], device=emergency_cond.device) - 0.5) * 0.4
+                                emergency_cond = emergency_cond * mag_noise.unsqueeze(-1)
                                 
                                 new_model_cond.cond = emergency_cond
                                 new_c['model_conds'][key] = new_model_cond
@@ -343,21 +416,61 @@ def create_tpg_sampling_function(original_sampling_function):
             # Get conditional prediction without CFG (for comparison)
             cond_pred, _ = calc_cond_uncond_batch(model, cond, None, x, timestep, model_options)
             
-            # Get perturbed prediction
-            tpg_pred, _ = calc_cond_uncond_batch(model, tpg_cond, None, x, timestep, model_options)
+            # Get MULTIPLE perturbed predictions for stronger guidance
+            tpg_pred1, _ = calc_cond_uncond_batch(model, tpg_cond, None, x, timestep, model_options)
             
-            # Calculate the difference
-            pred_diff = cond_pred - tpg_pred
-            diff_magnitude = torch.abs(pred_diff).mean().item()
+            # Create second perturbation with different strength
+            tpg_cond2 = []
+            for i, c in enumerate(cond):
+                new_c = c.copy()
+                if 'model_conds' in new_c:
+                    for key, model_cond in new_c['model_conds'].items():
+                        if hasattr(model_cond, 'cond') and isinstance(model_cond.cond, torch.Tensor):
+                            import copy
+                            new_model_cond = copy.deepcopy(model_cond)
+                            step = int(timestep.mean().item()) if hasattr(timestep, 'mean') else None
+                            shuffled_cond = shuffle_tokens(
+                                model_cond.cond,
+                                step=step,
+                                shuffle_strength=_tpg_config.get('shuffle_strength', 0.2) * 1.5,
+                                seed_offset=123
+                            )
+                            new_model_cond.cond = shuffled_cond
+                            new_c['model_conds'][key] = new_model_cond
+                tpg_cond2.append(new_c)
+            
+            tpg_pred2, _ = calc_cond_uncond_batch(model, tpg_cond2, None, x, timestep, model_options)
+            
+            # Calculate AGGRESSIVE guidance using multiple perturbations
+            pred_diff1 = cond_pred - tpg_pred1
+            pred_diff2 = cond_pred - tpg_pred2
+            
+            # Combine differences for stronger guidance
+            combined_diff = (pred_diff1 + pred_diff2 * 0.8) / 1.8
+            diff_magnitude = torch.abs(combined_diff).mean().item()
             
             if diff_magnitude < 1e-6:
-                # Emergency guidance: create small artificial difference
-                emergency_diff = torch.randn_like(cfg_result) * 0.01
-                pred_diff = emergency_diff
+                # AGGRESSIVE emergency guidance
+                emergency_diff = torch.randn_like(cfg_result) * 0.05  # 5x stronger
+                combined_diff = emergency_diff
+                diff_magnitude = torch.abs(combined_diff).mean().item()
             
-            # Apply TPG guidance
-            tpg_enhancement = tpg_scale * pred_diff
-            tpg_enhanced = cfg_result + tpg_enhancement
+            # AGGRESSIVE TPG guidance with non-linear scaling
+            base_enhancement = tpg_scale * combined_diff
+            
+            # Add magnitude-based amplification
+            enhancement_magnitude = torch.norm(base_enhancement, dim=(-3, -2, -1), keepdim=True)
+            normalized_enhancement = base_enhancement / (enhancement_magnitude + 1e-8)
+            
+            # Non-linear amplification: stronger effects get even stronger
+            amplification_factor = 1.0 + (enhancement_magnitude / (enhancement_magnitude + 0.1)) * 0.5
+            amplified_enhancement = normalized_enhancement * enhancement_magnitude * amplification_factor
+            
+            # Apply directional bias for more dramatic effects
+            step_progress = int(timestep.mean().item()) / 50.0 if hasattr(timestep, 'mean') else 0.5
+            directional_boost = 1.0 + (1.0 - step_progress) * 0.3  # Stronger early in sampling
+            
+            tpg_enhanced = cfg_result + amplified_enhancement * directional_boost
             
             return tpg_enhanced
             
