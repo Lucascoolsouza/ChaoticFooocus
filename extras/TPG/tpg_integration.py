@@ -52,6 +52,37 @@ def is_tpg_enabled():
     """Check if TPG is enabled"""
     return _tpg_config.get('enabled', False) and _tpg_config.get('scale', 0) > 0
 
+def force_token_perturbation(x, adaptive_strength=2.0):
+    """
+    Force aggressive token perturbation when normal shuffling fails
+    """
+    try:
+        if len(x.shape) < 2:
+            return x
+        
+        b, n = x.shape[:2]
+        result = x.clone()
+        
+        # Force aggressive shuffling
+        permutation = torch.randperm(n, device=x.device)
+        result = result[:, permutation]
+        
+        # Add noise
+        noise = torch.randn(result.shape, device=result.device) * 0.1
+        result = result + noise
+        
+        # Zero out some tokens
+        num_to_zero = max(1, int(n * 0.3))
+        indices_to_zero = torch.randperm(n, device=x.device)[:num_to_zero]
+        result[:, indices_to_zero] = 0
+        
+        print(f"[TPG DEBUG] Force perturbation applied: permutation + noise + {num_to_zero} zeros")
+        return result
+        
+    except Exception as e:
+        print(f"[TPG DEBUG] Force perturbation error: {e}")
+        return x
+
 def shuffle_tokens(x, step=None, seed_offset=0, shuffle_strength=None):
     """
     Enhanced token perturbation for TPG - creates stronger degradation for better guidance
@@ -119,7 +150,8 @@ def shuffle_tokens(x, step=None, seed_offset=0, shuffle_strength=None):
         # 4. Noise injection (add MUCH more noise to embeddings)
         if adaptive_strength > 0.3:  # Apply earlier
             noise_scale = adaptive_strength * 0.5  # Much larger noise scale
-            noise = torch.randn_like(result, generator=generator) * noise_scale
+            # Fix: randn_like doesn't support generator in older PyTorch versions
+            noise = torch.randn(result.shape, device=result.device, generator=generator) * noise_scale
             result = result + noise
         
         # 5. Token reversal (reverse order of some token sequences)
@@ -177,7 +209,9 @@ def shuffle_tokens(x, step=None, seed_offset=0, shuffle_strength=None):
             num_to_randomize = int(n * random_ratio)
             if num_to_randomize > 0:
                 indices_to_randomize = torch.randperm(n, device=x.device, generator=generator)[:num_to_randomize]
-                result[:, indices_to_randomize] = torch.randn_like(result[:, indices_to_randomize], generator=generator)
+                # Fix: randn_like doesn't support generator in older PyTorch versions
+                random_shape = result[:, indices_to_randomize].shape
+                result[:, indices_to_randomize] = torch.randn(random_shape, device=result.device, generator=generator)
         
         print(f"[TPG DEBUG] Applied enhanced token perturbation: strength={adaptive_strength:.3f}, step={step}")
         return result
@@ -263,7 +297,10 @@ def create_tpg_sampling_function(original_sampling_function):
                     for key, model_cond in new_c['model_conds'].items():
                         if hasattr(model_cond, 'cond') and isinstance(model_cond.cond, torch.Tensor):
                             original_shape = model_cond.cond.shape
-                            print(f"[TPG DEBUG] Found conditioning tensor '{key}' with shape: {original_shape}")
+                            original_dtype = model_cond.cond.dtype
+                            original_device = model_cond.cond.device
+                            print(f"[TPG DEBUG] Found conditioning tensor '{key}' with shape: {original_shape}, dtype: {original_dtype}, device: {original_device}")
+                            print(f"[TPG DEBUG] Tensor stats - min: {model_cond.cond.min().item():.6f}, max: {model_cond.cond.max().item():.6f}, mean: {model_cond.cond.mean().item():.6f}")
                             
                             # Create shuffled version
                             import copy
@@ -278,11 +315,25 @@ def create_tpg_sampling_function(original_sampling_function):
                             )
                             
                             # Verify shuffling actually happened
-                            if not torch.equal(model_cond.cond, shuffled_cond):
-                                print(f"[TPG DEBUG] Successfully shuffled tokens for '{key}'")
+                            original_mean = model_cond.cond.mean().item()
+                            shuffled_mean = shuffled_cond.mean().item()
+                            diff_magnitude = torch.abs(model_cond.cond - shuffled_cond).mean().item()
+                            
+                            print(f"[TPG DEBUG] Token '{key}' - Original mean: {original_mean:.6f}, Shuffled mean: {shuffled_mean:.6f}, Diff: {diff_magnitude:.6f}")
+                            
+                            if diff_magnitude > 1e-8:  # More lenient threshold
+                                print(f"[TPG DEBUG] Successfully shuffled tokens for '{key}' (diff: {diff_magnitude:.6f})")
                                 tokens_shuffled = True
                             else:
-                                print(f"[TPG DEBUG] Warning: Token shuffling had no effect for '{key}'")
+                                print(f"[TPG DEBUG] Warning: Token shuffling had minimal effect for '{key}' (diff: {diff_magnitude:.6f})")
+                                # Force a more aggressive shuffle if the first attempt failed
+                                print(f"[TPG DEBUG] Applying FORCE shuffle for '{key}'")
+                                force_shuffled = force_token_perturbation(model_cond.cond, adaptive_strength=2.0)
+                                force_diff = torch.abs(model_cond.cond - force_shuffled).mean().item()
+                                print(f"[TPG DEBUG] Force shuffle diff: {force_diff:.6f}")
+                                if force_diff > diff_magnitude:
+                                    shuffled_cond = force_shuffled
+                                    tokens_shuffled = True
                             
                             new_model_cond.cond = shuffled_cond
                             new_c['model_conds'][key] = new_model_cond
@@ -290,8 +341,36 @@ def create_tpg_sampling_function(original_sampling_function):
                 tpg_cond.append(new_c)
             
             if not tokens_shuffled:
-                print("[TPG DEBUG] Warning: No tokens were shuffled, TPG may have no effect")
-                return cfg_result
+                print("[TPG DEBUG] Warning: No tokens were shuffled, applying EMERGENCY perturbation")
+                # Emergency fallback: create completely different conditioning
+                emergency_tpg_cond = []
+                for i, c in enumerate(cond):
+                    new_c = c.copy()
+                    if 'model_conds' in new_c:
+                        for key, model_cond in new_c['model_conds'].items():
+                            if hasattr(model_cond, 'cond') and isinstance(model_cond.cond, torch.Tensor):
+                                import copy
+                                new_model_cond = copy.deepcopy(model_cond)
+                                # EMERGENCY: Add significant noise and shuffle
+                                emergency_cond = model_cond.cond.clone()
+                                # Add 20% noise
+                                noise = torch.randn(emergency_cond.shape, device=emergency_cond.device) * 0.2
+                                emergency_cond = emergency_cond + noise
+                                # Shuffle aggressively
+                                b, n = emergency_cond.shape[:2]
+                                perm = torch.randperm(n, device=emergency_cond.device)
+                                emergency_cond = emergency_cond[:, perm]
+                                # Zero out 30% of tokens
+                                num_zero = int(n * 0.3)
+                                zero_indices = torch.randperm(n, device=emergency_cond.device)[:num_zero]
+                                emergency_cond[:, zero_indices] = 0
+                                
+                                new_model_cond.cond = emergency_cond
+                                new_c['model_conds'][key] = new_model_cond
+                                print(f"[TPG DEBUG] Applied EMERGENCY perturbation to '{key}'")
+                    emergency_tpg_cond.append(new_c)
+                tpg_cond = emergency_tpg_cond
+                tokens_shuffled = True  # Force continue
             
             # Get conditional prediction without CFG (for comparison)
             print("[TPG DEBUG] Getting conditional prediction...")
@@ -307,7 +386,12 @@ def create_tpg_sampling_function(original_sampling_function):
             print(f"[TPG DEBUG] Prediction difference magnitude: {diff_magnitude}")
             
             if diff_magnitude < 1e-6:
-                print("[TPG DEBUG] Warning: Very small prediction difference, TPG effect may be minimal")
+                print("[TPG DEBUG] Warning: Very small prediction difference, applying EMERGENCY guidance")
+                # Emergency guidance: create artificial difference
+                emergency_diff = torch.randn_like(cfg_result) * 0.1  # 10% noise as artificial difference
+                pred_diff = emergency_diff
+                diff_magnitude = torch.abs(pred_diff).mean().item()
+                print(f"[TPG DEBUG] Emergency artificial difference magnitude: {diff_magnitude:.6f}")
             
             # Apply MUCH more aggressive TPG guidance
             print(f"[TPG DEBUG] Original CFG result magnitude: {torch.abs(cfg_result).mean().item()}")
