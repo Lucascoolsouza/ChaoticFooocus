@@ -150,6 +150,12 @@ def run_clip_guidance_loop(
             total_loss.backward()
             optimizer.step()
 
+            # Update progress and preview
+            if async_task is not None:
+                current_progress = int((i + 1) / steps * 100)  # Scale to 0-100
+                preview_image_np = (image_for_clip.permute(0, 2, 3, 1) * 255).clamp(0, 255).to(torch.uint8).cpu().numpy()[0]
+                async_task.yields.append(['preview', (current_progress, f'Disco Guidance Step {i+1}/{steps}...', preview_image_np)])
+
         print("[Disco] CLIP guidance pre-sampling loop finished.")
         latent['samples'] = latent_tensor.detach()
         return latent
