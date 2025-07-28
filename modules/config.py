@@ -370,7 +370,7 @@ default_scheduler = get_config_item_or_set_default(
 )
 default_vae = get_config_item_or_set_default(
     key='default_vae',
-    default_value=modules.flags.default_vae,
+    default_value='sdxl_vae.safetensors',
     validator=lambda x: isinstance(x, str),
     expected_type=str
 )
