@@ -818,17 +818,19 @@ def _extract_text_embeddings_impl(self, cond):
         if not isinstance(cond, list) or not cond:
             return None
 
+        # Get device from CLIP model parameters, the robust way
+        device = next(self.clip_model.parameters()).device
         first_item = cond[0]
         
         # Standard format: [[tensor, dict]]
         if isinstance(first_item, list) and first_item and hasattr(first_item[0], 'shape'):
-            return first_item[0].to(self.clip_model.device)
+            return first_item[0].to(device)
             
         # Alternative format: [{'pooled_output': tensor}]
         if isinstance(first_item, dict) and 'pooled_output' in first_item:
             pooled = first_item.get('pooled_output')
             if hasattr(pooled, 'shape'):
-                return pooled.to(self.clip_model.device)
+                return pooled.to(device)
 
         logger.warning(f"Could not extract text embeddings from conditioning structure: {type(first_item)}")
         return None
