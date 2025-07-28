@@ -63,11 +63,20 @@ class DiscoTransforms:
     
     @staticmethod
     def apply_transform(x, transform_matrix):
-        """Apply 2D transformation to tensor"""
+        """Apply 2D transformation to tensor with tiled VAE awareness"""
         # Ensure transform_matrix is on the same device as x
         transform_matrix = transform_matrix.to(x.device)
-        grid = F.affine_grid(transform_matrix.unsqueeze(0), x.size(), align_corners=False)
-        return F.grid_sample(x, grid, mode='bilinear', padding_mode='reflection', align_corners=False)
+        
+        # For very large tensors, apply more conservative transforms to avoid tiling artifacts
+        b, c, h, w = x.shape
+        if h > 128 or w > 128:  # Large latent (likely high resolution)
+            # Use nearest neighbor for large tensors to avoid blur
+            grid = F.affine_grid(transform_matrix.unsqueeze(0), x.size(), align_corners=False)
+            return F.grid_sample(x, grid, mode='nearest', padding_mode='reflection', align_corners=False)
+        else:
+            # Use bilinear for smaller tensors
+            grid = F.affine_grid(transform_matrix.unsqueeze(0), x.size(), align_corners=False)
+            return F.grid_sample(x, grid, mode='bilinear', padding_mode='reflection', align_corners=False)
     
     @staticmethod
     def make_cutouts(image, cut_size, cutn):
@@ -331,6 +340,8 @@ class DiscoSampler:
         self.is_active = False
         self.clip_model = None
         self.clip_preprocess = None
+        self.detected_resolution = None
+        self.tiled_vae_detected = False
         
         # Initialize random state
         if self.disco_seed is not None:
@@ -422,38 +433,72 @@ class DiscoSampler:
         # Apply every step for strongest possible influence
         return True  # Apply every single step
     
+    def _detect_resolution_and_tiling(self, x):
+        """Detect the actual image resolution and if tiled VAE is likely being used"""
+        if x.dim() != 4:
+            return
+        
+        b, c, h, w = x.shape
+        latent_scale = 8  # Standard VAE downscaling
+        estimated_resolution = max(h * latent_scale, w * latent_scale)
+        
+        # Update detected resolution
+        if self.detected_resolution is None:
+            self.detected_resolution = estimated_resolution
+            print(f"[Disco] Detected resolution: {estimated_resolution}px")
+        
+        # Detect if tiled VAE is likely being used (large images)
+        if estimated_resolution > 1024 and not self.tiled_vae_detected:
+            self.tiled_vae_detected = True
+            print(f"[Disco] Large resolution detected ({estimated_resolution}px) - using tiled VAE compatible transforms")
+        
+        return estimated_resolution
+    
     def _apply_geometric_transforms_to_latent(self, x):
-        """Apply geometric transforms directly to latent space"""
+        """Apply scale-aware geometric transforms to latent space"""
         if x.dim() != 4:
             return x
         
         try:
+            b, c, h, w = x.shape
             result = x.clone()
             
-            # Apply transforms based on settings
+            # Calculate scale-aware transform strength
+            latent_scale = 8  # Standard VAE downscaling
+            effective_resolution = max(h * latent_scale, w * latent_scale)
+            resolution_factor = min(effective_resolution / 512.0, 4.0)
+            
+            # Reduce transform intensity for larger images to prevent artifacts
+            scale_factor = 0.05 / resolution_factor
+            
+            # Apply transforms based on settings with scale awareness
             if 'rotate' in self.disco_transforms:
-                # Small rotation
-                angle = self.disco_rotation_speed * 0.1
-                transform_matrix = DiscoTransforms.rotate_2d(angle, device=result.device)
-                result = DiscoTransforms.apply_transform(result, transform_matrix)
+                # Very small rotation scaled for resolution
+                angle = self.disco_rotation_speed * scale_factor
+                if abs(angle) > 0.001:  # Only apply if meaningful
+                    transform_matrix = DiscoTransforms.rotate_2d(angle, device=result.device)
+                    result = DiscoTransforms.apply_transform(result, transform_matrix)
             
             if 'translate' in self.disco_transforms:
-                # Small translation
-                tx = self.disco_translation_x * 0.01
-                ty = self.disco_translation_y * 0.01
-                transform_matrix = DiscoTransforms.translate_2d(tx, ty, device=result.device)
-                result = DiscoTransforms.apply_transform(result, transform_matrix)
+                # Scale translation for latent space
+                tx = self.disco_translation_x * scale_factor * 0.5
+                ty = self.disco_translation_y * scale_factor * 0.5
+                if abs(tx) > 0.001 or abs(ty) > 0.001:  # Only apply if meaningful
+                    transform_matrix = DiscoTransforms.translate_2d(tx, ty, device=result.device)
+                    result = DiscoTransforms.apply_transform(result, transform_matrix)
             
             if 'zoom' in self.disco_transforms:
-                # Small zoom effect
-                zoom = 1.0 + (self.disco_zoom_factor - 1.0) * 0.1
-                transform_matrix = DiscoTransforms.scale_2d(zoom, zoom)
-                result = DiscoTransforms.apply_transform(result, transform_matrix)
+                # Very subtle zoom scaled for resolution
+                zoom_amount = (self.disco_zoom_factor - 1.0) * scale_factor * 0.2
+                zoom = 1.0 + zoom_amount
+                if abs(zoom - 1.0) > 0.001:  # Only apply if meaningful
+                    transform_matrix = DiscoTransforms.scale_2d(zoom, zoom, device=result.device)
+                    result = DiscoTransforms.apply_transform(result, transform_matrix)
             
             return result
             
         except Exception as e:
-            print(f"[Disco] Transform failed: {e}")
+            print(f"[Disco] Scale-aware transform failed: {e}")
             return x
     
     def _apply_disco_effects(self, x, timestep):
@@ -873,6 +918,9 @@ def _get_guidance_schedule_impl(self):
 def _apply_disco_guidance_impl(self, model, x, timestep, noise_pred, cond, model_options):
     """Apply true Disco Diffusion CLIP guidance"""
     try:
+        # Detect resolution and tiling on first run
+        self._detect_resolution_and_tiling(x)
+        
         print(f"[Disco] Applying guidance - CLIP available: {self.clip_model is not None}")
         
         # If CLIP is available, use full scientific algorithm
@@ -912,85 +960,100 @@ def _apply_full_disco_guidance(self, model, x, timestep, noise_pred, cond, model
     return noise_pred
 
 def _apply_geometric_disco_fallback(self, x, timestep, noise_pred):
-    """Apply geometric transforms directly to latent space (fallback when CLIP not available)"""
+    """Apply scale-aware geometric transforms to latent space"""
     import torch
     try:
-        # Apply geometric transforms directly to the latent with stronger effects
         frame = self.step_count
         result = x.clone()
         
-        # Use stronger transform strength for visible effects
-        base_strength = self.disco_scale if self.disco_scale <= 1.0 else self.disco_scale / 1000.0
-        transform_strength = base_strength * 0.3  # Stronger for visible effects
+        # Get latent dimensions and calculate scale factor
+        b, c, h, w = x.shape
+        latent_scale = 8  # Standard VAE downscaling factor
+        effective_resolution = max(h * latent_scale, w * latent_scale)
         
-        print(f"[Disco] Applying geometric fallback - frame: {frame}, strength: {transform_strength}")
+        # Scale transform strength based on resolution and disco scale
+        base_strength = min(self.disco_scale / 1000.0, 1.0)
+        resolution_factor = min(effective_resolution / 512.0, 4.0)  # Cap at 4x for very large images
+        transform_strength = base_strength * 0.1 / resolution_factor  # Reduce for larger images
         
-        if 'translate' in self.disco_transforms:
-            # More noticeable translation
-            tx = int(self.disco_translation_x * math.sin(frame * 0.2) * 4)
-            ty = int(self.disco_translation_y * math.cos(frame * 0.2) * 4)
-            if abs(tx) > 0 or abs(ty) > 0:
-                result = torch.roll(result, shifts=(ty, tx), dims=(2, 3))
-                print(f"[Disco] Applied translation: tx={tx}, ty={ty}")
+        print(f"[Disco] Scale-aware fallback - resolution: {effective_resolution}, strength: {transform_strength:.4f}")
         
-        if 'rotate' in self.disco_transforms:
-            # More frequent rotation
-            angle_steps = int(self.disco_rotation_speed * frame * 0.2 * 4) % 4
-            if angle_steps > 0:
-                result = torch.rot90(result, k=angle_steps, dims=[2, 3])
-                print(f"[Disco] Applied rotation: {angle_steps * 90}°")
+        # Apply subtle latent-space transforms that work with tiled VAE
+        if 'translate' in self.disco_transforms and transform_strength > 0.001:
+            # Very subtle translation scaled for latent space
+            tx_pixels = self.disco_translation_x * math.sin(frame * 0.05) * 0.5
+            ty_pixels = self.disco_translation_y * math.cos(frame * 0.05) * 0.5
+            
+            # Convert to latent space pixels
+            tx_latent = max(1, int(abs(tx_pixels) / latent_scale)) * (1 if tx_pixels >= 0 else -1)
+            ty_latent = max(1, int(abs(ty_pixels) / latent_scale)) * (1 if ty_pixels >= 0 else -1)
+            
+            if abs(tx_latent) <= w//4 and abs(ty_latent) <= h//4:  # Safety bounds
+                result = torch.roll(result, shifts=(ty_latent, tx_latent), dims=(2, 3))
+                print(f"[Disco] Applied scaled translation: tx={tx_latent}, ty={ty_latent}")
         
-        if 'zoom' in self.disco_transforms:
-            # More noticeable zoom
-            zoom_factor = 1.0 + (self.disco_zoom_factor - 1.0) * 2  # Double the zoom effect
-            zoom = zoom_factor ** (frame * 0.05)  # Slower but more visible
-            if abs(zoom - 1.0) > 0.02:
-                h, w = result.shape[2], result.shape[3]
-                if zoom > 1.0:
-                    # Zoom in (crop and resize)
-                    new_h, new_w = max(1, int(h / zoom)), max(1, int(w / zoom))
-                    start_h, start_w = (h - new_h) // 2, (w - new_w) // 2
+        if 'rotate' in self.disco_transforms and transform_strength > 0.001:
+            # Very subtle rotation - only 90-degree steps to avoid interpolation blur
+            rotation_progress = self.disco_rotation_speed * frame * 0.01
+            if rotation_progress > 1.0:  # Only rotate after significant progress
+                angle_steps = int(rotation_progress) % 4
+                if angle_steps > 0:
+                    result = torch.rot90(result, k=angle_steps, dims=[2, 3])
+                    print(f"[Disco] Applied 90° rotation: {angle_steps * 90}°")
+        
+        if 'zoom' in self.disco_transforms and transform_strength > 0.001:
+            # Very subtle zoom that preserves quality
+            zoom_base = 1.0 + (self.disco_zoom_factor - 1.0) * 0.1  # Much smaller zoom
+            zoom = zoom_base ** (frame * 0.01)  # Very slow zoom
+            
+            if abs(zoom - 1.0) > 0.005:  # Only apply if meaningful
+                if zoom > 1.0 and zoom < 1.2:  # Limit zoom to prevent quality loss
+                    # Subtle zoom in
+                    crop_factor = 1.0 / zoom
+                    new_h = max(h//2, int(h * crop_factor))
+                    new_w = max(w//2, int(w * crop_factor))
+                    
+                    start_h = (h - new_h) // 2
+                    start_w = (w - new_w) // 2
+                    
                     cropped = result[:, :, start_h:start_h+new_h, start_w:start_w+new_w]
                     result = F.interpolate(cropped, size=(h, w), mode='bilinear', align_corners=False)
-                    print(f"[Disco] Applied zoom in: {zoom:.3f}")
-                else:
-                    # Zoom out (resize and pad)
-                    new_h, new_w = min(h, int(h * zoom)), min(w, int(w * zoom))
-                    if new_h > 0 and new_w > 0:
-                        resized = F.interpolate(result, size=(new_h, new_w), mode='bilinear', align_corners=False)
-                        pad_h, pad_w = (h - new_h) // 2, (w - new_w) // 2
-                        result = F.pad(resized, (pad_w, w - new_w - pad_w, pad_h, h - new_h - pad_h), mode='reflect')
-                        print(f"[Disco] Applied zoom out: {zoom:.3f}")
+                    print(f"[Disco] Applied subtle zoom: {zoom:.4f}")
         
-        # Apply channel mixing for psychedelic effects
-        if len(result.shape) == 4 and result.shape[1] >= 4:
-            # Mix channels for psychedelic effect
-            mix_strength = transform_strength * 0.5
-            if mix_strength > 0:
-                # Rotate channels
-                channel_shift = int(frame * 0.1) % result.shape[1]
-                if channel_shift > 0:
-                    result = torch.roll(result, shifts=channel_shift, dims=1)
-                    print(f"[Disco] Applied channel mixing: shift={channel_shift}")
+        # Subtle channel mixing for psychedelic effects (latent-space safe)
+        if c >= 4 and transform_strength > 0.001:
+            mix_strength = transform_strength * 0.3
+            phase = frame * 0.02
+            
+            # Mix adjacent channels with sine waves
+            for i in range(0, min(c-1, 3), 2):
+                if i+1 < c:
+                    mix_factor = mix_strength * math.sin(phase + i * math.pi/3)
+                    if abs(mix_factor) > 0.001:
+                        ch_a, ch_b = result[:, i:i+1], result[:, i+1:i+2]
+                        result[:, i:i+1] = ch_a * (1 - abs(mix_factor)) + ch_b * mix_factor
+                        result[:, i+1:i+2] = ch_b * (1 - abs(mix_factor)) - ch_a * mix_factor
+            
+            print(f"[Disco] Applied subtle channel mixing")
         
-        # Apply symmetry effects
-        if self.disco_symmetry_mode != 'none':
+        # Apply symmetry effects (safe for tiled processing)
+        if self.disco_symmetry_mode != 'none' and transform_strength > 0.01:
             result = DiscoTransforms.symmetrize(result, self.disco_symmetry_mode)
             print(f"[Disco] Applied symmetry: {self.disco_symmetry_mode}")
         
-        # Stronger blending for visible effects
-        coherence = max(0.3, self.disco_color_coherence)  # Minimum 30% effect
+        # Very conservative blending to avoid artifacts
+        coherence = max(0.8, self.disco_color_coherence)  # High coherence to preserve quality
         modified_x = coherence * x + (1 - coherence) * result
         
-        # Apply modification to noise prediction with stronger effect
-        noise_modification = (modified_x - x) * (transform_strength * 2)
+        # Apply very subtle modification to noise prediction
+        noise_modification = (modified_x - x) * transform_strength
         modified_noise = noise_pred + noise_modification
         
-        print(f"[Disco] Geometric fallback applied successfully")
+        print(f"[Disco] Scale-aware geometric transforms applied successfully")
         return modified_noise
         
     except Exception as e:
-        print(f"[Disco] Geometric disco fallback failed: {e}")
+        print(f"[Disco] Scale-aware disco fallback failed: {e}")
         import traceback
         traceback.print_exc()
         return noise_pred
