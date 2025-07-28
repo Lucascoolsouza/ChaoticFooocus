@@ -180,6 +180,10 @@ class DiscoTransforms:
             rgb_new = torch.cat([r_new + m, g_new + m, b_new + m], dim=1)
             
             return torch.clamp(rgb_new, 0, 1)
+            
+        except Exception as e:
+            # If color shift fails, return original
+            return x
     
     @staticmethod
     def latent_color_mix(x, mix_strength=0.3, step=0):
