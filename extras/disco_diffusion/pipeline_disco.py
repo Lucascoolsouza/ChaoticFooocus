@@ -1009,60 +1009,59 @@ def _get_guidance_schedule_impl(self):
     return base_strength * (1.0 - progress * 0.2)  # Only reduce by 20% instead of 50%
 
 def _apply_disco_guidance_impl(self, model, x, timestep, noise_pred, cond, model_options):
-    """Apply true Disco Diffusion CLIP guidance"""
+    """Apply pure CLIP-guided Disco Diffusion"""
     try:
         # Detect resolution and tiling on first run
         self._detect_resolution_and_tiling(x)
         
-        print(f"[Disco] Applying guidance - CLIP available: {self.clip_model is not None}")
+        print(f"[Disco] Applying CLIP guidance - CLIP available: {self.clip_model is not None}")
         
-        # If CLIP is available, use full scientific algorithm
+        # Only apply if CLIP is available - no geometric fallback
         if self.clip_model is not None:
-            return self._apply_full_disco_guidance(model, x, timestep, noise_pred, cond, model_options)
+            return self._apply_pure_clip_guidance(model, x, timestep, noise_pred, cond, model_options)
         else:
-            # Fallback: apply geometric transforms to latent space directly
-            print("[Disco] Using geometric fallback (no CLIP)")
-            return self._apply_geometric_disco_fallback(x, timestep, noise_pred)
+            print("[Disco] CLIP not available - skipping disco effects")
+            return noise_pred
         
     except Exception as e:
-        print(f"[Disco] Guidance failed: {e}")
+        print(f"[Disco] CLIP guidance failed: {e}")
         logger.warning(f"Disco guidance failed: {e}")
         return noise_pred
 
-def _apply_full_disco_guidance(self, model, x, timestep, noise_pred, cond, model_options):
-    """Apply full CLIP-guided Disco Diffusion with strong guidance"""
-    print("[Disco] Applying STRONG CLIP guidance")
+def _apply_pure_clip_guidance(self, model, x, timestep, noise_pred, cond, model_options):
+    """Apply pure CLIP-guided Disco Diffusion without geometric transforms"""
+    print("[Disco] Applying PURE CLIP guidance")
     
     try:
         import torch
         import torch.nn.functional as F
         
-        # Get guidance strength - much stronger now
-        guidance_strength = self.disco_scale / 100.0  # Increased from /1000 to /100 (10x stronger)
-        guidance_strength = min(guidance_strength, 50.0)  # Cap at 50x instead of 1x
+        # Get the current step progress for scheduling
+        progress = min(self.step_count / 50.0, 1.0)
+        guidance_scale = self.disco_scale * (1.0 - progress * 0.3)  # Reduce guidance over time
         
-        print(f"[Disco] Using STRONG guidance strength: {guidance_strength}")
+        print(f"[Disco] Using CLIP guidance scale: {guidance_scale}")
         
         # Apply CLIP guidance if available
         if self.clip_model is not None:
             clip_guidance = self._compute_clip_guidance(x, timestep, cond)
             if clip_guidance is not None:
-                # Apply CLIP guidance directly to noise prediction with strong influence
-                noise_pred = noise_pred + clip_guidance * guidance_strength
-                print(f"[Disco] Applied CLIP guidance with strength {guidance_strength}")
+                # Apply CLIP guidance directly to noise prediction
+                guidance_strength = guidance_scale / 1000.0
+                guided_noise = noise_pred + clip_guidance * guidance_strength
+                
+                print(f"[Disco] Applied PURE CLIP guidance with strength {guidance_strength:.4f}")
+                return guided_noise
+            else:
+                print("[Disco] CLIP guidance computation failed")
+        else:
+            print("[Disco] CLIP model not available")
         
-        # Also apply geometric transforms for additional psychedelic effects
-        transformed_noise = self._apply_geometric_transforms_to_latent(noise_pred)
-        
-        # Strong blending for maximum effect
-        blend_factor = min(guidance_strength / 10.0, 0.8)  # Up to 80% blend
-        result = noise_pred * (1 - blend_factor) + transformed_noise * blend_factor
-        
-        print(f"[Disco] Applied STRONG guidance - CLIP + geometric with blend {blend_factor:.2f}")
-        return result
+        # If CLIP guidance fails, return original noise prediction
+        return noise_pred
         
     except Exception as e:
-        print(f"[Disco] Strong CLIP guidance failed: {e}")
+        print(f"[Disco] Pure CLIP guidance failed: {e}")
         import traceback
         traceback.print_exc()
         return noise_pred
