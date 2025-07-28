@@ -112,10 +112,10 @@ class DiscoIntegration:
         
         print(f"[Disco] Initialized with preset: {disco_preset}, scale: {disco_scale}, transforms: {disco_transforms}")
     
-    def activate_for_generation(self, unet):
+    def activate_for_generation(self, unet, vae=None):
         """Activate disco effects for generation"""
         if self.is_initialized and disco_sampler.disco_enabled:
-            disco_sampler.activate(unet)
+            disco_sampler.activate(unet, vae)
             return True
         return False
     

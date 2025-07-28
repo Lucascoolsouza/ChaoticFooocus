@@ -415,7 +415,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             }
             
             disco_integration.initialize_disco(**disco_settings)
-            disco_integration.activate_for_generation(final_unet, final_vae)
+            disco_integration.activate_for_generation(final_unet, vae=final_vae)
             
         except Exception as e:
             print(f"[Disco] Error enabling Disco Diffusion: {e}")
