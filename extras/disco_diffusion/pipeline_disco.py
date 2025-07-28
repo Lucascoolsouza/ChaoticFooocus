@@ -101,7 +101,7 @@ def run_clip_guidance_loop(
             text_embeds = F.normalize(text_embeds, dim=-1)
 
         # 2. Set up latent for optimization
-        latent_tensor = latent_tensor.detach().clone().requires_grad_()
+        latent_tensor = latent_tensor.detach().clone().to(device).requires_grad_()
         optimizer = torch.optim.Adam([latent_tensor], lr=0.05)
         
         # 3. Get cutout function
