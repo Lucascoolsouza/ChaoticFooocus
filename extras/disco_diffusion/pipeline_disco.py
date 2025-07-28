@@ -350,7 +350,7 @@ class DiscoSampler:
         else:
             self.rng = random.Random()
     
-    def activate(self, unet):
+    def activate(self, unet, vae=None):
         """Activate Disco Diffusion by patching the sampling function"""
         if self.is_active or not self.disco_enabled:
             return
@@ -371,6 +371,7 @@ class DiscoSampler:
             samplers.sampling_function = self._create_disco_sampling_function(self._original_sampling_function)
             
             self.unet = unet
+            self.vae = vae
             self.is_active = True
             self.step_count = 0
             
@@ -915,12 +916,12 @@ def _apply_full_disco_guidance(self, model, x, timestep, noise_pred, cond, model
     """Apply full scientific Disco Diffusion guidance."""
     try:
         # Check if the model has a VAE attribute
-        if not hasattr(model, 'vae'):
-            logger.warning("Model does not have a 'vae' attribute. Falling back to geometric transforms.")
+        if not hasattr(self, 'vae') or self.vae is None:
+            logger.warning("VAE not found on sampler. Falling back to geometric transforms.")
             return self._apply_geometric_disco_fallback(x, timestep, noise_pred)
 
         # Get VAE and text embeddings
-        vae = model.vae
+        vae = self.vae
         text_embeds = self._extract_text_embeddings(cond)
 
         if text_embeds is None:
