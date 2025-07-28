@@ -424,7 +424,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             }
             
             disco_integration.initialize_disco(**disco_settings)
-            initial_latent = disco_integration.run_disco_guidance(initial_latent, final_vae, original_prompt)
+            initial_latent = disco_integration.run_disco_guidance(initial_latent, final_vae, original_prompt, async_task=async_task)
             
         except Exception as e:
             print(f"[Disco] Error enabling Disco Diffusion: {e}")
