@@ -9,7 +9,7 @@
     },
     {
         "name": "Fooocus Sharp",
-        "prompt": "{prompt} HDR, raytracing, pathtracing, realistic shadows, masterpiece, best quality, absurdres, highres, cinematic lighting, detailed skin, stunning color contrast, dramatic atmosphere",
+        "prompt": "{prompt} HDR, raytracing, pathtracing, realistic shadows, masterpiece, best quality, absurdres, highres, cinematic lighting, detailed skin, stunning color contrast, dramatic atmosphere,**Cameras:** Sony a7R V, Canon EOS R5, **Image Platforms:** 500px, Flickr, **Design Programs:** Capture One, Lightroom, **Companies:** Adobe, Affinity, , (&:0)",
         "negative_prompt": "lowres, bad anatomy, bad hands, bar censor, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, out of focus, censorship, censored, ugly, old, deformed, amateur drawing, odd, fat, morphing, black and white, anime, ((simple background)), (((depth of field)))"
     },
     {
