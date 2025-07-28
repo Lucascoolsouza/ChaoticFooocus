@@ -429,9 +429,37 @@ class DiscoSampler:
         if not self.disco_steps_schedule:
             return True
         
-        # Apply disco effects at every step for maximum CLIP guidance
-        # Apply every step for strongest possible influence
-        return True  # Apply every single step
+        # Apply strong effects in first half, then let diffusion refine
+        total_steps = 50  # Typical diffusion steps
+        current_progress = self.step_count / total_steps
+        
+        # Strong psychedelic effects in first 60% of steps
+        if current_progress < 0.6:
+            return True
+        # Gradual reduction in middle 30%
+        elif current_progress < 0.9:
+            return self.step_count % 2 == 0  # Every other step
+        # Minimal effects in final 10% (let diffusion refine)
+        else:
+            return self.step_count % 4 == 0  # Every 4th step
+    
+    def _get_psychedelic_strength(self):
+        """Get psychedelic effect strength based on diffusion progress"""
+        total_steps = 50
+        current_progress = self.step_count / total_steps
+        
+        if current_progress < 0.3:
+            # Early steps: Maximum psychedelic effects
+            return 1.0
+        elif current_progress < 0.6:
+            # Middle-early: Strong effects
+            return 0.8
+        elif current_progress < 0.8:
+            # Middle-late: Moderate effects
+            return 0.4
+        else:
+            # Final steps: Minimal effects (let diffusion refine)
+            return 0.1
     
     def _detect_resolution_and_tiling(self, x):
         """Detect the actual image resolution and if tiled VAE is likely being used"""
@@ -453,6 +481,56 @@ class DiscoSampler:
             print(f"[Disco] Large resolution detected ({estimated_resolution}px) - using tiled VAE compatible transforms")
         
         return estimated_resolution
+    
+    def _compute_clip_guidance(self, x, timestep, cond):
+        """Compute CLIP guidance for the current latent"""
+        try:
+            import torch
+            import torch.nn.functional as F
+            
+            if self.clip_model is None:
+                return None
+            
+            # Try to decode latent to image space for CLIP analysis
+            # This is a simplified approach - in practice you'd need VAE access
+            
+            # For now, apply CLIP guidance in latent space using text embeddings
+            if hasattr(cond, 'shape') and len(cond.shape) >= 2:
+                # Extract text features from conditioning
+                text_features = cond
+                if len(text_features.shape) > 2:
+                    text_features = text_features.mean(dim=1)  # Average over sequence length
+                
+                # Create pseudo-visual features from latent
+                # This is a simplified approach - real implementation would decode to image
+                b, c, h, w = x.shape
+                
+                # Reshape latent for CLIP-like processing
+                visual_features = x.view(b, c, -1).mean(dim=-1)  # Global average pooling
+                
+                # Normalize features
+                text_features = F.normalize(text_features, dim=-1)
+                visual_features = F.normalize(visual_features, dim=-1)
+                
+                # Compute similarity and guidance direction
+                similarity = torch.sum(text_features * visual_features, dim=-1, keepdim=True)
+                
+                # Create guidance signal - push towards higher similarity
+                guidance_direction = text_features.unsqueeze(-1).unsqueeze(-1) - visual_features.unsqueeze(-1).unsqueeze(-1)
+                guidance_direction = guidance_direction.expand(-1, -1, h, w)
+                
+                # Scale guidance by similarity (stronger when less similar)
+                guidance_scale = (1.0 - similarity).unsqueeze(-1).unsqueeze(-1).expand(-1, -1, h, w)
+                clip_guidance = guidance_direction * guidance_scale
+                
+                print(f"[Disco] Computed CLIP guidance - similarity: {similarity.mean().item():.3f}")
+                return clip_guidance
+            
+            return None
+            
+        except Exception as e:
+            print(f"[Disco] CLIP guidance computation failed: {e}")
+            return None
     
     def _apply_geometric_transforms_to_latent(self, x):
         """Apply scale-aware geometric transforms to latent space"""
@@ -571,63 +649,76 @@ def create_disco_noise_schedule(schedule_type='linear', steps=50):
         return np.linspace(0, 1, steps)
 
 def get_disco_presets():
-    """Get predefined disco effect presets based on real Disco Diffusion"""
+    """Get predefined disco effect presets with ULTRA STRONG CLIP guidance"""
     return {
         'psychedelic': {
-            'disco_scale': 5000.0,  # CLIP guidance scale - INCREASED 5x
+            'disco_scale': 25000.0,  # ULTRA STRONG - 25x original
             'disco_transforms': ['translate', 'rotate', 'zoom'],
             'disco_rotation_speed': 0.2,
             'disco_zoom_factor': 1.02,
             'disco_translation_x': 0.1,
             'disco_translation_y': 0.1,
             'disco_symmetry_mode': 'none',
-            'cutn': 16,
+            'cutn': 32,  # More cutouts for stronger CLIP
             'tv_scale': 0.0,
             'range_scale': 150.0
         },
         'fractal': {
-            'disco_scale': 7500.0,  # INCREASED 5x
+            'disco_scale': 35000.0,  # ULTRA STRONG - 35x original
             'disco_transforms': ['zoom', 'rotate'],
             'disco_zoom_factor': 1.05,
             'disco_rotation_speed': 0.1,
             'disco_symmetry_mode': 'radial',
-            'cutn': 32,
+            'cutn': 48,  # Even more cutouts
             'tv_scale': 100.0,
             'range_scale': 200.0
         },
         'kaleidoscope': {
-            'disco_scale': 4000.0,  # INCREASED 5x
+            'disco_scale': 20000.0,  # ULTRA STRONG - 25x original
             'disco_transforms': ['rotate', 'translate'],
             'disco_rotation_speed': 0.3,
             'disco_translation_x': 0.05,
             'disco_translation_y': 0.05,
             'disco_symmetry_mode': 'radial',
-            'cutn': 24,
+            'cutn': 40,
             'tv_scale': 50.0,
             'range_scale': 100.0
         },
         'dreamy': {
-            'disco_scale': 2500.0,  # INCREASED 5x
+            'disco_scale': 15000.0,  # ULTRA STRONG - 30x original
             'disco_transforms': ['translate'],
             'disco_translation_x': 0.02,
             'disco_translation_y': 0.02,
             'disco_symmetry_mode': 'none',
-            'cutn': 8,
+            'cutn': 24,
             'tv_scale': 200.0,
             'range_scale': 50.0
         },
         'scientific': {
-            'disco_scale': 10000.0,  # High CLIP guidance - INCREASED 5x
+            'disco_scale': 50000.0,  # MAXIMUM STRENGTH - 50x original
             'disco_transforms': ['translate', 'rotate', 'zoom'],
             'disco_rotation_speed': 0.15,
             'disco_zoom_factor': 1.03,
             'disco_translation_x': 0.08,
             'disco_translation_y': 0.08,
             'disco_symmetry_mode': 'none',
-            'cutn': 40,  # More cutouts for better CLIP analysis
-            'tv_scale': 150.0,  # Total variation for smoothness
-            'range_scale': 300.0,  # Range constraint
+            'cutn': 64,  # Maximum cutouts for ultimate CLIP analysis
+            'tv_scale': 150.0,
+            'range_scale': 300.0,
             'cut_pow': 1.0
+        },
+        'extreme': {
+            'disco_scale': 100000.0,  # EXTREME STRENGTH - 100x original
+            'disco_transforms': ['translate', 'rotate', 'zoom'],
+            'disco_rotation_speed': 0.25,
+            'disco_zoom_factor': 1.05,
+            'disco_translation_x': 0.15,
+            'disco_translation_y': 0.15,
+            'disco_symmetry_mode': 'none',
+            'cutn': 80,  # Maximum possible cutouts
+            'tv_scale': 100.0,
+            'range_scale': 400.0,
+            'cut_pow': 1.2
         }
     }
 
@@ -910,10 +1001,12 @@ def _extract_text_embeddings_impl(self, cond):
         return None
 
 def _get_guidance_schedule_impl(self):
-    """Get guidance scale based on current step"""
+    """Get STRONG guidance scale based on current step"""
     progress = min(self.step_count / 50.0, 1.0)
-    # Stronger guidance at the beginning, weaker at the end
-    return 1.0 - progress * 0.5
+    # Much stronger guidance throughout the process
+    base_strength = 5.0  # Increased from 1.0 to 5.0
+    # Less reduction over time - keep it strong
+    return base_strength * (1.0 - progress * 0.2)  # Only reduce by 20% instead of 50%
 
 def _apply_disco_guidance_impl(self, model, x, timestep, noise_pred, cond, model_options):
     """Apply true Disco Diffusion CLIP guidance"""
@@ -937,27 +1030,42 @@ def _apply_disco_guidance_impl(self, model, x, timestep, noise_pred, cond, model
         return noise_pred
 
 def _apply_full_disco_guidance(self, model, x, timestep, noise_pred, cond, model_options):
-    """Apply full CLIP-guided Disco Diffusion"""
-    print("[Disco] Applying full CLIP guidance")
+    """Apply full CLIP-guided Disco Diffusion with strong guidance"""
+    print("[Disco] Applying STRONG CLIP guidance")
     
-    # For now, let's use a simpler approach that definitely works
-    # Apply geometric transforms directly to the noise prediction
     try:
-        # Apply basic geometric transforms to the latent
+        import torch
+        import torch.nn.functional as F
+        
+        # Get guidance strength - much stronger now
+        guidance_strength = self.disco_scale / 100.0  # Increased from /1000 to /100 (10x stronger)
+        guidance_strength = min(guidance_strength, 50.0)  # Cap at 50x instead of 1x
+        
+        print(f"[Disco] Using STRONG guidance strength: {guidance_strength}")
+        
+        # Apply CLIP guidance if available
+        if self.clip_model is not None:
+            clip_guidance = self._compute_clip_guidance(x, timestep, cond)
+            if clip_guidance is not None:
+                # Apply CLIP guidance directly to noise prediction with strong influence
+                noise_pred = noise_pred + clip_guidance * guidance_strength
+                print(f"[Disco] Applied CLIP guidance with strength {guidance_strength}")
+        
+        # Also apply geometric transforms for additional psychedelic effects
         transformed_noise = self._apply_geometric_transforms_to_latent(noise_pred)
         
-        # Blend with original based on disco scale
-        blend_factor = min(self.disco_scale / 1000.0, 1.0)  # Normalize scale
+        # Strong blending for maximum effect
+        blend_factor = min(guidance_strength / 10.0, 0.8)  # Up to 80% blend
         result = noise_pred * (1 - blend_factor) + transformed_noise * blend_factor
         
-        print(f"[Disco] Applied geometric transforms with blend factor {blend_factor}")
+        print(f"[Disco] Applied STRONG guidance - CLIP + geometric with blend {blend_factor:.2f}")
         return result
         
     except Exception as e:
-        print(f"[Disco] Full guidance failed: {e}")
+        print(f"[Disco] Strong CLIP guidance failed: {e}")
+        import traceback
+        traceback.print_exc()
         return noise_pred
-    
-    return noise_pred
 
 def _apply_geometric_disco_fallback(self, x, timestep, noise_pred):
     """Apply scale-aware geometric transforms to latent space"""
@@ -971,54 +1079,88 @@ def _apply_geometric_disco_fallback(self, x, timestep, noise_pred):
         latent_scale = 8  # Standard VAE downscaling factor
         effective_resolution = max(h * latent_scale, w * latent_scale)
         
+        # Get psychedelic strength based on diffusion progress
+        psychedelic_strength = self._get_psychedelic_strength()
+        
         # Scale transform strength based on resolution and disco scale
         base_strength = min(self.disco_scale / 1000.0, 1.0)
         resolution_factor = min(effective_resolution / 512.0, 4.0)  # Cap at 4x for very large images
-        transform_strength = base_strength * 0.1 / resolution_factor  # Reduce for larger images
+        
+        # Much stronger effects early in diffusion, scaled by resolution
+        if psychedelic_strength > 0.8:
+            # Early steps: Strong psychedelic effects
+            transform_strength = base_strength * 0.8 / resolution_factor
+        elif psychedelic_strength > 0.4:
+            # Middle steps: Moderate effects
+            transform_strength = base_strength * 0.4 / resolution_factor
+        else:
+            # Late steps: Subtle refinement
+            transform_strength = base_strength * 0.1 / resolution_factor
         
         print(f"[Disco] Scale-aware fallback - resolution: {effective_resolution}, strength: {transform_strength:.4f}")
         
-        # Apply subtle latent-space transforms that work with tiled VAE
+        # Apply psychedelic transforms - stronger early, subtle late
         if 'translate' in self.disco_transforms and transform_strength > 0.001:
-            # Very subtle translation scaled for latent space
-            tx_pixels = self.disco_translation_x * math.sin(frame * 0.05) * 0.5
-            ty_pixels = self.disco_translation_y * math.cos(frame * 0.05) * 0.5
+            # Scale translation based on psychedelic strength
+            speed_multiplier = 0.2 if psychedelic_strength > 0.8 else 0.05
+            amplitude_multiplier = 2.0 if psychedelic_strength > 0.8 else 0.5
+            
+            tx_pixels = self.disco_translation_x * math.sin(frame * speed_multiplier) * amplitude_multiplier
+            ty_pixels = self.disco_translation_y * math.cos(frame * speed_multiplier) * amplitude_multiplier
             
             # Convert to latent space pixels
             tx_latent = max(1, int(abs(tx_pixels) / latent_scale)) * (1 if tx_pixels >= 0 else -1)
             ty_latent = max(1, int(abs(ty_pixels) / latent_scale)) * (1 if ty_pixels >= 0 else -1)
             
-            if abs(tx_latent) <= w//4 and abs(ty_latent) <= h//4:  # Safety bounds
+            # More aggressive bounds for early steps
+            max_translation = w//2 if psychedelic_strength > 0.8 else w//4
+            if abs(tx_latent) <= max_translation and abs(ty_latent) <= max_translation:
                 result = torch.roll(result, shifts=(ty_latent, tx_latent), dims=(2, 3))
-                print(f"[Disco] Applied scaled translation: tx={tx_latent}, ty={ty_latent}")
+                print(f"[Disco] Applied psychedelic translation: tx={tx_latent}, ty={ty_latent}, strength={psychedelic_strength:.2f}")
         
         if 'rotate' in self.disco_transforms and transform_strength > 0.001:
-            # Very subtle rotation - only 90-degree steps to avoid interpolation blur
-            rotation_progress = self.disco_rotation_speed * frame * 0.01
-            if rotation_progress > 1.0:  # Only rotate after significant progress
-                angle_steps = int(rotation_progress) % 4
-                if angle_steps > 0:
-                    result = torch.rot90(result, k=angle_steps, dims=[2, 3])
-                    print(f"[Disco] Applied 90° rotation: {angle_steps * 90}°")
+            if psychedelic_strength > 0.8:
+                # Early steps: More frequent rotation
+                rotation_progress = self.disco_rotation_speed * frame * 0.05
+                if rotation_progress > 0.5:  # Rotate more frequently
+                    angle_steps = int(rotation_progress) % 4
+                    if angle_steps > 0:
+                        result = torch.rot90(result, k=angle_steps, dims=[2, 3])
+                        print(f"[Disco] Applied psychedelic rotation: {angle_steps * 90}°, strength={psychedelic_strength:.2f}")
+            else:
+                # Later steps: Subtle rotation
+                rotation_progress = self.disco_rotation_speed * frame * 0.01
+                if rotation_progress > 1.0:
+                    angle_steps = int(rotation_progress) % 4
+                    if angle_steps > 0:
+                        result = torch.rot90(result, k=angle_steps, dims=[2, 3])
+                        print(f"[Disco] Applied subtle rotation: {angle_steps * 90}°")
         
         if 'zoom' in self.disco_transforms and transform_strength > 0.001:
-            # Very subtle zoom that preserves quality
-            zoom_base = 1.0 + (self.disco_zoom_factor - 1.0) * 0.1  # Much smaller zoom
-            zoom = zoom_base ** (frame * 0.01)  # Very slow zoom
+            if psychedelic_strength > 0.8:
+                # Early steps: More aggressive zoom
+                zoom_base = 1.0 + (self.disco_zoom_factor - 1.0) * 0.5  # Stronger zoom
+                zoom = zoom_base ** (frame * 0.03)  # Faster zoom
+                max_zoom = 1.5  # Allow more zoom early
+            else:
+                # Later steps: Subtle zoom
+                zoom_base = 1.0 + (self.disco_zoom_factor - 1.0) * 0.1
+                zoom = zoom_base ** (frame * 0.01)
+                max_zoom = 1.2  # Conservative zoom late
             
-            if abs(zoom - 1.0) > 0.005:  # Only apply if meaningful
-                if zoom > 1.0 and zoom < 1.2:  # Limit zoom to prevent quality loss
-                    # Subtle zoom in
+            if abs(zoom - 1.0) > 0.005:
+                if zoom > 1.0 and zoom < max_zoom:
+                    # Zoom in
                     crop_factor = 1.0 / zoom
-                    new_h = max(h//2, int(h * crop_factor))
-                    new_w = max(w//2, int(w * crop_factor))
+                    new_h = max(h//3, int(h * crop_factor))
+                    new_w = max(w//3, int(w * crop_factor))
                     
                     start_h = (h - new_h) // 2
                     start_w = (w - new_w) // 2
                     
                     cropped = result[:, :, start_h:start_h+new_h, start_w:start_w+new_w]
                     result = F.interpolate(cropped, size=(h, w), mode='bilinear', align_corners=False)
-                    print(f"[Disco] Applied subtle zoom: {zoom:.4f}")
+                    print(f"[Disco] Applied psychedelic zoom: {zoom:.4f}, strength={psychedelic_strength:.2f}")
         
         # Subtle channel mixing for psychedelic effects (latent-space safe)
         if c >= 4 and transform_strength > 0.001:
