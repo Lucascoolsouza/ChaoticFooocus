@@ -2557,19 +2557,30 @@ def sample_disco_diffusion(model, x, sigmas, extra_args=None, callback=None, dis
     
     # Initialize pattern parameters
     batch_size, channels, height, width = x.shape
+    original_shape = x.shape
     
-    # Create coordinate grids for pattern generation
-    y_coords = torch.linspace(-1, 1, height, device=x.device).view(1, 1, height, 1).expand(batch_size, 1, height, width)
-    x_coords = torch.linspace(-1, 1, width, device=x.device).view(1, 1, 1, width).expand(batch_size, 1, height, width)
+    # Multi-scale pattern generation parameters
+    scales = [1.0, 0.5, 0.25]  # Apply patterns at multiple scales
+    scale_weights = [0.7, 0.2, 0.1]  # Weights for combining multi-scale patterns
     
-    # Create base coordinate grid
-    coords = torch.cat([y_coords, x_coords], dim=1)
+    def resize_latent(latent, scale):
+        """Resize latent tensor to given scale"""
+        if abs(scale - 1.0) < 0.01:
+            return latent
+        b, c, h, w = latent.shape
+        new_h, new_w = max(1, int(h * scale)), max(1, int(w * scale))
+        # Use area interpolation for downscaling, bilinear for upscaling
+        mode = 'area' if scale < 1.0 else 'bilinear'
+        return F.interpolate(latent, size=(new_h, new_w), mode=mode, align_corners=False if mode == 'bilinear' else None)
     
-    for i in trange(len(sigmas) - 1, disable=disable):
-        # Calculate current time factor (0 to 1)
-        t = i / (len(sigmas) - 2) if len(sigmas) > 2 else 0
-        
-        # Generate dynamic patterns based on time and position
+    def resize_back(latent, target_shape):
+        """Resize latent back to target shape"""
+        if latent.shape[-2:] == target_shape[-2:]:
+            return latent
+        return F.interpolate(latent, size=target_shape[-2:], mode='bilinear', align_corners=False)
+    
+    def generate_disco_patterns(coords, t, frequency_factor=1.0, color_intensity=1.0):
+        """Generate disco patterns at given coordinates and time"""
         # Create radial patterns
         radial = torch.sqrt(coords[:, 0]**2 + coords[:, 1]**2)
         
@@ -2580,10 +2591,11 @@ def sample_disco_diffusion(model, x, sigmas, extra_args=None, callback=None, dis
         waves = torch.sin(frequency_factor * (coords[:, 0] * torch.cos(t * time_mixing * 10) + 
                                              coords[:, 1] * torch.sin(t * time_mixing * 10)))
         
-        # Combine patterns
+        # Combine patterns with different frequencies for complexity
         patterns = (torch.sin(radial * frequency_factor * 5 * (1 - t) + t * 10) + 
                    torch.cos(angular * frequency_factor * 3 + t * 8) + 
-                   waves)
+                   waves +
+                   torch.sin(radial * frequency_factor * 15 * t + angular * 7 * (1 - t)))
         
         # Normalize patterns
         patterns = (patterns - patterns.mean()) / (patterns.std() + 1e-8)
@@ -2597,23 +2609,56 @@ def sample_disco_diffusion(model, x, sigmas, extra_args=None, callback=None, dis
         # Combine color channels
         color_patterns = torch.stack([r_channel, g_channel, b_channel], dim=1)
         
-        # Ensure we have the right number of channels
-        if channels > 3:
-            # For latent spaces with more channels, repeat the pattern
-            color_patterns = color_patterns.repeat(1, channels // 3 + 1, 1, 1)[:, :channels]
-        elif channels < 3:
-            # For grayscale, use the average
-            color_patterns = color_patterns.mean(dim=1, keepdim=True)
+        return color_patterns
+    
+    # Create base coordinate grid
+    y_coords = torch.linspace(-1, 1, height, device=x.device).view(1, 1, height, 1).expand(batch_size, 1, height, width)
+    x_coords = torch.linspace(-1, 1, width, device=x.device).view(1, 1, 1, width).expand(batch_size, 1, height, width)
+    coords = torch.cat([y_coords, x_coords], dim=1)
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        # Calculate current time factor (0 to 1)
+        t = i / (len(sigmas) - 2) if len(sigmas) > 2 else 0
         
         # Apply the denoising model
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         
         # Apply disco patterns to the denoised result
         if pattern_strength > 0 and channels >= 3:
+            # Multi-scale pattern generation
+            pattern_list = []
+            
+            for scale in scales:
+                if abs(scale - 1.0) < 0.01:
+                    # Use original resolution
+                    color_patterns = generate_disco_patterns(coords, t, frequency_factor, color_intensity)
+                else:
+                    # Generate patterns at different scales
+                    scaled_coords = resize_latent(coords, scale)
+                    color_patterns_scaled = generate_disco_patterns(scaled_coords, t, frequency_factor * (2 - scale), color_intensity)
+                    # Resize back to original resolution
+                    color_patterns = resize_back(color_patterns_scaled, original_shape)
+                
+                pattern_list.append(color_patterns)
+            
+            # Combine multi-scale patterns
+            combined_patterns = torch.zeros_like(pattern_list[0])
+            for j, patterns in enumerate(pattern_list):
+                weight = scale_weights[j] if j < len(scale_weights) else 0.1
+                combined_patterns += weight * patterns
+            
+            # Ensure we have the right number of channels
+            if channels > 3:
+                # For latent spaces with more channels, repeat the pattern
+                combined_patterns = combined_patterns.repeat(1, channels // 3 + 1, 1, 1)[:, :channels]
+            elif channels < 3:
+                # For grayscale, use the average
+                combined_patterns = combined_patterns.mean(dim=1, keepdim=True)
+            
             # Blend the disco patterns with the denoised result
             # Use a more effective blending approach that doesn't diminish over time
-            disco_effect = color_patterns * pattern_strength * 0.5  # Scale the effect appropriately
-            denoised = denoised * (1 - pattern_strength * 0.3) + disco_effect
+            disco_effect = combined_patterns * pattern_strength * 0.7  # Increased effect strength
+            denoised = denoised * (1 - pattern_strength * 0.4) + disco_effect
         
         d = to_d(x, sigmas[i], denoised)
         
@@ -2639,6 +2684,52 @@ def sample_euler_disco(model, x, sigmas, extra_args=None, callback=None, disable
     s_in = x.new_ones([x.shape[0]])
     
     batch_size, channels, height, width = x.shape
+    original_shape = x.shape
+    
+    # Multi-scale pattern generation parameters
+    scales = [1.0, 0.5, 0.25]  # Apply patterns at multiple scales
+    scale_weights = [0.7, 0.2, 0.1]  # Weights for combining multi-scale patterns
+    
+    def resize_latent(latent, scale):
+        """Resize latent tensor to given scale"""
+        if abs(scale - 1.0) < 0.01:
+            return latent
+        b, c, h, w = latent.shape
+        new_h, new_w = max(1, int(h * scale)), max(1, int(w * scale))
+        # Use area interpolation for downscaling, bilinear for upscaling
+        mode = 'area' if scale < 1.0 else 'bilinear'
+        return F.interpolate(latent, size=(new_h, new_w), mode=mode, align_corners=False if mode == 'bilinear' else None)
+    
+    def resize_back(latent, target_shape):
+        """Resize latent back to target shape"""
+        if latent.shape[-2:] == target_shape[-2:]:
+            return latent
+        return F.interpolate(latent, size=target_shape[-2:], mode='bilinear', align_corners=False)
+    
+    def generate_disco_patterns(coords, t, frequency_factor=1.0, color_intensity=1.0):
+        """Generate disco patterns at given coordinates and time"""
+        # Create radial patterns
+        radial = torch.sqrt(coords[:, 0]**2 + coords[:, 1]**2)
+        
+        # Create angular patterns
+        angular = torch.atan2(coords[:, 0], coords[:, 1])
+        
+        # Create more complex patterns
+        patterns = (torch.sin(radial * frequency_factor * 8 + t * 12) + 
+                   torch.cos(angular * frequency_factor * 6 + t * 10) +
+                   torch.sin(radial * frequency_factor * 15 * t + angular * 9 * (1 - t)))
+        
+        # Normalize patterns
+        patterns = (patterns - patterns.mean()) / (patterns.std() + 1e-8)
+        
+        # Create colorful patterns
+        r_pattern = torch.sin(patterns * color_intensity + t * 6.28)
+        g_pattern = torch.sin(patterns * color_intensity + t * 6.28 + 2.09)
+        b_pattern = torch.sin(patterns * color_intensity + t * 6.28 + 4.19)
+        
+        color_patterns = torch.stack([r_pattern, g_pattern, b_pattern], dim=1)
+        
+        return color_patterns
     
     # Create coordinate grids
     y_coords = torch.linspace(-1, 1, height, device=x.device).view(1, 1, height, 1).expand(batch_size, 1, height, width)
@@ -2648,32 +2739,43 @@ def sample_euler_disco(model, x, sigmas, extra_args=None, callback=None, disable
     for i in trange(len(sigmas) - 1, disable=disable):
         t = i / (len(sigmas) - 2) if len(sigmas) > 2 else 0
         
-        # Generate disco patterns
-        radial = torch.sqrt(coords[:, 0]**2 + coords[:, 1]**2)
-        angular = torch.atan2(coords[:, 0], coords[:, 1])
-        
-        patterns = (torch.sin(radial * frequency_factor * 8 + t * 12) + 
-                   torch.cos(angular * frequency_factor * 6 + t * 10))
-        
-        # Create colorful patterns
-        r_pattern = torch.sin(patterns * color_intensity + t * 6.28)
-        g_pattern = torch.sin(patterns * color_intensity + t * 6.28 + 2.09)
-        b_pattern = torch.sin(patterns * color_intensity + t * 6.28 + 4.19)
-        
-        color_patterns = torch.stack([r_pattern, g_pattern, b_pattern], dim=1)
-        
-        if channels > 3:
-            color_patterns = color_patterns.repeat(1, channels // 3 + 1, 1, 1)[:, :channels]
-        elif channels < 3:
-            color_patterns = color_patterns.mean(dim=1, keepdim=True)
-        
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         
         # Apply disco effect
         if pattern_strength > 0:
+            # Multi-scale pattern generation
+            pattern_list = []
+            
+            for scale in scales:
+                if abs(scale - 1.0) < 0.01:
+                    # Use original resolution
+                    color_patterns = generate_disco_patterns(coords, t, frequency_factor, color_intensity)
+                else:
+                    # Generate patterns at different scales
+                    scaled_coords = resize_latent(coords, scale)
+                    color_patterns_scaled = generate_disco_patterns(scaled_coords, t, frequency_factor * (2 - scale), color_intensity)
+                    # Resize back to original resolution
+                    color_patterns = resize_back(color_patterns_scaled, original_shape)
+                
+                pattern_list.append(color_patterns)
+            
+            # Combine multi-scale patterns
+            combined_patterns = torch.zeros_like(pattern_list[0])
+            for j, patterns in enumerate(pattern_list):
+                weight = scale_weights[j] if j < len(scale_weights) else 0.1
+                combined_patterns += weight * patterns
+            
+            # Ensure we have the right number of channels
+            if channels > 3:
+                # For latent spaces with more channels, repeat the pattern
+                combined_patterns = combined_patterns.repeat(1, channels // 3 + 1, 1, 1)[:, :channels]
+            elif channels < 3:
+                # For grayscale, use the average
+                combined_patterns = combined_patterns.mean(dim=1, keepdim=True)
+            
             # Use a more effective blending approach
-            disco_effect = color_patterns * pattern_strength * 0.5
-            denoised = denoised * (1 - pattern_strength * 0.3) + disco_effect
+            disco_effect = combined_patterns * pattern_strength * 0.7
+            denoised = denoised * (1 - pattern_strength * 0.4) + disco_effect
         
         d = to_d(x, sigmas[i], denoised)
         
