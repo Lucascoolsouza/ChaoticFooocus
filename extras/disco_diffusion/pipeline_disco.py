@@ -812,19 +812,27 @@ def _decode_latent_to_image_impl(self, latent, vae):
         return None
 
 def _extract_text_embeddings_impl(self, cond):
-    """Extract text embeddings from conditioning."""
+    """Extract text embeddings from conditioning, handling multiple formats."""
     try:
-        # In ComfyUI, cond is a list of [tensor, dict]
-        if isinstance(cond, list) and len(cond) > 0 and hasattr(cond[0][0], 'shape'):
-            # The pooled output is what we need for this kind of guidance
-            return cond[0][0].to(self.clip_model.device)
-        # Fallback for raw tensor
-        elif hasattr(cond, 'shape'):
-            return cond.to(self.clip_model.device)
-        logger.warning("Could not extract text embeddings from conditioning.")
+        if not isinstance(cond, list) or not cond:
+            return None
+
+        first_item = cond[0]
+        
+        # Standard format: [[tensor, dict]]
+        if isinstance(first_item, list) and first_item and hasattr(first_item[0], 'shape'):
+            return first_item[0].to(self.clip_model.device)
+            
+        # Alternative format: [{'pooled_output': tensor}]
+        if isinstance(first_item, dict) and 'pooled_output' in first_item:
+            pooled = first_item.get('pooled_output')
+            if hasattr(pooled, 'shape'):
+                return pooled.to(self.clip_model.device)
+
+        logger.warning(f"Could not extract text embeddings from conditioning structure: {type(first_item)}")
         return None
     except Exception as e:
-        logger.error(f"Failed to extract text embeddings: {e}", exc_info=True)
+        logger.error(f"Error extracting text embeddings: {e}", exc_info=True)
         return None
 
 def _apply_full_disco_guidance(self, model, x, timestep, noise_pred, cond, model_options):
@@ -906,18 +914,15 @@ def _apply_disco_guidance_impl(self, model, x, timestep, noise_pred, cond, model
 def _apply_full_disco_guidance(self, model, x, timestep, noise_pred, cond, model_options):
     """Apply full scientific Disco Diffusion guidance."""
     try:
-        # 1. Get VAE and sampler from model_options, and text embeddings
-        vae = model_options.get('vae')
-        sampler = model_options.get('sampler')
+        # 1. Get VAE and text embeddings from the ModelPatcher
+        vae = model.vae
         text_embeds = self._extract_text_embeddings(cond)
 
-        if vae is None or sampler is None or text_embeds is None:
-            if vae is None: logger.warning("VAE not found in model_options.")
-            if sampler is None: logger.warning("Sampler not found in model_options.")
+        if text_embeds is None:
             return noise_pred
 
         # 2. Predict x0 (the clean image)
-        sigma = sampler.sigmas[timestep[0].int()]
+        sigma = model.model.model_sampling.sigmas[timestep[0].int()]
         x_0_pred = x - sigma * noise_pred
 
         # 3. Set up for gradient calculation
