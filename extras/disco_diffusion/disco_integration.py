@@ -62,7 +62,7 @@ class DiscoIntegration:
         
         # Set default steps schedule if none provided
         if disco_steps_schedule is None:
-            disco_steps_schedule = [0.2, 0.4, 0.6, 0.8]
+            disco_steps_schedule = [0.0, 1.0]  # Apply from start to end (every step)
         
         # Update disco sampler settings
         disco_sampler.disco_enabled = disco_enabled
