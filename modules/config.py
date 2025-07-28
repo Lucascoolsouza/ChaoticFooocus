@@ -746,7 +746,7 @@ default_disco_enabled = get_config_item_or_set_default(
 )
 default_disco_scale = get_config_item_or_set_default(
     key='default_disco_scale',
-    default_value=0.5,
+    default_value=0.8,  # Increased from 0.5 to 0.8 (80% strength)
     validator=lambda x: isinstance(x, numbers.Number) and 0 <= x <= 1,
     expected_type=numbers.Number
 )

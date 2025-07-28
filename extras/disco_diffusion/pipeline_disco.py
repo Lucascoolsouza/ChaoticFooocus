@@ -470,7 +470,7 @@ class DiscoSampler:
             
             # Only apply spatial transforms (spherical, kaleidoscope, fractal_zoom) to all channels
             if 'spherical' in self.disco_transforms:
-                strength = self.disco_scale * (0.3 + 0.7 * progress)
+                strength = self.disco_scale * (0.8 + 1.2 * progress)  # Increased from 0.3+0.7 to 0.8+1.2
                 result = DiscoTransforms.spherical_distortion(result, strength)
             
             if 'kaleidoscope' in self.disco_transforms:
@@ -486,7 +486,7 @@ class DiscoSampler:
             
             # Apply latent space color mixing for psychedelic effects
             if 'color_shift' in self.disco_transforms:
-                mix_strength = self.disco_scale * 0.3 * math.sin(self.step_count * 0.1)
+                mix_strength = self.disco_scale * 0.8 * math.sin(self.step_count * 0.1)  # Increased from 0.3 to 0.8
                 result = DiscoTransforms.latent_color_mix(result, 
                                                         mix_strength=abs(mix_strength),
                                                         step=self.step_count)
@@ -529,7 +529,7 @@ def get_disco_presets():
     """Get predefined disco effect presets based on real Disco Diffusion"""
     return {
         'psychedelic': {
-            'disco_scale': 1000.0,  # CLIP guidance scale
+            'disco_scale': 5000.0,  # CLIP guidance scale - INCREASED 5x
             'disco_transforms': ['translate', 'rotate', 'zoom'],
             'disco_rotation_speed': 0.2,
             'disco_zoom_factor': 1.02,
@@ -541,7 +541,7 @@ def get_disco_presets():
             'range_scale': 150.0
         },
         'fractal': {
-            'disco_scale': 1500.0,
+            'disco_scale': 7500.0,  # INCREASED 5x
             'disco_transforms': ['zoom', 'rotate'],
             'disco_zoom_factor': 1.05,
             'disco_rotation_speed': 0.1,
@@ -551,7 +551,7 @@ def get_disco_presets():
             'range_scale': 200.0
         },
         'kaleidoscope': {
-            'disco_scale': 800.0,
+            'disco_scale': 4000.0,  # INCREASED 5x
             'disco_transforms': ['rotate', 'translate'],
             'disco_rotation_speed': 0.3,
             'disco_translation_x': 0.05,
@@ -562,7 +562,7 @@ def get_disco_presets():
             'range_scale': 100.0
         },
         'dreamy': {
-            'disco_scale': 500.0,
+            'disco_scale': 2500.0,  # INCREASED 5x
             'disco_transforms': ['translate'],
             'disco_translation_x': 0.02,
             'disco_translation_y': 0.02,
@@ -572,7 +572,7 @@ def get_disco_presets():
             'range_scale': 50.0
         },
         'scientific': {
-            'disco_scale': 2000.0,  # High CLIP guidance
+            'disco_scale': 10000.0,  # High CLIP guidance - INCREASED 5x
             'disco_transforms': ['translate', 'rotate', 'zoom'],
             'disco_rotation_speed': 0.15,
             'disco_zoom_factor': 1.03,

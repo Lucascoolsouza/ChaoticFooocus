@@ -904,8 +904,8 @@ with shared.gradio_root:
                     disco_enabled = gr.Checkbox(label='Enable Disco Diffusion', value=False,
                                                info='Enable psychedelic disco diffusion effects')
                     disco_scale = gr.Slider(label='Disco Scale', minimum=0.0, maximum=1.0, step=0.01,
-                                           value=0.5, visible=False,
-                                           info='Overall strength of disco effects')
+                                           value=0.8, visible=False,
+                                           info='Overall strength of disco effects (80% = strong CLIP guidance)')
                     disco_preset = gr.Dropdown(label='Disco Preset', 
                                               choices=['custom', 'psychedelic', 'fractal', 'kaleidoscope', 'dreamy'],
                                               value='psychedelic', visible=False,
