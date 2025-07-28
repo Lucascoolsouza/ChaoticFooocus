@@ -39,17 +39,26 @@ This extension implements the **real Disco Diffusion algorithm** with CLIP guida
 
 ## Usage
 
+### 🚀 Quick Start
 1. **Enable the Extension**: In the Advanced tab, expand "Disco Diffusion (Psychedelic Effects)" and check "Enable Disco Diffusion"
 
-2. **Choose a Preset**: Select from predefined presets or use "Custom" for full control:
-   - `psychedelic`: Best for trippy, colorful images
-   - `fractal`: Great for mathematical/geometric patterns
-   - `kaleidoscope`: Perfect for symmetrical designs
-   - `dreamy`: Subtle effects for artistic enhancement
+2. **Choose a Scientific Preset**: Select from research-based presets:
+   - `scientific`: Maximum CLIP guidance (2000), 40 cutouts, full algorithm
+   - `psychedelic`: High guidance (1000), all transforms, vibrant effects
+   - `fractal`: Very high guidance (1500), zoom+rotate, fractal patterns
+   - `kaleidoscope`: Medium guidance (800), radial symmetry
+   - `dreamy`: Low guidance (500), subtle effects
 
-3. **Adjust Parameters**: Fine-tune the effects using the various sliders and options
+3. **CLIP Installation**: For full functionality, CLIP will be downloaded automatically on first use
+   - ✅ **With CLIP**: Full scientific algorithm with semantic guidance
+   - 🔄 **Without CLIP**: Geometric transforms only (still creates psychedelic effects)
 
-4. **Set Seed**: Use the Disco Seed field for reproducible effects (leave empty for random)
+4. **Adjust Parameters**: Fine-tune using scientific parameters:
+   - **disco_scale**: CLIP guidance strength (500-2500)
+   - **cutn**: Number of cutouts for analysis (8-64)
+   - **tv_scale**: Total variation smoothing (0-300)
+
+5. **Generate**: Create scientifically-guided psychedelic images!
 
 ## Technical Details
 
@@ -133,7 +142,15 @@ extras/disco_diffusion/
 
 - PyTorch (for tensor operations)
 - Standard Fooocus dependencies
-- No additional packages required
+- **CLIP (optional but recommended)**: For full scientific functionality
+  - Automatic download on first use
+  - Manual install: `pip install git+https://github.com/openai/CLIP.git`
+  - See `CLIP_INSTALLATION.md` for detailed instructions
+
+## Installation Status
+The extension works in two modes:
+- **🧬 Scientific Mode** (with CLIP): Full algorithm with semantic guidance
+- **🎨 Geometric Mode** (without CLIP): Psychedelic transforms only
 
 ## Performance Notes
 

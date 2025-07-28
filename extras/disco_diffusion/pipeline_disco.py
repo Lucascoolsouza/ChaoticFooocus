@@ -341,6 +341,11 @@ class DiscoSampler:
         
         print(f"[Disco] Activating Disco Diffusion with scale {self.disco_scale}")
         
+        # Initialize CLIP if not already done
+        if self.clip_model is None:
+            print("[Disco] Initializing CLIP for scientific guidance...")
+            self._init_clip()
+        
         try:
             import ldm_patched.modules.samplers as samplers
             
@@ -352,7 +357,11 @@ class DiscoSampler:
             self.unet = unet
             self.is_active = True
             self.step_count = 0
-            print("[Disco] Successfully patched sampling function")
+            
+            if self.clip_model is not None:
+                print("[Disco] Successfully activated with CLIP guidance")
+            else:
+                print("[Disco] Successfully activated with geometric transforms only")
             
         except Exception as e:
             print(f"[Disco] Failed to patch sampling function: {e}")
@@ -567,7 +576,68 @@ class StableDiffusionXLTPGPipeline:
         raise NotImplementedError("TPG functionality is handled by tpg_integration.py")
 
 # Extend DiscoSampler with scientific methods
-DiscoSampler._init_clip = lambda self: _init_clip_impl(self)
+def _init_clip_simple(self):
+    """Initialize CLIP model for guidance - Simple OpenAI CLIP approach"""
+    try:
+        import clip
+        import torch
+        
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        
+        # Get the selected CLIP model from settings, with fallback order
+        preferred_model = getattr(self, 'disco_clip_model', 'RN50')
+        
+        # All available CLIP models in order of preference
+        all_clip_models = [
+            'RN50',           # Fast and efficient
+            'RN101',          # Better quality ResNet
+            'RN50x4',         # High quality
+            'RN50x16',        # Very high quality
+            'RN50x64',        # Maximum quality (very slow)
+            'ViT-B/32',       # Vision Transformer Base
+            'ViT-B/16',       # Better ViT
+            'ViT-L/14',       # Large ViT (high quality)
+            'ViT-L/14@336px'  # Maximum quality ViT
+        ]
+        
+        # Try the preferred model first, then fallback to others
+        models_to_try = [preferred_model] + [m for m in all_clip_models if m != preferred_model]
+        
+        for model_name in models_to_try:
+            try:
+                print(f"[Disco] Loading CLIP model: {model_name}")
+                self.clip_model, self.clip_preprocess = clip.load(model_name, device=device)
+                self.clip_model.eval()
+                print(f"[Disco] CLIP {model_name} loaded successfully on {device}")
+                self.clip_model_name = model_name
+                
+                # Show model info
+                if hasattr(self.clip_model.visual, 'input_resolution'):
+                    resolution = self.clip_model.visual.input_resolution
+                    print(f"[Disco] CLIP input resolution: {resolution}x{resolution}")
+                
+                return
+            except Exception as e:
+                print(f"[Disco] Failed to load {model_name}: {e}")
+                continue
+        
+        # If all models failed
+        print("[Disco] Failed to load any CLIP model")
+        self.clip_model = None
+        
+    except ImportError:
+        print("[Disco] CLIP not available.")
+        print("[Disco] To enable full Disco Diffusion functionality:")
+        print("[Disco]   1. Install CLIP: pip install git+https://github.com/openai/CLIP.git")
+        print("[Disco]   2. Install torchvision: pip install torchvision")
+        print("[Disco] Using geometric transforms only (still creates psychedelic effects)")
+        self.clip_model = None
+    except Exception as e:
+        print(f"[Disco] Failed to initialize CLIP: {e}")
+        print("[Disco] Using geometric transforms only")
+        self.clip_model = None
+
+DiscoSampler._init_clip = lambda self: _init_clip_simple(self)
 DiscoSampler._get_alpha_t = lambda self, timestep: _get_alpha_t_impl(self, timestep)
 DiscoSampler._get_sigma_t = lambda self, timestep: _get_sigma_t_impl(self, timestep)
 DiscoSampler._decode_latent_to_image = lambda self, latent: _decode_latent_to_image_impl(self, latent)
@@ -579,18 +649,122 @@ DiscoSampler._apply_disco_guidance = lambda self, model, x, timestep, noise_pred
 def _init_clip_impl(self):
         """Initialize CLIP model for guidance"""
         try:
-            import clip
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            self.clip_model, self.clip_preprocess = clip.load("ViT-B/32", device=device)
-            self.clip_model.eval()
-            print(f"[Disco] CLIP model loaded successfully on {device}")
+            # First try to use the built-in CLIP download system
+            import modules.config as config
+            clip_info = config.downloading_clip_for_disco()
+            
+            if clip_info:
+                if isinstance(clip_info, dict) and clip_info.get('type') == 'onnx':
+                    # Load ONNX CLIP models
+                    try:
+                        from .clip_onnx import load_clip_onnx
+                        
+                        visual_path = clip_info['visual']
+                        textual_path = clip_info['textual']
+                        
+                        if os.path.exists(visual_path) and os.path.exists(textual_path):
+                            self.clip_model, self.clip_tokenizer = load_clip_onnx(visual_path, textual_path)
+                            if self.clip_model:
+                                print(f"[Disco] CLIP ONNX models loaded successfully")
+                                self.clip_type = 'onnx'
+                                return
+                        
+                    except Exception as e:
+                        print(f"[Disco] Failed to load ONNX CLIP: {e}")
+                
+                elif isinstance(clip_info, dict) and clip_info.get('type') == 'pytorch':
+                    # Load PyTorch CLIP model
+                    try:
+                        import clip
+                        device = "cuda" if torch.cuda.is_available() else "cpu"
+                        
+                        model_path = clip_info['model']
+                        if os.path.exists(model_path):
+                            self.clip_model, self.clip_preprocess = clip.load(model_path, device=device)
+                            self.clip_model.eval()
+                            print(f"[Disco] CLIP PyTorch model loaded from {model_path} on {device}")
+                            self.clip_type = 'pytorch'
+                            return
+                            
+                    except ImportError:
+                        print("[Disco] CLIP library not installed for PyTorch model")
+                    except Exception as e:
+                        print(f"[Disco] Failed to load PyTorch CLIP: {e}")
+            
+            # Final fallback: try to load CLIP normally (will download automatically)
+            try:
+                import clip
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                self.clip_model, self.clip_preprocess = clip.load("ViT-B/32", device=device)
+                self.clip_model.eval()
+                print(f"[Disco] CLIP model loaded successfully on {device}")
+                self.clip_type = 'pytorch'
+                
+            except ImportError:
+                print("[Disco] CLIP not available.")
+                print("[Disco] To enable full Disco Diffusion functionality:")
+                print("[Disco]   1. ONNX Runtime: pip install onnxruntime (or onnxruntime-gpu)")
+                print("[Disco]   2. Or CLIP library: pip install git+https://github.com/openai/CLIP.git")
+                print("[Disco] Using geometric transforms only (still creates psychedelic effects)")
+                self.clip_model = None
+                self.clip_type = None
+                
+                # Try different loading methods based on file type
+                if clip_path.endswith('.safetensors'):
+                    print(f"[Disco] Attempting to load LAION CLIP model from {clip_path}")
+                    # For LAION models, we'd need open_clip library
+                    try:
+                        import open_clip
+                        model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained=clip_path, device=device)
+                        self.clip_model = model
+                        self.clip_preprocess = preprocess
+                        print(f"[Disco] LAION CLIP model loaded successfully on {device}")
+                        return
+                    except ImportError:
+                        print("[Disco] open_clip not available for LAION models, trying standard CLIP...")
+                
+                # Try standard CLIP library
+                try:
+                    import clip
+                    if clip_path.endswith('.pt'):
+                        # Load OpenAI CLIP model
+                        self.clip_model, self.clip_preprocess = clip.load(clip_path, device=device)
+                    else:
+                        # Try to load as standard CLIP
+                        self.clip_model, self.clip_preprocess = clip.load("ViT-B/32", device=device)
+                    
+                    self.clip_model.eval()
+                    print(f"[Disco] CLIP model loaded successfully on {device}")
+                    return
+                    
+                except ImportError:
+                    print("[Disco] CLIP library not installed.")
+            
+            # Final fallback: try to load CLIP normally
+            try:
+                import clip
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                self.clip_model, self.clip_preprocess = clip.load("ViT-B/32", device=device)
+                self.clip_model.eval()
+                print(f"[Disco] CLIP model loaded via automatic download on {device}")
+                return
+            except ImportError:
+                pass
+            
+            # If all fails, set to None for fallback mode
+            raise ImportError("No CLIP available")
+            
         except ImportError:
-            print("[Disco] CLIP not available. Install with: pip install git+https://github.com/openai/CLIP.git")
+            print("[Disco] CLIP not available.")
+            print("[Disco] To enable full Disco Diffusion functionality:")
+            print("[Disco]   1. Install CLIP: pip install git+https://github.com/openai/CLIP.git")
+            print("[Disco]   2. Or install open_clip: pip install open-clip-torch")
+            print("[Disco]   3. Or install via conda: conda install -c conda-forge clip-by-openai")
             print("[Disco] Using geometric transforms only (still creates psychedelic effects)")
             self.clip_model = None
         except Exception as e:
             print(f"[Disco] Failed to load CLIP: {e}")
-            print("[Disco] Using geometric transforms only")
+            print("[Disco] Using geometric transforms only with enhanced effects")
             self.clip_model = None
 def _get_alpha_t_impl(self, timestep):
     """Get alpha_t for DDIM sampling"""
@@ -664,63 +838,152 @@ def _get_guidance_schedule_impl(self):
 def _apply_disco_guidance_impl(self, model, x, timestep, noise_pred, cond, model_options):
     """Apply true Disco Diffusion CLIP guidance"""
     try:
-        # Initialize CLIP if not done
-        if self.clip_model is None:
-            self._init_clip()
-        
-        if self.clip_model is None:
-            return noise_pred  # Fallback if CLIP not available
-        
-        # Get current denoised prediction
-        import torch
-        with torch.no_grad():
-            # Predict x0 from current noise prediction
-            alpha_t = self._get_alpha_t(timestep)
-            sigma_t = self._get_sigma_t(timestep)
-            
-            # x0 prediction using DDIM formula
-            pred_x0 = (x - sigma_t * noise_pred) / alpha_t
-            
-            # Decode to image space for CLIP analysis
-            pred_image = self._decode_latent_to_image(pred_x0)
-            
-            if pred_image is None:
-                return noise_pred
-            
-            # Apply geometric transforms (core Disco Diffusion)
-            pred_image = self._apply_geometric_transforms(pred_image)
-            
-            # Apply symmetry
-            pred_image = DiscoTransforms.symmetrize(pred_image, self.disco_symmetry_mode)
-            
-            # Create cutouts for CLIP analysis
-            cutouts = DiscoTransforms.make_cutouts(pred_image, 224, self.cutn)
-            
-            # Get CLIP embeddings
-            clip_embeds = self.clip_model.encode_image(cutouts)
-            
-            # Get text embeddings from conditioning
-            text_embeds = self._extract_text_embeddings(cond)
-            
-            if text_embeds is not None:
-                # Calculate CLIP loss (spherical distance)
-                clip_loss = spherical_dist_loss(clip_embeds, text_embeds).mean()
-                
-                # Calculate additional losses
-                tv_loss_val = tv_loss(pred_image) * self.tv_scale
-                range_loss_val = range_loss(pred_image) * self.range_scale
-                
-                total_loss = clip_loss + tv_loss_val + range_loss_val
-                
-                # Calculate gradients w.r.t. the latent
-                grad = torch.autograd.grad(total_loss, pred_x0, retain_graph=False)[0]
-                
-                # Apply gradient to noise prediction
-                guidance_scale = self.disco_scale * self._get_guidance_schedule()
-                noise_pred = noise_pred - guidance_scale * grad
-        
-        return noise_pred
+        # If CLIP is available, use full scientific algorithm
+        if self.clip_model is not None:
+            return self._apply_full_disco_guidance(model, x, timestep, noise_pred, cond, model_options)
+        else:
+            # Fallback: apply geometric transforms to latent space directly
+            return self._apply_geometric_disco_fallback(x, timestep, noise_pred)
         
     except Exception as e:
         logger.warning(f"Disco guidance failed: {e}")
         return noise_pred
+
+def _apply_full_disco_guidance(self, model, x, timestep, noise_pred, cond, model_options):
+    """Apply full CLIP-guided Disco Diffusion"""
+    import torch
+    with torch.no_grad():
+        # Predict x0 from current noise prediction
+        alpha_t = self._get_alpha_t(timestep)
+        sigma_t = self._get_sigma_t(timestep)
+        
+        # x0 prediction using DDIM formula
+        pred_x0 = (x - sigma_t * noise_pred) / alpha_t
+        
+        # Decode to image space for CLIP analysis
+        pred_image = self._decode_latent_to_image(pred_x0)
+        
+        if pred_image is None:
+            return noise_pred
+        
+        # Apply geometric transforms (core Disco Diffusion)
+        pred_image = self._apply_geometric_transforms(pred_image)
+        
+        # Apply symmetry
+        pred_image = DiscoTransforms.symmetrize(pred_image, self.disco_symmetry_mode)
+        
+        # Create cutouts for CLIP analysis
+        cutouts = DiscoTransforms.make_cutouts(pred_image, 224, self.cutn)
+        
+        # Get CLIP embeddings
+        clip_embeds = self.clip_model.encode_image(cutouts)
+        
+        # Get text embeddings from conditioning
+        text_embeds = self._extract_text_embeddings(cond)
+        
+        if text_embeds is not None:
+            # Calculate CLIP loss (spherical distance)
+            clip_loss = spherical_dist_loss(clip_embeds, text_embeds).mean()
+            
+            # Calculate additional losses
+            tv_loss_val = tv_loss(pred_image) * self.tv_scale
+            range_loss_val = range_loss(pred_image) * self.range_scale
+            
+            total_loss = clip_loss + tv_loss_val + range_loss_val
+            
+            # Calculate gradients w.r.t. the latent
+            grad = torch.autograd.grad(total_loss, pred_x0, retain_graph=False)[0]
+            
+            # Apply gradient to noise prediction
+            guidance_scale = self.disco_scale * self._get_guidance_schedule()
+            noise_pred = noise_pred - guidance_scale * grad
+    
+    return noise_pred
+
+def _apply_geometric_disco_fallback(self, x, timestep, noise_pred):
+    """Apply geometric transforms directly to latent space (fallback when CLIP not available)"""
+    import torch
+    try:
+        # Apply geometric transforms directly to the latent with stronger effects
+        frame = self.step_count
+        result = x.clone()
+        
+        # Use stronger transform strength for visible effects
+        base_strength = self.disco_scale if self.disco_scale <= 1.0 else self.disco_scale / 1000.0
+        transform_strength = base_strength * 0.3  # Stronger for visible effects
+        
+        print(f"[Disco] Applying geometric fallback - frame: {frame}, strength: {transform_strength}")
+        
+        if 'translate' in self.disco_transforms:
+            # More noticeable translation
+            tx = int(self.disco_translation_x * math.sin(frame * 0.2) * 4)
+            ty = int(self.disco_translation_y * math.cos(frame * 0.2) * 4)
+            if abs(tx) > 0 or abs(ty) > 0:
+                result = torch.roll(result, shifts=(ty, tx), dims=(2, 3))
+                print(f"[Disco] Applied translation: tx={tx}, ty={ty}")
+        
+        if 'rotate' in self.disco_transforms:
+            # More frequent rotation
+            angle_steps = int(self.disco_rotation_speed * frame * 0.2 * 4) % 4
+            if angle_steps > 0:
+                result = torch.rot90(result, k=angle_steps, dims=[2, 3])
+                print(f"[Disco] Applied rotation: {angle_steps * 90}°")
+        
+        if 'zoom' in self.disco_transforms:
+            # More noticeable zoom
+            zoom_factor = 1.0 + (self.disco_zoom_factor - 1.0) * 2  # Double the zoom effect
+            zoom = zoom_factor ** (frame * 0.05)  # Slower but more visible
+            if abs(zoom - 1.0) > 0.02:
+                h, w = result.shape[2], result.shape[3]
+                if zoom > 1.0:
+                    # Zoom in (crop and resize)
+                    new_h, new_w = max(1, int(h / zoom)), max(1, int(w / zoom))
+                    start_h, start_w = (h - new_h) // 2, (w - new_w) // 2
+                    cropped = result[:, :, start_h:start_h+new_h, start_w:start_w+new_w]
+                    result = F.interpolate(cropped, size=(h, w), mode='bilinear', align_corners=False)
+                    print(f"[Disco] Applied zoom in: {zoom:.3f}")
+                else:
+                    # Zoom out (resize and pad)
+                    new_h, new_w = min(h, int(h * zoom)), min(w, int(w * zoom))
+                    if new_h > 0 and new_w > 0:
+                        resized = F.interpolate(result, size=(new_h, new_w), mode='bilinear', align_corners=False)
+                        pad_h, pad_w = (h - new_h) // 2, (w - new_w) // 2
+                        result = F.pad(resized, (pad_w, w - new_w - pad_w, pad_h, h - new_h - pad_h), mode='reflect')
+                        print(f"[Disco] Applied zoom out: {zoom:.3f}")
+        
+        # Apply channel mixing for psychedelic effects
+        if len(result.shape) == 4 and result.shape[1] >= 4:
+            # Mix channels for psychedelic effect
+            mix_strength = transform_strength * 0.5
+            if mix_strength > 0:
+                # Rotate channels
+                channel_shift = int(frame * 0.1) % result.shape[1]
+                if channel_shift > 0:
+                    result = torch.roll(result, shifts=channel_shift, dims=1)
+                    print(f"[Disco] Applied channel mixing: shift={channel_shift}")
+        
+        # Apply symmetry effects
+        if self.disco_symmetry_mode != 'none':
+            result = DiscoTransforms.symmetrize(result, self.disco_symmetry_mode)
+            print(f"[Disco] Applied symmetry: {self.disco_symmetry_mode}")
+        
+        # Stronger blending for visible effects
+        coherence = max(0.3, self.disco_color_coherence)  # Minimum 30% effect
+        modified_x = coherence * x + (1 - coherence) * result
+        
+        # Apply modification to noise prediction with stronger effect
+        noise_modification = (modified_x - x) * (transform_strength * 2)
+        modified_noise = noise_pred + noise_modification
+        
+        print(f"[Disco] Geometric fallback applied successfully")
+        return modified_noise
+        
+    except Exception as e:
+        print(f"[Disco] Geometric disco fallback failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return noise_pred
+
+# Add the new methods to DiscoSampler
+DiscoSampler._apply_full_disco_guidance = lambda self, model, x, timestep, noise_pred, cond, model_options: _apply_full_disco_guidance(self, model, x, timestep, noise_pred, cond, model_options)
+DiscoSampler._apply_geometric_disco_fallback = lambda self, x, timestep, noise_pred: _apply_geometric_disco_fallback(self, x, timestep, noise_pred)

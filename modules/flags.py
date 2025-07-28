@@ -119,6 +119,18 @@ disco_transforms = ['translate', 'rotate', 'zoom']  # Real geometric transforms
 disco_animation_modes = ['none', 'zoom', 'rotate', 'translate']
 disco_symmetry_modes = ['none', 'horizontal', 'vertical', 'radial']
 disco_noise_schedules = ['linear', 'cosine', 'exponential']
+# CLIP model options for Disco Diffusion
+disco_clip_models = [
+    'RN50',           # ResNet-50 (fast, good quality)
+    'RN101',          # ResNet-101 (slower, better quality)
+    'RN50x4',         # ResNet-50 4x (high quality)
+    'RN50x16',        # ResNet-50 16x (very high quality)
+    'RN50x64',        # ResNet-50 64x (maximum quality, very slow)
+    'ViT-B/32',       # Vision Transformer Base 32px patches
+    'ViT-B/16',       # Vision Transformer Base 16px patches (better)
+    'ViT-L/14',       # Vision Transformer Large 14px patches (high quality)
+    'ViT-L/14@336px'  # Vision Transformer Large 336px input (maximum quality)
+]
 inpaint_mask_cloth_category = ['full', 'upper', 'lower']
 inpaint_mask_sam_model = ['vit_b', 'vit_l', 'vit_h']
 

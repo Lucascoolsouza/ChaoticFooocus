@@ -195,10 +195,10 @@ class AsyncTask:
         # Disco Diffusion parameters (popped in reverse order from webui.py)
         print(f"[DEBUG] Args remaining before Disco: {len(args)}")
         
-        # Pop all 15 Disco parameters
+        # Pop all 16 Disco parameters (added CLIP model selection)
         disco_params = []
         try:
-            for i in range(15):
+            for i in range(16):
                 param = args.pop()
                 disco_params.append(param)
                 print(f"[DEBUG] Popped Disco param {i}: {param} (type: {type(param)})")
@@ -206,14 +206,14 @@ class AsyncTask:
             print(f"[DEBUG] Error popping Disco parameter {i}: {e}")
             print(f"[DEBUG] Args remaining: {len(args)}")
             # Fill remaining with defaults
-            while len(disco_params) < 15:
+            while len(disco_params) < 16:
                 disco_params.append(None)
         
         # Assign in correct order matching webui ctrls order with defaults
         self.disco_enabled = disco_params[0] if disco_params[0] is not None else False
         self.disco_scale = disco_params[1] if disco_params[1] is not None else 0.5
         self.disco_preset = disco_params[2] if disco_params[2] is not None else 'custom'
-        self.disco_transforms = disco_params[3] if disco_params[3] is not None else ['spherical', 'color_shift']
+        self.disco_transforms = disco_params[3] if disco_params[3] is not None else ['translate', 'rotate', 'zoom']
         self.disco_seed = disco_params[4] if disco_params[4] is not None else None
         self.disco_animation_mode = disco_params[5] if disco_params[5] is not None else 'none'
         self.disco_zoom_factor = disco_params[6] if disco_params[6] is not None else 1.02
@@ -225,8 +225,9 @@ class AsyncTask:
         self.disco_contrast_boost = disco_params[12] if disco_params[12] is not None else 1.1
         self.disco_symmetry_mode = disco_params[13] if disco_params[13] is not None else 'none'
         self.disco_fractal_octaves = disco_params[14] if disco_params[14] is not None else 3
+        self.disco_clip_model = disco_params[15] if disco_params[15] is not None else 'RN50'
         
-        print(f"[DEBUG] Disco params: enabled={self.disco_enabled}, scale={self.disco_scale}, preset={self.disco_preset}")
+        print(f"[DEBUG] Disco params: enabled={self.disco_enabled}, scale={self.disco_scale}, preset={self.disco_preset}, clip_model={self.disco_clip_model}")
 
         self.cn_tasks = {x: [] for x in ip_list}
         for _ in range(modules.config.default_controlnet_image_count):

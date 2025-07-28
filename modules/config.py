@@ -774,6 +774,12 @@ default_disco_symmetry_mode = get_config_item_or_set_default(
     validator=lambda x: x in modules.flags.disco_symmetry_modes,
     expected_type=str
 )
+default_disco_clip_model = get_config_item_or_set_default(
+    key='default_disco_clip_model',
+    default_value='RN50',
+    validator=lambda x: x in modules.flags.disco_clip_models,
+    expected_type=str
+)
 
 config_dict["default_loras"] = default_loras = default_loras[:default_max_lora_number] + [[True, 'None', 1.0] for _ in range(default_max_lora_number - len(default_loras))]
 
@@ -1142,22 +1148,79 @@ def downloading_clip_vit_l_14():
 
 
 def downloading_clip_for_disco():
-    """Download CLIP model specifically for Disco Diffusion (uses ViT-B/32 by default)"""
-    print("[Disco] Downloading CLIP model for scientific Disco Diffusion...")
+    """Download CLIP model specifically for Disco Diffusion (ONNX version - lightweight)"""
+    print("[Disco] Downloading CLIP ONNX models for scientific Disco Diffusion...")
     
-    # Try to download a pre-converted CLIP model that works with the original CLIP library
     try:
-        # This is a direct download of the CLIP model in the format expected by the clip library
+        # Download CLIP ResNet-50 Visual model (ONNX) - lightweight and fast
         load_file_from_url(
-            url='https://openaipublic.azureedge.net/clip/models/40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af/ViT-B-32.pt',
+            url='https://huggingface.co/mlunar/clip-variants/resolve/main/models/clip-resnet-50-visual-float32.onnx',
             model_dir=path_clip,
-            file_name='ViT-B-32.pt'
+            file_name='clip-resnet-50-visual-float32.onnx'
         )
         
-        print("[Disco] CLIP ViT-B/32 model downloaded successfully")
-        return os.path.join(path_clip, 'ViT-B-32.pt')
+        # Download CLIP ResNet-50 Text model (ONNX)
+        load_file_from_url(
+            url='https://huggingface.co/mlunar/clip-variants/resolve/main/models/clip-resnet-50-textual-float32.onnx',
+            model_dir=path_clip,
+            file_name='clip-resnet-50-textual-float32.onnx'
+        )
+        
+        print("[Disco] CLIP ONNX models downloaded successfully")
+        print("[Disco] Using lightweight ONNX runtime (no additional dependencies needed)")
+        
+        return {
+            'visual': os.path.join(path_clip, 'clip-resnet-50-visual-float32.onnx'),
+            'textual': os.path.join(path_clip, 'clip-resnet-50-textual-float32.onnx'),
+            'type': 'onnx'
+        }
         
     except Exception as e:
-        print(f"[Disco] Failed to download CLIP model: {e}")
-        print("[Disco] You can manually install CLIP with: pip install git+https://github.com/openai/CLIP.git")
+        print(f"[Disco] Failed to download CLIP ONNX models: {e}")
+        print("[Disco] Trying PyTorch fallback...")
+        
+        try:
+            # Fallback to OpenAI CLIP PyTorch
+            load_file_from_url(
+                url='https://openaipublic.azureedge.net/clip/models/40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af/ViT-B-32.pt',
+                model_dir=path_clip,
+                file_name='ViT-B-32.pt'
+            )
+            
+            print("[Disco] OpenAI CLIP ViT-B/32 PyTorch model downloaded successfully")
+            return {
+                'model': os.path.join(path_clip, 'ViT-B-32.pt'),
+                'type': 'pytorch'
+            }
+            
+        except Exception as e2:
+            print(f"[Disco] Failed to download any CLIP model: {e2}")
+            print("[Disco] Falling back to geometric transforms only")
+            return None
+
+
+def downloading_clip_vit_h_14():
+    """Download high-quality CLIP ViT-H/14 model"""
+    print("[Disco] Downloading high-quality CLIP ViT-H/14 model...")
+    
+    try:
+        # Download LAION CLIP ViT-H/14 (highest quality)
+        load_file_from_url(
+            url='https://huggingface.co/laion/CLIP-ViT-H-14-laion2B-s32B-b79K/resolve/main/open_clip_model.safetensors',
+            model_dir=path_clip,
+            file_name='laion_clip_vit_h_14.safetensors'
+        )
+        
+        # Download config
+        load_file_from_url(
+            url='https://huggingface.co/laion/CLIP-ViT-H-14-laion2B-s32B-b79K/resolve/main/open_clip_config.json',
+            model_dir=path_clip,
+            file_name='laion_clip_vit_h_14_config.json'
+        )
+        
+        print("[Disco] LAION CLIP ViT-H/14 model downloaded successfully")
+        return os.path.join(path_clip, 'laion_clip_vit_h_14.safetensors')
+        
+    except Exception as e:
+        print(f"[Disco] Failed to download CLIP ViT-H/14: {e}")
         return None
