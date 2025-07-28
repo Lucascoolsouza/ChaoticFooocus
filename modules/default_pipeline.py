@@ -411,7 +411,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 'disco_fractal_octaves': disco_fractal_octaves,
                 'disco_clip_model': disco_clip_model,
                 'disco_noise_schedule': 'linear',
-                'disco_steps_schedule': [0.2, 0.4, 0.6, 0.8]
+                'disco_steps_schedule': [0.0, 1.0]  # Apply every step for maximum CLIP guidance
             }
             
             disco_integration.initialize_disco(**disco_settings)
