@@ -64,7 +64,7 @@ class DiscoSettings:
 disco_settings = DiscoSettings()
 
 def run_clip_guidance_loop(
-    latent, vae, clip_model, clip_preprocess, text_prompt,
+    latent, vae, clip_model, clip_preprocess, text_prompt, async_task,
     steps=100, disco_scale=10000.0, cutn=16, tv_scale=150.0, range_scale=50.0
 ):
     """
