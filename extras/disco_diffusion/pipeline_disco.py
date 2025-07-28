@@ -86,6 +86,11 @@ def run_clip_guidance_loop(
 
         # 1. Prepare text embeddings
         device = next(clip_model.parameters()).device
+        # Truncate text_prompt if it's too long for the CLIP model
+        context_length = clip_model.context_length
+        if len(text_prompt) > context_length:
+            print(f"[Disco Guidance] Warning: Text prompt too long ({len(text_prompt)} chars), truncating to {context_length} chars.")
+            text_prompt = text_prompt[:context_length]
         text_tokens = clip.tokenize([text_prompt]).to(device)
         with torch.no_grad():
             text_embeds = clip_model.encode_text(text_tokens).float()
@@ -102,7 +107,7 @@ def run_clip_guidance_loop(
             optimizer.zero_grad()
             
             # Decode latent to image for CLIP
-            image_for_clip = latent_tensor.to(vae.dtype)
+            image_for_clip = latent_tensor
             image_for_clip = vae.decode(image_for_clip).sample
             image_for_clip = (image_for_clip / 2 + 0.5).clamp(0, 1)
             
