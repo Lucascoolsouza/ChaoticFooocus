@@ -394,28 +394,32 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             print(f"[Disco] Enabling Disco Diffusion with scale={disco_scale}, preset={disco_preset}")
             
             disco_settings = {
-                'disco_enabled': True,
-                'disco_scale': 10000.0,
-                'disco_preset': 'custom',
-                'disco_transforms': ['translate', 'rotate', 'zoom', 'color_shift'],
-                'disco_seed': 42,
-                'disco_animation_mode': 'none',
-                'disco_zoom_factor': 1.02,
-                'disco_rotation_speed': 0.1,
-                'disco_translation_x': 0.0,
-                'disco_translation_y': 0.0,
-                'disco_color_coherence': 0.3,
-                'disco_saturation_boost': 1.2,
-                'disco_contrast_boost': 1.1,
-                'disco_symmetry_mode': 'none',
-                'disco_fractal_octaves': 3,
-                'disco_clip_model': 'RN50',
+                'disco_enabled': disco_enabled,
+                'disco_scale': disco_scale,
+                'disco_preset': disco_preset,
+                'disco_transforms': disco_transforms or ['translate', 'rotate', 'zoom'],
+                'disco_seed': disco_seed,
+                'disco_animation_mode': disco_animation_mode,
+                'disco_zoom_factor': disco_zoom_factor,
+                'disco_rotation_speed': disco_rotation_speed,
+                'disco_translation_x': disco_translation_x,
+                'disco_translation_y': disco_translation_y,
+                'disco_color_coherence': disco_color_coherence,
+                'disco_saturation_boost': disco_saturation_boost,
+                'disco_contrast_boost': disco_contrast_boost,
+                'disco_symmetry_mode': disco_symmetry_mode,
+                'disco_fractal_octaves': disco_fractal_octaves,
+                'disco_clip_model': disco_clip_model,
                 'disco_noise_schedule': 'linear',
-                'disco_steps_schedule': [0.0, 1.0]
+                'disco_steps_schedule': [0.0, 1.0],
+                'disco_guidance_steps': modules.config.default_disco_guidance_steps,
+                'cutn': modules.config.default_disco_cutn,
+                'tv_scale': modules.config.default_disco_tv_scale,
+                'range_scale': modules.config.default_disco_range_scale
             }
             
             disco_integration.initialize_disco(**disco_settings)
-            disco_integration.activate_for_generation(final_unet, vae=final_vae)
+            initial_latent = disco_integration.run_disco_guidance(initial_latent, final_vae, original_prompt)
             
         except Exception as e:
             print(f"[Disco] Error enabling Disco Diffusion: {e}")

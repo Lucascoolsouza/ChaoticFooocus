@@ -783,6 +783,34 @@ default_disco_clip_model = get_config_item_or_set_default(
     expected_type=str
 )
 
+default_disco_guidance_steps = get_config_item_or_set_default(
+    key='default_disco_guidance_steps',
+    default_value=100,
+    validator=lambda x: isinstance(x, int) and x > 0,
+    expected_type=int
+)
+
+default_disco_cutn = get_config_item_or_set_default(
+    key='default_disco_cutn',
+    default_value=16,
+    validator=lambda x: isinstance(x, int) and x > 0,
+    expected_type=int
+)
+
+default_disco_tv_scale = get_config_item_or_set_default(
+    key='default_disco_tv_scale',
+    default_value=150.0,
+    validator=lambda x: isinstance(x, numbers.Number),
+    expected_type=numbers.Number
+)
+
+default_disco_range_scale = get_config_item_or_set_default(
+    key='default_disco_range_scale',
+    default_value=50.0,
+    validator=lambda x: isinstance(x, numbers.Number),
+    expected_type=numbers.Number
+)
+
 config_dict["default_loras"] = default_loras = default_loras[:default_max_lora_number] + [[True, 'None', 1.0] for _ in range(default_max_lora_number - len(default_loras))]
 
 # mapping config to meta parameter
