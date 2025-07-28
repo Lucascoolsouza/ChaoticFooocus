@@ -922,6 +922,20 @@ with shared.gradio_root:
                                                    value=modules.config.default_disco_clip_model, visible=False,
                                                    info='CLIP model for semantic guidance (RN50=fast, ViT-L/14=quality)')
                     
+                    with gr.Accordion(label='CLIP Guidance Settings', open=False, visible=False) as disco_guidance_accordion:
+                        disco_guidance_steps = gr.Slider(label='Guidance Steps', minimum=10, maximum=500, step=1,
+                                                          value=modules.config.default_disco_guidance_steps,
+                                                          info='Number of steps for the CLIP guidance pre-sampling loop.')
+                        disco_cutn = gr.Slider(label='Cutouts', minimum=1, maximum=64, step=1,
+                                               value=modules.config.default_disco_cutn,
+                                               info='Number of cutouts for CLIP analysis.')
+                        disco_tv_scale = gr.Slider(label='TV Scale', minimum=0, maximum=1000, step=1,
+                                                   value=modules.config.default_disco_tv_scale,
+                                                   info='Total variation loss scale.')
+                        disco_range_scale = gr.Slider(label='Range Scale', minimum=0, maximum=1000, step=1,
+                                                      value=modules.config.default_disco_range_scale,
+                                                      info='Range loss scale.')
+
                     with gr.Accordion(label='Animation & Movement', open=False, visible=False) as disco_animation_accordion:
                         disco_animation_mode = gr.Dropdown(label='Animation Mode', 
                                                           choices=['none', 'zoom', 'rotate', 'translate'],
@@ -962,7 +976,7 @@ with shared.gradio_root:
                                              value='Disco Diffusion: Disabled', visible=False)
                     
                     def update_disco_visibility(enabled):
-                        return [gr.update(visible=enabled)] * 7
+                        return [gr.update(visible=enabled)] * 8
                     
                     def update_disco_preset(preset):
                         if preset == 'custom':
@@ -991,7 +1005,7 @@ with shared.gradio_root:
                     disco_enabled.change(update_disco_visibility, 
                                         inputs=disco_enabled,
                                         outputs=[disco_scale, disco_preset, disco_transforms, disco_seed, 
-                                                disco_clip_model, disco_animation_accordion, disco_visual_accordion],
+                                                disco_clip_model, disco_animation_accordion, disco_visual_accordion, disco_guidance_accordion],
                                         queue=False, show_progress=False)
                     
                     disco_preset.change(update_disco_preset,
@@ -1004,7 +1018,8 @@ with shared.gradio_root:
                     disco_inputs = [disco_enabled, disco_scale, disco_preset, disco_transforms, 
                                    disco_saturation_boost, disco_contrast_boost, disco_clip_model]
                     for input_component in disco_inputs:
-                        input_component.change(update_disco_status,
+                        input_component.change(
+                            update_disco_status,
                                              inputs=disco_inputs,
                                              outputs=disco_status,
                                              queue=False, show_progress=False)
@@ -1307,7 +1322,7 @@ with shared.gradio_root:
 
             preset_selection.change(preset_selection_change, inputs=[preset_selection, state_is_generating, inpaint_mode], outputs=load_data_outputs, queue=False, show_progress=True) \
                 .then(fn=style_sorter.sort_styles, inputs=style_selections, outputs=style_selections, queue=False, show_progress=False) \
-                .then(lambda: None, _js='()=>{refresh_style_localization();}') \
+                .then(fn=lambda: None, _js='()=>{refresh_style_localization();}') \
                 .then(inpaint_engine_state_change, inputs=[inpaint_engine_state] + enhance_inpaint_mode_ctrls, outputs=enhance_inpaint_engine_ctrls, queue=False, show_progress=False)
 
         performance_selection.change(lambda x: [gr.update(interactive=not flags.Performance.has_restricted_features(x))] * 11 +
@@ -1392,7 +1407,8 @@ with shared.gradio_root:
         ctrls += [disco_enabled, disco_scale, disco_preset, disco_transforms, disco_seed,
                   disco_clip_model, disco_animation_mode, disco_zoom_factor, disco_rotation_speed, 
                   disco_translation_x, disco_translation_y, disco_color_coherence,
-                  disco_saturation_boost, disco_contrast_boost, disco_symmetry_mode, disco_fractal_octaves]
+                  disco_saturation_boost, disco_contrast_boost, disco_symmetry_mode, disco_fractal_octaves,
+                  disco_guidance_steps, disco_cutn, disco_tv_scale, disco_range_scale]
 
         ctrls += ip_ctrls
         ctrls += [debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox,
