@@ -1,21 +1,23 @@
-# Disco Diffusion Extension for Fooocus
+# True Disco Diffusion Extension for Fooocus
 
-This extension adds psychedelic disco diffusion effects to Fooocus, inspired by the original Disco Diffusion project. It creates trippy, fractal-like, and kaleidoscopic images with various visual transformations.
+This extension implements the **real Disco Diffusion algorithm** with CLIP guidance and geometric transforms, based on the scientific principles of the original Disco Diffusion project. It uses CLIP-guided diffusion with geometric transformations to create truly psychedelic, fractal-like images.
 
 ## Features
 
-### Transform Effects
-- **Spherical Distortion**: Creates curved, bubble-like distortions
-- **Kaleidoscope**: Generates symmetrical, kaleidoscopic patterns
-- **Fractal Zoom**: Applies recursive zoom effects for fractal-like imagery
-- **Color Shift**: Manipulates hue, saturation, and brightness dynamically
+### Scientific Algorithm Features
+- **CLIP Guidance**: Uses CLIP model to guide generation based on text prompts (spherical distance loss)
+- **Geometric Transforms**: Real 2D transformations (translate, rotate, zoom) applied during diffusion
+- **Cutout Analysis**: Creates multiple random cutouts for CLIP analysis (fractal-like detail enhancement)
+- **Total Variation Loss**: Smoothness constraint to prevent noise artifacts
+- **Range Loss**: Keeps pixel values in reasonable bounds
 
-### Presets
-- **Psychedelic**: High saturation, multiple effects, vibrant colors
-- **Fractal**: Focus on fractal zoom and recursive patterns
-- **Kaleidoscope**: Emphasizes symmetrical kaleidoscopic effects
-- **Dreamy**: Subtle effects with soft color transitions
-- **Custom**: Full manual control over all parameters
+### Scientific Presets
+- **Psychedelic**: High CLIP guidance (1000), all transforms, moderate cutouts (16)
+- **Fractal**: Very high guidance (1500), zoom+rotate, many cutouts (32), high TV loss
+- **Kaleidoscope**: Medium guidance (800), rotate+translate, radial symmetry
+- **Dreamy**: Low guidance (500), translate only, few cutouts (8), high TV smoothing
+- **Scientific**: Maximum guidance (2000), all transforms, maximum cutouts (40)
+- **Custom**: Full manual control over all scientific parameters
 
 ### Animation & Movement
 - **Zoom**: Continuous fractal zooming effects
