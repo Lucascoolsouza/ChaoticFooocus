@@ -471,7 +471,9 @@ embeddings_downloads = get_config_item_or_set_default(
 )
 vae_downloads = get_config_item_or_set_default(
     key='vae_downloads',
-    default_value={},
+    default_value={
+        "sdxl_vae.safetensors": "https://huggingface.co/stabilityai/sdxl-vae/resolve/main/sdxl_vae.safetensors"
+    },
     validator=lambda x: isinstance(x, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in x.items()),
     expected_type=dict
 )
