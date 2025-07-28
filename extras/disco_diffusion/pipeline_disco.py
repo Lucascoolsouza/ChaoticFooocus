@@ -100,75 +100,141 @@ class DiscoTransforms:
     @staticmethod
     def color_shift(x, hue_shift=0.0, saturation_mult=1.0, brightness_mult=1.0):
         """Apply color transformations"""
-        # Convert RGB to HSV
-        r, g, b = x[:, 0:1], x[:, 1:2], x[:, 2:3]
+        # Ensure we have exactly 3 channels (RGB)
+        if x.shape[1] != 3:
+            return x
         
-        max_val, _ = torch.max(x, dim=1, keepdim=True)
-        min_val, _ = torch.min(x, dim=1, keepdim=True)
-        delta = max_val - min_val
-        
-        # Hue calculation
-        hue = torch.zeros_like(max_val)
-        mask = delta > 0
-        
-        r_mask = (max_val == r) & mask
-        g_mask = (max_val == g) & mask
-        b_mask = (max_val == b) & mask
-        
-        hue[r_mask] = ((g - b) / delta)[r_mask] % 6
-        hue[g_mask] = ((b - r) / delta + 2)[g_mask]
-        hue[b_mask] = ((r - g) / delta + 4)[b_mask]
-        hue = hue / 6
-        
-        # Saturation
-        saturation = torch.where(max_val > 0, delta / max_val, torch.zeros_like(max_val))
-        
-        # Value (brightness)
-        value = max_val
-        
-        # Apply transformations
-        hue = (hue + hue_shift) % 1.0
-        saturation = torch.clamp(saturation * saturation_mult, 0, 1)
-        value = torch.clamp(value * brightness_mult, 0, 1)
-        
-        # Convert back to RGB
-        c = value * saturation
-        x_prime = (hue * 6) % 6
-        x_val = c * (1 - torch.abs(x_prime % 2 - 1))
-        m = value - c
-        
-        r_new = torch.zeros_like(hue)
-        g_new = torch.zeros_like(hue)
-        b_new = torch.zeros_like(hue)
-        
-        mask0 = (x_prime >= 0) & (x_prime < 1)
-        mask1 = (x_prime >= 1) & (x_prime < 2)
-        mask2 = (x_prime >= 2) & (x_prime < 3)
-        mask3 = (x_prime >= 3) & (x_prime < 4)
-        mask4 = (x_prime >= 4) & (x_prime < 5)
-        mask5 = (x_prime >= 5) & (x_prime < 6)
-        
-        r_new[mask0] = c[mask0]
-        g_new[mask0] = x_val[mask0]
-        
-        r_new[mask1] = x_val[mask1]
-        g_new[mask1] = c[mask1]
-        
-        g_new[mask2] = c[mask2]
-        b_new[mask2] = x_val[mask2]
-        
-        g_new[mask3] = x_val[mask3]
-        b_new[mask3] = c[mask3]
-        
-        r_new[mask4] = x_val[mask4]
-        b_new[mask4] = c[mask4]
-        
-        r_new[mask5] = c[mask5]
-        b_new[mask5] = x_val[mask5]
-        
-        rgb_new = torch.cat([r_new + m, g_new + m, b_new + m], dim=1)
-        
-        return torch.clamp(rgb_new, 0, 1)
+        try:
+            # Convert RGB to HSV
+            r, g, b = x[:, 0:1], x[:, 1:2], x[:, 2:3]
+            
+            # Clamp input values to valid range
+            r = torch.clamp(r, 0, 1)
+            g = torch.clamp(g, 0, 1)
+            b = torch.clamp(b, 0, 1)
+            
+            max_val, _ = torch.max(torch.cat([r, g, b], dim=1), dim=1, keepdim=True)
+            min_val, _ = torch.min(torch.cat([r, g, b], dim=1), dim=1, keepdim=True)
+            delta = max_val - min_val
+            
+            # Hue calculation with epsilon to avoid division by zero
+            eps = 1e-8
+            hue = torch.zeros_like(max_val)
+            mask = delta > eps
+            
+            r_mask = (max_val == r) & mask
+            g_mask = (max_val == g) & mask
+            b_mask = (max_val == b) & mask
+            
+            hue[r_mask] = ((g - b) / (delta + eps))[r_mask] % 6
+            hue[g_mask] = ((b - r) / (delta + eps) + 2)[g_mask]
+            hue[b_mask] = ((r - g) / (delta + eps) + 4)[b_mask]
+            hue = hue / 6
+            
+            # Saturation
+            saturation = torch.where(max_val > eps, delta / (max_val + eps), torch.zeros_like(max_val))
+            
+            # Value (brightness)
+            value = max_val
+            
+            # Apply transformations
+            hue = (hue + hue_shift) % 1.0
+            saturation = torch.clamp(saturation * saturation_mult, 0, 1)
+            value = torch.clamp(value * brightness_mult, 0, 1)
+            
+            # Convert back to RGB
+            c = value * saturation
+            x_prime = (hue * 6) % 6
+            x_val = c * (1 - torch.abs(x_prime % 2 - 1))
+            m = value - c
+            
+            r_new = torch.zeros_like(hue)
+            g_new = torch.zeros_like(hue)
+            b_new = torch.zeros_like(hue)
+            
+            mask0 = (x_prime >= 0) & (x_prime < 1)
+            mask1 = (x_prime >= 1) & (x_prime < 2)
+            mask2 = (x_prime >= 2) & (x_prime < 3)
+            mask3 = (x_prime >= 3) & (x_prime < 4)
+            mask4 = (x_prime >= 4) & (x_prime < 5)
+            mask5 = (x_prime >= 5) & (x_prime < 6)
+            
+            r_new[mask0] = c[mask0]
+            g_new[mask0] = x_val[mask0]
+            
+            r_new[mask1] = x_val[mask1]
+            g_new[mask1] = c[mask1]
+            
+            g_new[mask2] = c[mask2]
+            b_new[mask2] = x_val[mask2]
+            
+            g_new[mask3] = x_val[mask3]
+            b_new[mask3] = c[mask3]
+            
+            r_new[mask4] = x_val[mask4]
+            b_new[mask4] = c[mask4]
+            
+            r_new[mask5] = c[mask5]
+            b_new[mask5] = x_val[mask5]
+            
+            rgb_new = torch.cat([r_new + m, g_new + m, b_new + m], dim=1)
+            
+            return torch.clamp(rgb_new, 0, 1)
+    
+    @staticmethod
+    def latent_color_mix(x, mix_strength=0.3, step=0):
+        """Apply color mixing in latent space for psychedelic effects"""
+        try:
+            b, c, h, w = x.shape
+            
+            # Create sinusoidal mixing patterns
+            phase = step * 0.1
+            
+            # Mix channels in a rotating pattern
+            if c >= 4:  # Standard latent space has 4 channels
+                # Create rotation matrix for channel mixing
+                angle = mix_strength * math.sin(phase)
+                cos_a, sin_a = math.cos(angle), math.sin(angle)
+                
+                # Mix first two channels
+                ch0, ch1 = x[:, 0:1], x[:, 1:2]
+                new_ch0 = cos_a * ch0 - sin_a * ch1
+                new_ch1 = sin_a * ch0 + cos_a * ch1
+                
+                # Mix last two channels with different phase
+                angle2 = mix_strength * math.sin(phase + math.pi/2)
+                cos_a2, sin_a2 = math.cos(angle2), math.sin(angle2)
+                
+                ch2, ch3 = x[:, 2:3], x[:, 3:4]
+                new_ch2 = cos_a2 * ch2 - sin_a2 * ch3
+                new_ch3 = sin_a2 * ch2 + cos_a2 * ch3
+                
+                result = torch.cat([new_ch0, new_ch1, new_ch2, new_ch3], dim=1)
+                
+                # Add any remaining channels unchanged
+                if c > 4:
+                    result = torch.cat([result, x[:, 4:]], dim=1)
+                
+                return result
+            else:
+                # For other channel counts, apply simple mixing
+                result = x.clone()
+                for i in range(min(c-1, 2)):
+                    angle = mix_strength * math.sin(phase + i * math.pi/3)
+                    cos_a, sin_a = math.cos(angle), math.sin(angle)
+                    
+                    ch_a, ch_b = result[:, i:i+1], result[:, i+1:i+2]
+                    result[:, i:i+1] = cos_a * ch_a - sin_a * ch_b
+                    result[:, i+1:i+2] = sin_a * ch_a + cos_a * ch_b
+                
+                return result
+                
+        except Exception as e:
+            return x
+            
+        except Exception as e:
+            # If color shift fails, return original
+            return x
 
 class DiscoSampler:
     """
@@ -301,7 +367,7 @@ class DiscoSampler:
     
     def _apply_disco_effects(self, x, timestep):
         """Apply disco diffusion effects to the tensor"""
-        if x.dim() != 4 or x.shape[1] < 3:
+        if x.dim() != 4:
             return x
         
         try:
@@ -311,6 +377,7 @@ class DiscoSampler:
             # Apply transforms based on configuration
             result = x.clone()
             
+            # Only apply spatial transforms (spherical, kaleidoscope, fractal_zoom) to all channels
             if 'spherical' in self.disco_transforms:
                 strength = self.disco_scale * (0.3 + 0.7 * progress)
                 result = DiscoTransforms.spherical_distortion(result, strength)
@@ -326,11 +393,12 @@ class DiscoSampler:
                 center_y = self.disco_translation_y * math.cos(self.step_count * 0.05)
                 result = DiscoTransforms.fractal_zoom(result, zoom, center_x, center_y)
             
+            # Apply latent space color mixing for psychedelic effects
             if 'color_shift' in self.disco_transforms:
-                hue_shift = 0.1 * math.sin(self.step_count * 0.1) * self.disco_scale
-                sat_mult = self.disco_saturation_boost
-                bright_mult = self.disco_contrast_boost
-                result = DiscoTransforms.color_shift(result, hue_shift, sat_mult, bright_mult)
+                mix_strength = self.disco_scale * 0.3 * math.sin(self.step_count * 0.1)
+                result = DiscoTransforms.latent_color_mix(result, 
+                                                        mix_strength=abs(mix_strength),
+                                                        step=self.step_count)
             
             # Apply symmetry if enabled
             if self.disco_symmetry_mode == 'horizontal':
