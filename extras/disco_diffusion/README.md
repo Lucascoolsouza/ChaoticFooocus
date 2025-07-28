@@ -5,6 +5,7 @@ This extension implements the **real Disco Diffusion algorithm** with CLIP guida
 ## Features
 
 ### Scientific Algorithm Features
+
 - **CLIP Guidance**: Uses CLIP model to guide generation based on text prompts (spherical distance loss)
 - **Geometric Transforms**: Real 2D transformations (translate, rotate, zoom) applied during diffusion
 - **Cutout Analysis**: Creates multiple random cutouts for CLIP analysis (fractal-like detail enhancement)
@@ -12,6 +13,7 @@ This extension implements the **real Disco Diffusion algorithm** with CLIP guida
 - **Range Loss**: Keeps pixel values in reasonable bounds
 
 ### Scientific Presets
+
 - **Psychedelic**: High CLIP guidance (1000), all transforms, moderate cutouts (16)
 - **Fractal**: Very high guidance (1500), zoom+rotate, many cutouts (32), high TV loss
 - **Kaleidoscope**: Medium guidance (800), rotate+translate, radial symmetry
@@ -20,12 +22,14 @@ This extension implements the **real Disco Diffusion algorithm** with CLIP guida
 - **Custom**: Full manual control over all scientific parameters
 
 ### Animation & Movement
+
 - **Zoom**: Continuous fractal zooming effects
 - **Rotate**: Rotating kaleidoscope patterns
 - **Translate**: Moving/shifting effects
 - **None**: Static effects only
 
 ### Visual Controls
+
 - **Disco Scale**: Overall strength of all effects (0.0 - 1.0)
 - **Color Coherence**: How much to preserve original colors (0.0 = full transformation, 1.0 = original colors)
 - **Saturation Boost**: Increase color saturation (0.5 - 2.0)
@@ -50,15 +54,18 @@ This extension implements the **real Disco Diffusion algorithm** with CLIP guida
 ## Technical Details
 
 ### How It Works
+
 The extension patches the sampling function to apply visual transformations during the diffusion process. Effects are applied at specific steps during generation, creating psychedelic transformations that evolve with the image.
 
 ### Transform Pipeline
+
 1. **Spherical Distortion**: Applies coordinate transformation using polar mapping
 2. **Kaleidoscope**: Uses polar coordinates and modular arithmetic for symmetry
 3. **Fractal Zoom**: Implements recursive coordinate scaling
 4. **Color Shift**: Converts RGB to HSV for hue/saturation manipulation
 
 ### Integration Points
+
 - Patches `ldm_patched.modules.samplers.sampling_function`
 - Integrates with Fooocus pipeline in `modules.default_pipeline.process_diffusion`
 - Automatically activates/deactivates with generation lifecycle
@@ -66,6 +73,7 @@ The extension patches the sampling function to apply visual transformations duri
 ## Examples
 
 ### Basic Usage
+
 ```python
 # Enable disco with psychedelic preset
 disco_enabled = True
@@ -74,6 +82,7 @@ disco_scale = 0.7
 ```
 
 ### Custom Configuration
+
 ```python
 # Custom disco setup
 disco_enabled = True
@@ -95,12 +104,15 @@ disco_symmetry_mode = 'radial'
 ## Troubleshooting
 
 ### Common Issues
+
 - **No Effect Visible**: Increase disco_scale or check that disco_enabled is True
 - **Too Intense**: Reduce disco_scale or increase disco_color_coherence
 - **Performance Issues**: Reduce number of transforms or fractal_octaves
 
 ### Debug Information
+
 The extension prints status messages to console:
+
 ```
 [Disco] Activating Disco Diffusion with scale 0.5
 [Disco] Successfully patched sampling function
@@ -108,6 +120,7 @@ The extension prints status messages to console:
 ```
 
 ## File Structure
+
 ```
 extras/disco_diffusion/
 ├── __init__.py              # Package initialization
@@ -117,20 +130,25 @@ extras/disco_diffusion/
 ```
 
 ## Dependencies
+
 - PyTorch (for tensor operations)
 - Standard Fooocus dependencies
 - No additional packages required
 
 ## Performance Notes
+
 - Disco effects add computational overhead during sampling
 - More complex transforms (fractal_zoom, kaleidoscope) are more expensive
 - Effects are applied selectively at specific sampling steps to balance quality/performance
 
 ## Contributing
+
 To add new transforms:
+
 1. Add transform function to `DiscoTransforms` class in `pipeline_disco.py`
 2. Update `disco_transforms` list in `modules/flags.py`
 3. Add preset configurations in `get_disco_presets()`
 
 ## License
+
 This extension follows the same license as Fooocus.

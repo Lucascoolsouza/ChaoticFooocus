@@ -201,6 +201,7 @@ path_fooocus_expansion = get_dir_or_set_default('path_fooocus_expansion', '../mo
 path_wildcards = get_dir_or_set_default('path_wildcards', '../wildcards/')
 path_safety_checker = get_dir_or_set_default('path_safety_checker', '../models/safety_checker/')
 path_sam = get_dir_or_set_default('path_sam', '../models/sam/')
+path_clip = get_dir_or_set_default('path_clip', '../models/clip/')
 path_outputs = get_path_output()
 
 
@@ -1087,3 +1088,76 @@ def downloading_sam_vit_h():
         file_name='sam_vit_h_4b8939.pth'
     )
     return os.path.join(path_sam, 'sam_vit_h_4b8939.pth')
+
+
+def downloading_clip_vit_b_32():
+    """Download CLIP ViT-B/32 model for Disco Diffusion"""
+    # Download the visual encoder
+    load_file_from_url(
+        url='https://huggingface.co/openai/clip-vit-base-patch32/resolve/main/pytorch_model.bin',
+        model_dir=path_clip,
+        file_name='clip_vit_b_32_visual.bin'
+    )
+    
+    # Download the text encoder
+    load_file_from_url(
+        url='https://huggingface.co/openai/clip-vit-base-patch32/resolve/main/config.json',
+        model_dir=path_clip,
+        file_name='clip_vit_b_32_config.json'
+    )
+    
+    # Download tokenizer files
+    load_file_from_url(
+        url='https://huggingface.co/openai/clip-vit-base-patch32/resolve/main/tokenizer.json',
+        model_dir=path_clip,
+        file_name='clip_vit_b_32_tokenizer.json'
+    )
+    
+    load_file_from_url(
+        url='https://huggingface.co/openai/clip-vit-base-patch32/resolve/main/tokenizer_config.json',
+        model_dir=path_clip,
+        file_name='clip_vit_b_32_tokenizer_config.json'
+    )
+    
+    return os.path.join(path_clip, 'clip_vit_b_32_visual.bin')
+
+
+def downloading_clip_vit_l_14():
+    """Download CLIP ViT-L/14 model for higher quality Disco Diffusion"""
+    # Download the visual encoder
+    load_file_from_url(
+        url='https://huggingface.co/openai/clip-vit-large-patch14/resolve/main/pytorch_model.bin',
+        model_dir=path_clip,
+        file_name='clip_vit_l_14_visual.bin'
+    )
+    
+    # Download config
+    load_file_from_url(
+        url='https://huggingface.co/openai/clip-vit-large-patch14/resolve/main/config.json',
+        model_dir=path_clip,
+        file_name='clip_vit_l_14_config.json'
+    )
+    
+    return os.path.join(path_clip, 'clip_vit_l_14_visual.bin')
+
+
+def downloading_clip_for_disco():
+    """Download CLIP model specifically for Disco Diffusion (uses ViT-B/32 by default)"""
+    print("[Disco] Downloading CLIP model for scientific Disco Diffusion...")
+    
+    # Try to download a pre-converted CLIP model that works with the original CLIP library
+    try:
+        # This is a direct download of the CLIP model in the format expected by the clip library
+        load_file_from_url(
+            url='https://openaipublic.azureedge.net/clip/models/40d365715913c9da98579312b702a82c18be219cc2a73407c4526f58eba950af/ViT-B-32.pt',
+            model_dir=path_clip,
+            file_name='ViT-B-32.pt'
+        )
+        
+        print("[Disco] CLIP ViT-B/32 model downloaded successfully")
+        return os.path.join(path_clip, 'ViT-B-32.pt')
+        
+    except Exception as e:
+        print(f"[Disco] Failed to download CLIP model: {e}")
+        print("[Disco] You can manually install CLIP with: pip install git+https://github.com/openai/CLIP.git")
+        return None

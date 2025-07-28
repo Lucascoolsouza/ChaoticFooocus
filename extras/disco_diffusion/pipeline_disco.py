@@ -580,14 +580,17 @@ def _init_clip_impl(self):
         """Initialize CLIP model for guidance"""
         try:
             import clip
-            self.clip_model, self.clip_preprocess = clip.load("ViT-B/32", device="cuda")
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.clip_model, self.clip_preprocess = clip.load("ViT-B/32", device=device)
             self.clip_model.eval()
-            print("[Disco] CLIP model loaded successfully")
+            print(f"[Disco] CLIP model loaded successfully on {device}")
         except ImportError:
-            print("[Disco] CLIP not available, using fallback")
+            print("[Disco] CLIP not available. Install with: pip install git+https://github.com/openai/CLIP.git")
+            print("[Disco] Using geometric transforms only (still creates psychedelic effects)")
             self.clip_model = None
         except Exception as e:
             print(f"[Disco] Failed to load CLIP: {e}")
+            print("[Disco] Using geometric transforms only")
             self.clip_model = None
 def _get_alpha_t_impl(self, timestep):
     """Get alpha_t for DDIM sampling"""
