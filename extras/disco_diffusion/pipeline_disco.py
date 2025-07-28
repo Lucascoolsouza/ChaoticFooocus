@@ -105,7 +105,8 @@ def run_clip_guidance_loop(
             text_embeds = F.normalize(text_embeds, dim=-1)
 
         # 2. Set up latent for optimization
-        latent_tensor = latent_tensor.detach().clone().to(device).requires_grad_(True)
+        latent_tensor = latent_tensor.detach().clone().to(device)
+        latent_tensor.requires_grad_(True)  # Ensure gradients are tracked
         optimizer = torch.optim.Adam([latent_tensor], lr=0.05)
         
         # 3. Get cutout function
@@ -117,8 +118,9 @@ def run_clip_guidance_loop(
         for i in range(steps):
             optimizer.zero_grad()
             
-            # Decode latent to image for CLIP
+            # Decode latent to image for CLIP - ensure gradients are maintained
             image_for_clip = vae.decode(latent_tensor)
+            image_for_clip = image_for_clip.to(device)
             # Permute dimensions to (B, C, H, W) if not already
             if image_for_clip.shape[-1] <= 4 and image_for_clip.shape[1] > 4: # Heuristic: if last dim is small (channels) and second dim is large (height/width)
                 image_for_clip = image_for_clip.permute(0, 3, 1, 2) # Assuming (B, H, W, C) -> (B, C, H, W)
