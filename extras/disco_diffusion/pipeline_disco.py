@@ -108,7 +108,7 @@ def run_clip_guidance_loop(
             
             # Decode latent to image for CLIP
             image_for_clip = latent_tensor
-            image_for_clip = vae.decode(image_for_clip).sample
+            image_for_clip = vae.decode(image_for_clip)
             image_for_clip = (image_for_clip / 2 + 0.5).clamp(0, 1)
             
             # Create cutouts
