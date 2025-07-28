@@ -192,6 +192,42 @@ class AsyncTask:
         
         print(f"[DEBUG] NAG params: enabled={self.nag_enabled}, scale={self.nag_scale}, tau={self.nag_tau}, alpha={self.nag_alpha}")
 
+        # Disco Diffusion parameters (popped in reverse order from webui.py)
+        print(f"[DEBUG] Args remaining before Disco: {len(args)}")
+        
+        # Pop all 15 Disco parameters
+        disco_params = []
+        try:
+            for i in range(15):
+                param = args.pop()
+                disco_params.append(param)
+                print(f"[DEBUG] Popped Disco param {i}: {param} (type: {type(param)})")
+        except IndexError as e:
+            print(f"[DEBUG] Error popping Disco parameter {i}: {e}")
+            print(f"[DEBUG] Args remaining: {len(args)}")
+            # Fill remaining with defaults
+            while len(disco_params) < 15:
+                disco_params.append(None)
+        
+        # Assign in correct order matching webui ctrls order with defaults
+        self.disco_enabled = disco_params[0] if disco_params[0] is not None else False
+        self.disco_scale = disco_params[1] if disco_params[1] is not None else 0.5
+        self.disco_preset = disco_params[2] if disco_params[2] is not None else 'custom'
+        self.disco_transforms = disco_params[3] if disco_params[3] is not None else ['spherical', 'color_shift']
+        self.disco_seed = disco_params[4] if disco_params[4] is not None else None
+        self.disco_animation_mode = disco_params[5] if disco_params[5] is not None else 'none'
+        self.disco_zoom_factor = disco_params[6] if disco_params[6] is not None else 1.02
+        self.disco_rotation_speed = disco_params[7] if disco_params[7] is not None else 0.1
+        self.disco_translation_x = disco_params[8] if disco_params[8] is not None else 0.0
+        self.disco_translation_y = disco_params[9] if disco_params[9] is not None else 0.0
+        self.disco_color_coherence = disco_params[10] if disco_params[10] is not None else 0.5
+        self.disco_saturation_boost = disco_params[11] if disco_params[11] is not None else 1.2
+        self.disco_contrast_boost = disco_params[12] if disco_params[12] is not None else 1.1
+        self.disco_symmetry_mode = disco_params[13] if disco_params[13] is not None else 'none'
+        self.disco_fractal_octaves = disco_params[14] if disco_params[14] is not None else 3
+        
+        print(f"[DEBUG] Disco params: enabled={self.disco_enabled}, scale={self.disco_scale}, preset={self.disco_preset}")
+
         self.cn_tasks = {x: [] for x in ip_list}
         for _ in range(modules.config.default_controlnet_image_count):
             cn_img = args.pop()
@@ -447,7 +483,23 @@ def worker():
             nag_tau=async_task.nag_tau,
             nag_alpha=async_task.nag_alpha,
             nag_negative_prompt=async_task.nag_negative_prompt,
-            nag_end=async_task.nag_end
+            nag_end=async_task.nag_end,
+            
+            disco_enabled=async_task.disco_enabled,
+            disco_scale=async_task.disco_scale,
+            disco_preset=async_task.disco_preset,
+            disco_transforms=async_task.disco_transforms,
+            disco_seed=async_task.disco_seed,
+            disco_animation_mode=async_task.disco_animation_mode,
+            disco_zoom_factor=async_task.disco_zoom_factor,
+            disco_rotation_speed=async_task.disco_rotation_speed,
+            disco_translation_x=async_task.disco_translation_x,
+            disco_translation_y=async_task.disco_translation_y,
+            disco_color_coherence=async_task.disco_color_coherence,
+            disco_saturation_boost=async_task.disco_saturation_boost,
+            disco_contrast_boost=async_task.disco_contrast_boost,
+            disco_symmetry_mode=async_task.disco_symmetry_mode,
+            disco_fractal_octaves=async_task.disco_fractal_octaves
         )
 
         if imgs is None:

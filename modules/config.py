@@ -736,6 +736,44 @@ default_describe_content_type = get_config_item_or_set_default(
     expected_type=list
 )
 
+# Disco Diffusion defaults
+default_disco_enabled = get_config_item_or_set_default(
+    key='default_disco_enabled',
+    default_value=False,
+    validator=lambda x: isinstance(x, bool),
+    expected_type=bool
+)
+default_disco_scale = get_config_item_or_set_default(
+    key='default_disco_scale',
+    default_value=0.5,
+    validator=lambda x: isinstance(x, numbers.Number) and 0 <= x <= 1,
+    expected_type=numbers.Number
+)
+default_disco_preset = get_config_item_or_set_default(
+    key='default_disco_preset',
+    default_value='psychedelic',
+    validator=lambda x: x in modules.flags.disco_presets,
+    expected_type=str
+)
+default_disco_transforms = get_config_item_or_set_default(
+    key='default_disco_transforms',
+    default_value=['spherical', 'color_shift'],
+    validator=lambda x: isinstance(x, list) and all(t in modules.flags.disco_transforms for t in x),
+    expected_type=list
+)
+default_disco_animation_mode = get_config_item_or_set_default(
+    key='default_disco_animation_mode',
+    default_value='none',
+    validator=lambda x: x in modules.flags.disco_animation_modes,
+    expected_type=str
+)
+default_disco_symmetry_mode = get_config_item_or_set_default(
+    key='default_disco_symmetry_mode',
+    default_value='none',
+    validator=lambda x: x in modules.flags.disco_symmetry_modes,
+    expected_type=str
+)
+
 config_dict["default_loras"] = default_loras = default_loras[:default_max_lora_number] + [[True, 'None', 1.0] for _ in range(default_max_lora_number - len(default_loras))]
 
 # mapping config to meta parameter

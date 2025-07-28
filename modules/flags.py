@@ -112,6 +112,13 @@ inpaint_mask_models = ['u2net', 'u2netp', 'u2net_human_seg', 'u2net_cloth_seg', 
 
 # Background removal options for enhance
 bg_removal_models = ['u2net', 'u2netp', 'u2net_human_seg', 'silueta', 'isnet-general-use']
+
+# Disco Diffusion options
+disco_presets = ['custom', 'psychedelic', 'fractal', 'kaleidoscope', 'dreamy']
+disco_transforms = ['spherical', 'kaleidoscope', 'fractal_zoom', 'color_shift']
+disco_animation_modes = ['none', 'zoom', 'rotate', 'translate']
+disco_symmetry_modes = ['none', 'horizontal', 'vertical', 'radial']
+disco_noise_schedules = ['linear', 'cosine', 'exponential']
 inpaint_mask_cloth_category = ['full', 'upper', 'lower']
 inpaint_mask_sam_model = ['vit_b', 'vit_l', 'vit_h']
 

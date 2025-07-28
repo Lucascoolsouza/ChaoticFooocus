@@ -900,6 +900,110 @@ with shared.gradio_root:
                                              outputs=nag_status,
                                              queue=False, show_progress=False)
                 
+                with gr.Accordion(label='Disco Diffusion (Psychedelic Effects)', open=False):
+                    disco_enabled = gr.Checkbox(label='Enable Disco Diffusion', value=False,
+                                               info='Enable psychedelic disco diffusion effects')
+                    disco_scale = gr.Slider(label='Disco Scale', minimum=0.0, maximum=1.0, step=0.01,
+                                           value=0.5, visible=False,
+                                           info='Overall strength of disco effects')
+                    disco_preset = gr.Dropdown(label='Disco Preset', 
+                                              choices=['custom', 'psychedelic', 'fractal', 'kaleidoscope', 'dreamy'],
+                                              value='psychedelic', visible=False,
+                                              info='Predefined disco effect combinations')
+                    disco_transforms = gr.CheckboxGroup(label='Transform Effects', 
+                                                       choices=['spherical', 'kaleidoscope', 'fractal_zoom', 'color_shift'], 
+                                                       value=['spherical', 'color_shift'], visible=False,
+                                                       info='Which transformation effects to apply')
+                    disco_seed = gr.Number(label='Disco Seed', value=None, visible=False,
+                                          info='Seed for disco effects (leave empty for random)')
+                    
+                    with gr.Accordion(label='Animation & Movement', open=False, visible=False) as disco_animation_accordion:
+                        disco_animation_mode = gr.Dropdown(label='Animation Mode', 
+                                                          choices=['none', 'zoom', 'rotate', 'translate'],
+                                                          value='none',
+                                                          info='Type of animation effect')
+                        disco_zoom_factor = gr.Slider(label='Zoom Factor', minimum=1.0, maximum=1.1, step=0.001,
+                                                     value=1.02,
+                                                     info='Zoom intensity for fractal effects')
+                        disco_rotation_speed = gr.Slider(label='Rotation Speed', minimum=0.0, maximum=1.0, step=0.01,
+                                                         value=0.1,
+                                                         info='Speed of rotation effects')
+                        disco_translation_x = gr.Slider(label='Translation X', minimum=-1.0, maximum=1.0, step=0.01,
+                                                        value=0.0,
+                                                        info='Horizontal movement amplitude')
+                        disco_translation_y = gr.Slider(label='Translation Y', minimum=-1.0, maximum=1.0, step=0.01,
+                                                        value=0.0,
+                                                        info='Vertical movement amplitude')
+                    
+                    with gr.Accordion(label='Color & Visual Effects', open=False, visible=False) as disco_visual_accordion:
+                        disco_color_coherence = gr.Slider(label='Color Coherence', minimum=0.0, maximum=1.0, step=0.01,
+                                                          value=0.5,
+                                                          info='How much to preserve original colors (higher = more original)')
+                        disco_saturation_boost = gr.Slider(label='Saturation Boost', minimum=0.5, maximum=2.0, step=0.01,
+                                                           value=1.2,
+                                                           info='Increase color saturation')
+                        disco_contrast_boost = gr.Slider(label='Contrast Boost', minimum=0.5, maximum=2.0, step=0.01,
+                                                         value=1.1,
+                                                         info='Increase image contrast')
+                        disco_symmetry_mode = gr.Dropdown(label='Symmetry Mode', 
+                                                         choices=['none', 'horizontal', 'vertical', 'radial'],
+                                                         value='none',
+                                                         info='Apply symmetry effects')
+                        disco_fractal_octaves = gr.Slider(label='Fractal Octaves', minimum=1, maximum=6, step=1,
+                                                          value=3,
+                                                          info='Complexity of fractal effects')
+                    
+                    disco_status = gr.Textbox(label='Disco Status', interactive=False, 
+                                             value='Disco Diffusion: Disabled', visible=False)
+                    
+                    def update_disco_visibility(enabled):
+                        return [gr.update(visible=enabled)] * 6
+                    
+                    def update_disco_preset(preset):
+                        if preset == 'custom':
+                            return gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+                        
+                        from extras.disco_diffusion import get_disco_presets
+                        presets = get_disco_presets()
+                        
+                        if preset in presets:
+                            p = presets[preset]
+                            return (gr.update(value=p.get('disco_scale', 0.5)), 
+                                   gr.update(value=p.get('disco_transforms', ['spherical', 'color_shift'])),
+                                   gr.update(value=p.get('disco_saturation_boost', 1.2)),
+                                   gr.update(value=p.get('disco_contrast_boost', 1.1)),
+                                   gr.update(value=p.get('disco_symmetry_mode', 'none')))
+                        
+                        return gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+                    
+                    def update_disco_status(enabled, scale, preset, transforms, saturation, contrast):
+                        if not enabled:
+                            return "Disco Diffusion: Disabled"
+                        
+                        transform_str = ", ".join(transforms) if transforms else "none"
+                        return f"Disco: {preset.title()} | Scale: {scale} | Effects: {transform_str} | Sat: {saturation} | Con: {contrast}"
+                    
+                    disco_enabled.change(update_disco_visibility, 
+                                        inputs=disco_enabled,
+                                        outputs=[disco_scale, disco_preset, disco_transforms, disco_seed, 
+                                                disco_animation_accordion, disco_visual_accordion],
+                                        queue=False, show_progress=False)
+                    
+                    disco_preset.change(update_disco_preset,
+                                       inputs=disco_preset,
+                                       outputs=[disco_scale, disco_transforms, disco_saturation_boost, 
+                                               disco_contrast_boost, disco_symmetry_mode],
+                                       queue=False, show_progress=False)
+                    
+                    # Update status when any disco parameter changes
+                    disco_inputs = [disco_enabled, disco_scale, disco_preset, disco_transforms, 
+                                   disco_saturation_boost, disco_contrast_boost]
+                    for input_component in disco_inputs:
+                        input_component.change(update_disco_status,
+                                             inputs=disco_inputs,
+                                             outputs=disco_status,
+                                             queue=False, show_progress=False)
+                
                 with gr.Accordion(label='Detail Enhancement', open=False):
                     detail_daemon_enabled = gr.Checkbox(label='Enable Detail Daemon', value=False,
                                                         info='Apply detail enhancement to generated images')
@@ -1278,6 +1382,12 @@ with shared.gradio_root:
         
         # NAG controls
         ctrls += [nag_enabled, nag_scale, nag_tau, nag_alpha, nag_negative_prompt, nag_end]
+        
+        # Disco Diffusion controls
+        ctrls += [disco_enabled, disco_scale, disco_preset, disco_transforms, disco_seed,
+                  disco_animation_mode, disco_zoom_factor, disco_rotation_speed, 
+                  disco_translation_x, disco_translation_y, disco_color_coherence,
+                  disco_saturation_boost, disco_contrast_boost, disco_symmetry_mode, disco_fractal_octaves]
 
         ctrls += ip_ctrls
         ctrls += [debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox,
