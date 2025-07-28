@@ -9,6 +9,7 @@ import random
 from typing import Optional, List, Tuple
 import logging
 import clip
+from torchvision import transforms
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +114,23 @@ def run_clip_guidance_loop(
             
             # Create cutouts
             cutouts = DiscoTransforms.make_cutouts(image_for_clip, cut_size, cutn)
-            processed_cutouts = clip_preprocess(cutouts).to(device)
+            # Convert cutouts tensor to a list of PIL Images
+            to_pil_image = transforms.ToPILImage()
+            pil_cutouts = [to_pil_image(cutout) for cutout in cutouts]
+
+            # Process each PIL Image with clip_preprocess
+            processed_pil_cutouts = [clip_preprocess(pil_img) for pil_img in pil_cutouts]
+
+            # Stack the processed PIL Images (now tensors) back into a single tensor
+            # Convert cutouts tensor to a list of PIL Images
+            to_pil_image = transforms.ToPILImage()
+            pil_cutouts = [to_pil_image(cutout) for cutout in cutouts]
+
+            # Process each PIL Image with clip_preprocess
+            processed_pil_cutouts = [clip_preprocess(pil_img) for pil_img in pil_cutouts]
+
+            # Stack the processed PIL Images (now tensors) back into a single tensor
+            processed_cutouts = torch.stack(processed_pil_cutouts).to(device)
             
             # Get image embeddings
             image_embeds = clip_model.encode_image(processed_cutouts).float()
