@@ -119,7 +119,13 @@ def run_clip_guidance_loop(
             cutouts = DiscoTransforms.make_cutouts(image_for_clip, cut_size, cutn)
             # Convert cutouts tensor to a list of PIL Images
             to_pil_image = transforms.ToPILImage()
-            pil_cutouts = [to_pil_image(cutout) for cutout in cutouts]
+            pil_cutouts = []
+            for cutout in cutouts:
+                # Ensure cutout has at most 4 channels for PIL conversion
+                if cutout.shape[0] > 4:
+                    # Take the first 3 channels as a workaround
+                    cutout = cutout[:3, :, :]
+                pil_cutouts.append(to_pil_image(cutout))
 
             # Process each PIL Image with clip_preprocess
             processed_pil_cutouts = [clip_preprocess(pil_img) for pil_img in pil_cutouts]
