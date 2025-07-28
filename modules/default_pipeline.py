@@ -424,6 +424,8 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             }
             
             disco_integration.initialize_disco(**disco_settings)
+            # Ensure initial_latent is on the correct device before passing to Disco Diffusion
+            initial_latent['samples'] = initial_latent['samples'].to(ldm_patched.modules.model_management.get_torch_device())
             initial_latent = disco_integration.run_disco_guidance(initial_latent, final_vae, original_prompt, async_task=async_task)
             
         except Exception as e:

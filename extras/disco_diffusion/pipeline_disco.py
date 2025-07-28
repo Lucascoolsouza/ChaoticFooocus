@@ -111,8 +111,9 @@ def run_clip_guidance_loop(
             optimizer.zero_grad()
             
             # Decode latent to image for CLIP
-            image_for_clip = latent_tensor
-            image_for_clip = vae.decode(image_for_clip)
+            # Wrap latent_tensor in a dictionary as vae.decode expects
+            image_for_clip_dict = {'samples': latent_tensor.to(device)}
+            image_for_clip = vae.decode(image_for_clip_dict)
             # Permute dimensions to (B, C, H, W) if not already
             if image_for_clip.shape[-1] <= 4 and image_for_clip.shape[1] > 4: # Heuristic: if last dim is small (channels) and second dim is large (height/width)
                 image_for_clip = image_for_clip.permute(0, 3, 1, 2) # Assuming (B, H, W, C) -> (B, C, H, W)
@@ -126,21 +127,16 @@ def run_clip_guidance_loop(
             
             # Create cutouts
             cutouts = DiscoTransforms.make_cutouts(image_for_clip, cut_size, cutn)
-            # Convert cutouts tensor to a list of PIL Images
-            to_pil_image = transforms.ToPILImage()
-            pil_cutouts = []
-            for cutout in cutouts:
-                # Ensure cutout has at most 4 channels for PIL conversion
-                if cutout.shape[0] > 4:
-                    # Take the first 3 channels as a workaround
-                    cutout = cutout[:3, :, :]
-                pil_cutouts.append(to_pil_image(cutout))
 
-            # Process each PIL Image with clip_preprocess
-            processed_pil_cutouts = [clip_preprocess(pil_img) for pil_img in pil_cutouts]
+            # Apply CLIP preprocessing directly on tensors
+            # Resize to CLIP input resolution
+            processed_cutouts = F.interpolate(cutouts, size=cut_size, mode='bicubic', align_corners=False)
 
-            # Stack the processed PIL Images (now tensors) back into a single tensor
-            processed_cutouts = torch.stack(processed_pil_cutouts).to(device)
+            # Normalize (CLIP's specific normalization)
+            # Mean and Std for CLIP models (common values)
+            clip_mean = torch.tensor([0.48145466, 0.4578275, 0.40821073], device=device).view(1, -1, 1, 1)
+            clip_std = torch.tensor([0.26862954, 0.26130258, 0.27577711], device=device).view(1, -1, 1, 1)
+            processed_cutouts = (processed_cutouts - clip_mean) / clip_std
             
             # Get image embeddings
             image_embeds = clip_model.encode_image(processed_cutouts).float()
