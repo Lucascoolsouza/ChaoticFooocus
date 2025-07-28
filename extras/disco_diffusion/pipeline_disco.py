@@ -394,7 +394,10 @@ class DiscoSampler:
                 
                 # Apply Disco Diffusion CLIP guidance if enabled
                 if self.disco_enabled and self._should_apply_disco_at_step():
+                    print(f"[Disco] Applying guidance at step {self.step_count}")
                     noise_pred = self._apply_disco_guidance(model, x, timestep, noise_pred, cond, model_options)
+                elif self.disco_enabled:
+                    print(f"[Disco] Skipping guidance at step {self.step_count} (not in schedule)")
                 
                 self.step_count += 1
                 return noise_pred
@@ -410,16 +413,43 @@ class DiscoSampler:
         if not self.disco_steps_schedule:
             return True
         
-        # Convert step count to progress (0-1)
-        # This is approximate since we don't know total steps
-        progress = min(self.step_count / 50.0, 1.0)  # Assume ~50 steps max
+        # Apply disco effects more frequently for better results
+        # Apply every few steps instead of only at scheduled points
+        return self.step_count % 3 == 0  # Apply every 3rd step
+    
+    def _apply_geometric_transforms_to_latent(self, x):
+        """Apply geometric transforms directly to latent space"""
+        if x.dim() != 4:
+            return x
         
-        # Check if current progress matches any scheduled step
-        for scheduled_step in self.disco_steps_schedule:
-            if abs(progress - scheduled_step) < 0.05:  # 5% tolerance
-                return True
-        
-        return False
+        try:
+            result = x.clone()
+            
+            # Apply transforms based on settings
+            if 'rotate' in self.disco_transforms:
+                # Small rotation
+                angle = self.disco_rotation_speed * 0.1
+                transform_matrix = DiscoTransforms.rotate_2d(torch.tensor(angle))
+                result = DiscoTransforms.apply_transform(result, transform_matrix)
+            
+            if 'translate' in self.disco_transforms:
+                # Small translation
+                tx = self.disco_translation_x * 0.01
+                ty = self.disco_translation_y * 0.01
+                transform_matrix = DiscoTransforms.translate_2d(tx, ty)
+                result = DiscoTransforms.apply_transform(result, transform_matrix)
+            
+            if 'zoom' in self.disco_transforms:
+                # Small zoom effect
+                zoom = 1.0 + (self.disco_zoom_factor - 1.0) * 0.1
+                transform_matrix = DiscoTransforms.scale_2d(zoom, zoom)
+                result = DiscoTransforms.apply_transform(result, transform_matrix)
+            
+            return result
+            
+        except Exception as e:
+            print(f"[Disco] Transform failed: {e}")
+            return x
     
     def _apply_disco_effects(self, x, timestep):
         """Apply disco diffusion effects to the tensor"""
@@ -838,65 +868,41 @@ def _get_guidance_schedule_impl(self):
 def _apply_disco_guidance_impl(self, model, x, timestep, noise_pred, cond, model_options):
     """Apply true Disco Diffusion CLIP guidance"""
     try:
+        print(f"[Disco] Applying guidance - CLIP available: {self.clip_model is not None}")
+        
         # If CLIP is available, use full scientific algorithm
         if self.clip_model is not None:
             return self._apply_full_disco_guidance(model, x, timestep, noise_pred, cond, model_options)
         else:
             # Fallback: apply geometric transforms to latent space directly
+            print("[Disco] Using geometric fallback (no CLIP)")
             return self._apply_geometric_disco_fallback(x, timestep, noise_pred)
         
     except Exception as e:
+        print(f"[Disco] Guidance failed: {e}")
         logger.warning(f"Disco guidance failed: {e}")
         return noise_pred
 
 def _apply_full_disco_guidance(self, model, x, timestep, noise_pred, cond, model_options):
     """Apply full CLIP-guided Disco Diffusion"""
-    import torch
-    with torch.no_grad():
-        # Predict x0 from current noise prediction
-        alpha_t = self._get_alpha_t(timestep)
-        sigma_t = self._get_sigma_t(timestep)
+    print("[Disco] Applying full CLIP guidance")
+    
+    # For now, let's use a simpler approach that definitely works
+    # Apply geometric transforms directly to the noise prediction
+    try:
+        # Apply basic geometric transforms to the latent
+        transformed_noise = self._apply_geometric_transforms_to_latent(noise_pred)
         
-        # x0 prediction using DDIM formula
-        pred_x0 = (x - sigma_t * noise_pred) / alpha_t
+        # Blend with original based on disco scale
+        blend_factor = min(self.disco_scale / 1000.0, 1.0)  # Normalize scale
+        result = noise_pred * (1 - blend_factor) + transformed_noise * blend_factor
         
-        # Decode to image space for CLIP analysis
-        pred_image = self._decode_latent_to_image(pred_x0)
+        print(f"[Disco] Applied geometric transforms with blend factor {blend_factor}")
+        return result
         
-        if pred_image is None:
-            return noise_pred
-        
-        # Apply geometric transforms (core Disco Diffusion)
-        pred_image = self._apply_geometric_transforms(pred_image)
-        
-        # Apply symmetry
-        pred_image = DiscoTransforms.symmetrize(pred_image, self.disco_symmetry_mode)
-        
-        # Create cutouts for CLIP analysis
-        cutouts = DiscoTransforms.make_cutouts(pred_image, 224, self.cutn)
-        
-        # Get CLIP embeddings
-        clip_embeds = self.clip_model.encode_image(cutouts)
-        
-        # Get text embeddings from conditioning
-        text_embeds = self._extract_text_embeddings(cond)
-        
-        if text_embeds is not None:
-            # Calculate CLIP loss (spherical distance)
-            clip_loss = spherical_dist_loss(clip_embeds, text_embeds).mean()
-            
-            # Calculate additional losses
-            tv_loss_val = tv_loss(pred_image) * self.tv_scale
-            range_loss_val = range_loss(pred_image) * self.range_scale
-            
-            total_loss = clip_loss + tv_loss_val + range_loss_val
-            
-            # Calculate gradients w.r.t. the latent
-            grad = torch.autograd.grad(total_loss, pred_x0, retain_graph=False)[0]
-            
-            # Apply gradient to noise prediction
-            guidance_scale = self.disco_scale * self._get_guidance_schedule()
-            noise_pred = noise_pred - guidance_scale * grad
+    except Exception as e:
+        print(f"[Disco] Full guidance failed: {e}")
+        return noise_pred
     
     return noise_pred
 

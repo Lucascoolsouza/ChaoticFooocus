@@ -215,17 +215,17 @@ class AsyncTask:
         self.disco_preset = disco_params[2] if disco_params[2] is not None else 'custom'
         self.disco_transforms = disco_params[3] if disco_params[3] is not None else ['translate', 'rotate', 'zoom']
         self.disco_seed = disco_params[4] if disco_params[4] is not None else None
-        self.disco_animation_mode = disco_params[5] if disco_params[5] is not None else 'none'
-        self.disco_zoom_factor = disco_params[6] if disco_params[6] is not None else 1.02
-        self.disco_rotation_speed = disco_params[7] if disco_params[7] is not None else 0.1
-        self.disco_translation_x = disco_params[8] if disco_params[8] is not None else 0.0
-        self.disco_translation_y = disco_params[9] if disco_params[9] is not None else 0.0
-        self.disco_color_coherence = disco_params[10] if disco_params[10] is not None else 0.5
-        self.disco_saturation_boost = disco_params[11] if disco_params[11] is not None else 1.2
-        self.disco_contrast_boost = disco_params[12] if disco_params[12] is not None else 1.1
-        self.disco_symmetry_mode = disco_params[13] if disco_params[13] is not None else 'none'
-        self.disco_fractal_octaves = disco_params[14] if disco_params[14] is not None else 3
-        self.disco_clip_model = disco_params[15] if disco_params[15] is not None else 'RN50'
+        self.disco_clip_model = disco_params[5] if disco_params[5] is not None else 'RN50'
+        self.disco_animation_mode = disco_params[6] if disco_params[6] is not None else 'none'
+        self.disco_zoom_factor = disco_params[7] if disco_params[7] is not None else 1.02
+        self.disco_rotation_speed = disco_params[8] if disco_params[8] is not None else 0.1
+        self.disco_translation_x = disco_params[9] if disco_params[9] is not None else 0.0
+        self.disco_translation_y = disco_params[10] if disco_params[10] is not None else 0.0
+        self.disco_color_coherence = disco_params[11] if disco_params[11] is not None else 0.5
+        self.disco_saturation_boost = disco_params[12] if disco_params[12] is not None else 1.2
+        self.disco_contrast_boost = disco_params[13] if disco_params[13] is not None else 1.1
+        self.disco_symmetry_mode = disco_params[14] if disco_params[14] is not None else 'none'
+        self.disco_fractal_octaves = disco_params[15] if disco_params[15] is not None else 3
         
         print(f"[DEBUG] Disco params: enabled={self.disco_enabled}, scale={self.disco_scale}, preset={self.disco_preset}, clip_model={self.disco_clip_model}")
 
