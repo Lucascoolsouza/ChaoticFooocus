@@ -111,9 +111,7 @@ def run_clip_guidance_loop(
             optimizer.zero_grad()
             
             # Decode latent to image for CLIP
-            # Wrap latent_tensor in a dictionary as vae.decode expects
-            image_for_clip_dict = {'samples': latent_tensor.to(device)}
-            image_for_clip = vae.decode(image_for_clip_dict)
+            image_for_clip = vae.decode(latent_tensor)
             # Permute dimensions to (B, C, H, W) if not already
             if image_for_clip.shape[-1] <= 4 and image_for_clip.shape[1] > 4: # Heuristic: if last dim is small (channels) and second dim is large (height/width)
                 image_for_clip = image_for_clip.permute(0, 3, 1, 2) # Assuming (B, H, W, C) -> (B, C, H, W)
