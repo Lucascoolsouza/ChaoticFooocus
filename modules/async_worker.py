@@ -461,6 +461,7 @@ def worker():
             refiner_swap_method=async_task.refiner_swap_method,
             disable_preview=async_task.disable_preview,
             original_prompt=task_prompt,
+            async_task=async_task,
             
             
             detail_daemon_enabled=async_task.detail_daemon_enabled,
