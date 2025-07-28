@@ -73,6 +73,17 @@ def run_clip_guidance_loop(
     print("[Disco] Starting CLIP guidance pre-sampling loop...")
     
     try:
+        # Ensure text_prompt is a string
+        if text_prompt is None:
+            text_prompt = ""
+        elif not isinstance(text_prompt, str):
+            text_prompt = str(text_prompt)
+
+        print(f"[Disco Guidance] Received text prompt: '{text_prompt}'")
+
+        # Extract tensor from latent dictionary
+        latent_tensor = latent['samples']
+
         # 1. Prepare text embeddings
         device = next(clip_model.parameters()).device
         text_tokens = clip.tokenize([text_prompt]).to(device)
@@ -81,8 +92,8 @@ def run_clip_guidance_loop(
             text_embeds = F.normalize(text_embeds, dim=-1)
 
         # 2. Set up latent for optimization
-        latent = latent.detach().clone().requires_grad_()
-        optimizer = torch.optim.Adam([latent], lr=0.05)
+        latent_tensor = latent_tensor.detach().clone().requires_grad_()
+        optimizer = torch.optim.Adam([latent_tensor], lr=0.05)
         
         # 3. Get cutout function
         cut_size = clip_model.visual.input_resolution
@@ -91,7 +102,7 @@ def run_clip_guidance_loop(
             optimizer.zero_grad()
             
             # Decode latent to image for CLIP
-            image_for_clip = (latent / vae.config.scaling_factor).to(vae.dtype)
+            image_for_clip = (latent_tensor / vae.config.scaling_factor).to(vae.dtype)
             image_for_clip = vae.decode(image_for_clip).sample
             image_for_clip = (image_for_clip / 2 + 0.5).clamp(0, 1)
             
@@ -105,8 +116,8 @@ def run_clip_guidance_loop(
             
             # Calculate losses
             dist_loss = spherical_dist_loss(image_embeds, text_embeds.expand_as(image_embeds)).sum()
-            tv_loss_val = tv_loss(latent) * tv_scale
-            range_loss_val = range_loss(latent) * range_scale
+            tv_loss_val = tv_loss(latent_tensor) * tv_scale
+            range_loss_val = range_loss(latent_tensor) * range_scale
             
             total_loss = dist_loss * disco_scale + tv_loss_val + range_loss_val
             
@@ -118,8 +129,9 @@ def run_clip_guidance_loop(
             optimizer.step()
 
         print("[Disco] CLIP guidance pre-sampling loop finished.")
-        return latent.detach()
+        latent['samples'] = latent_tensor.detach()
+        return latent
 
     except Exception as e:
         logger.error(f"CLIP guidance loop failed: {e}", exc_info=True)
-        return latent.detach() # Return original latent on failure
+        return latent # Return original latent on failure
