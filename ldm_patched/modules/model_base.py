@@ -120,8 +120,8 @@ class BaseModel(torch.nn.Module):
 
                 denoise_mask = denoise_mask.reshape((-1, 1, denoise_mask.shape[-2], denoise_mask.shape[-1]))
                 if denoise_mask.shape[-2:] != noise.shape[-2:]:
-                denoise_mask = utils.common_upscale(denoise_mask, noise.shape[-1], noise.shape[-2], "bilinear", "center")
-            denoise_mask = utils.resize_to_batch_size(denoise_mask.round(), noise.shape[0])
+                    denoise_mask = utils.common_upscale(denoise_mask, noise.shape[-1], noise.shape[-2], "bilinear", "center")
+                    denoise_mask = utils.resize_to_batch_size(denoise_mask.round(), noise.shape[0])
 
             def blank_inpaint_image_like(latent_image):
                 blank_image = torch.ones_like(latent_image)
