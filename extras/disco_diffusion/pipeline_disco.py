@@ -1,4 +1,4 @@
-s# True Disco Diffusion Extension for Fooocus
+# True Disco Diffusion Extension for Fooocus
 # Implements the real Disco Diffusion algorithm with CLIP guidance and geometric transforms
 
 import torch
