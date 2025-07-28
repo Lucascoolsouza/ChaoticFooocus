@@ -2727,7 +2727,9 @@ def sample_heun_disco(model, x, sigmas, extra_args=None, callback=None, disable=
         
         # Apply disco effect
         if pattern_strength > 0:
-            denoised = denoised * (1 - pattern_strength) + color_patterns * pattern_strength * sigmas[i] * 0.1
+            # Use a more effective blending approach
+            disco_effect = color_patterns * pattern_strength * 0.5
+            denoised = denoised * (1 - pattern_strength * 0.3) + disco_effect
         
         d = to_d(x, sigmas[i], denoised)
         
@@ -2747,7 +2749,8 @@ def sample_heun_disco(model, x, sigmas, extra_args=None, callback=None, disable=
             
             # Apply disco effect to corrector
             if pattern_strength > 0:
-                denoised_2 = denoised_2 * (1 - pattern_strength) + color_patterns * pattern_strength * sigmas[i + 1] * 0.1
+                disco_effect_2 = color_patterns * pattern_strength * 0.5
+                denoised_2 = denoised_2 * (1 - pattern_strength * 0.3) + disco_effect_2
             
             d_2 = to_d(x_2, sigmas[i + 1], denoised_2)
             d_prime = (d + d_2) / 2
