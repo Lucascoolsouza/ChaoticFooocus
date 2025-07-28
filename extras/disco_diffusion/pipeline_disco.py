@@ -154,10 +154,10 @@ def run_clip_guidance_loop(
             # Calculate losses
             dist_loss = spherical_dist_loss(image_embeds, text_embeds.expand_as(image_embeds)).sum()
 
-            # Ensure scales are on the correct device (no need for requires_grad here)
-            disco_scale_tensor = torch.tensor(disco_scale, device=device)
-            tv_scale_tensor = torch.tensor(tv_scale, device=device)
-            range_scale_tensor = torch.tensor(range_scale, device=device)
+            # Ensure scales are on the correct device (no need for requires_grad here as they're scalar multipliers)
+            disco_scale_tensor = torch.tensor(disco_scale, device=device, dtype=torch.float32)
+            tv_scale_tensor = torch.tensor(tv_scale, device=device, dtype=torch.float32)
+            range_scale_tensor = torch.tensor(range_scale, device=device, dtype=torch.float32)
 
             tv_loss_val = tv_loss(latent_tensor) * tv_scale_tensor
             range_loss_val = range_loss(latent_tensor) * range_scale_tensor
