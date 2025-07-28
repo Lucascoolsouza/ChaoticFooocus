@@ -460,6 +460,7 @@ def worker():
             cfg_scale=async_task.cfg_scale,
             refiner_swap_method=async_task.refiner_swap_method,
             disable_preview=async_task.disable_preview,
+            original_prompt=task_prompt,
             
             
             detail_daemon_enabled=async_task.detail_daemon_enabled,
