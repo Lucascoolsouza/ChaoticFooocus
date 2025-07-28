@@ -32,9 +32,9 @@ class DiscoTransforms:
     """Real Disco Diffusion geometric transforms"""
     
     @staticmethod
-    def translate_2d(tx, ty):
+    def translate_2d(tx, ty, device=None):
         """2D translation matrix"""
-        mat = torch.zeros(2, 3)
+        mat = torch.zeros(2, 3, device=device)
         mat[0, 0] = 1
         mat[1, 1] = 1
         mat[0, 2] = tx
@@ -42,9 +42,11 @@ class DiscoTransforms:
         return mat
     
     @staticmethod
-    def rotate_2d(theta):
+    def rotate_2d(theta, device=None):
         """2D rotation matrix"""
-        mat = torch.zeros(2, 3)
+        if isinstance(theta, (int, float)):
+            theta = torch.tensor(theta, device=device)
+        mat = torch.zeros(2, 3, device=device)
         mat[0, 0] = torch.cos(theta)
         mat[0, 1] = -torch.sin(theta)
         mat[1, 0] = torch.sin(theta)
@@ -52,9 +54,9 @@ class DiscoTransforms:
         return mat
     
     @staticmethod
-    def scale_2d(sx, sy):
+    def scale_2d(sx, sy, device=None):
         """2D scaling matrix"""
-        mat = torch.zeros(2, 3)
+        mat = torch.zeros(2, 3, device=device)
         mat[0, 0] = sx
         mat[1, 1] = sy
         return mat
@@ -62,6 +64,8 @@ class DiscoTransforms:
     @staticmethod
     def apply_transform(x, transform_matrix):
         """Apply 2D transformation to tensor"""
+        # Ensure transform_matrix is on the same device as x
+        transform_matrix = transform_matrix.to(x.device)
         grid = F.affine_grid(transform_matrix.unsqueeze(0), x.size(), align_corners=False)
         return F.grid_sample(x, grid, mode='bilinear', padding_mode='reflection', align_corners=False)
     
@@ -115,8 +119,9 @@ class DiscoTransforms:
         xx_new = (xx - center_x) / zoom_factor + center_x
         yy_new = (yy - center_y) / zoom_factor + center_y
         
-        # Create sampling grid
+        # Create sampling grid and ensure it's on the same device as x
         grid = torch.stack([xx_new, yy_new], dim=-1).unsqueeze(0).repeat(b, 1, 1, 1)
+        grid = grid.to(x.device)
         
         return F.grid_sample(x, grid, mode='bilinear', padding_mode='reflection', align_corners=True)
     
@@ -429,14 +434,14 @@ class DiscoSampler:
             if 'rotate' in self.disco_transforms:
                 # Small rotation
                 angle = self.disco_rotation_speed * 0.1
-                transform_matrix = DiscoTransforms.rotate_2d(torch.tensor(angle))
+                transform_matrix = DiscoTransforms.rotate_2d(angle, device=result.device)
                 result = DiscoTransforms.apply_transform(result, transform_matrix)
             
             if 'translate' in self.disco_transforms:
                 # Small translation
                 tx = self.disco_translation_x * 0.01
                 ty = self.disco_translation_y * 0.01
-                transform_matrix = DiscoTransforms.translate_2d(tx, ty)
+                transform_matrix = DiscoTransforms.translate_2d(tx, ty, device=result.device)
                 result = DiscoTransforms.apply_transform(result, transform_matrix)
             
             if 'zoom' in self.disco_transforms:
