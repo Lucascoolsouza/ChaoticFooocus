@@ -347,6 +347,11 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             imgs = core.pytorch_to_numpy(core.decode_vae(final_vae, latent))
         return imgs
     
+    if latent is None:
+        initial_latent = core.generate_empty_latent(width=width, height=height, batch_size=1)
+    else:
+        initial_latent = latent
+    
     # TPG Integration
     if tpg_enabled and tpg_scale > 0:
         try:
