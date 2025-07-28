@@ -74,8 +74,8 @@ def run_clip_guidance_loop(
     print("[Disco] Starting CLIP guidance pre-sampling loop...")
     
     try:
-        vae.eval()
-        clip_model.eval()
+        # Revert vae.eval() as it caused an AttributeError
+        clip_model.train() # Temporarily set to train mode to ensure gradient tracking
 
         # Initial progress update for Disco Diffusion
         if async_task is not None:
@@ -171,6 +171,7 @@ def run_clip_guidance_loop(
 
         print("[Disco] CLIP guidance pre-sampling loop finished.")
         latent['samples'] = latent_tensor.detach()
+        clip_model.eval() # Restore CLIP model to evaluation mode
         return latent
 
     except Exception as e:
