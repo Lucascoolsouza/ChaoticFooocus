@@ -930,7 +930,11 @@ def _apply_full_disco_guidance(self, model, x, timestep, noise_pred, cond, model
             return noise_pred
 
         # Predict x0 (the clean image)
-        sigma = model.model.model_sampling.sigmas[timestep[0].int()]
+        sampler = model_options.get('sampler')
+        if sampler is None:
+            logger.warning("Sampler not found in model_options. Cannot apply full guidance.")
+            return noise_pred
+        sigma = sampler.sigmas[timestep[0].int()]
         x_0_pred = x - sigma * noise_pred
 
         # Set up for gradient calculation
