@@ -110,18 +110,13 @@ def run_clip_guidance_loop(
             # Decode latent to image for CLIP
             image_for_clip = latent_tensor
             image_for_clip = vae.decode(image_for_clip)
+            # Permute dimensions to (B, C, H, W) if not already
+            if image_for_clip.shape[-1] <= 4 and image_for_clip.shape[1] > 4: # Heuristic: if last dim is small (channels) and second dim is large (height/width)
+                image_for_clip = image_for_clip.permute(0, 3, 1, 2) # Assuming (B, H, W, C) -> (B, C, H, W)
             image_for_clip = (image_for_clip / 2 + 0.5).clamp(0, 1)
             
             # Create cutouts
             cutouts = DiscoTransforms.make_cutouts(image_for_clip, cut_size, cutn)
-            # Convert cutouts tensor to a list of PIL Images
-            to_pil_image = transforms.ToPILImage()
-            pil_cutouts = [to_pil_image(cutout) for cutout in cutouts]
-
-            # Process each PIL Image with clip_preprocess
-            processed_pil_cutouts = [clip_preprocess(pil_img) for pil_img in pil_cutouts]
-
-            # Stack the processed PIL Images (now tensors) back into a single tensor
             # Convert cutouts tensor to a list of PIL Images
             to_pil_image = transforms.ToPILImage()
             pil_cutouts = [to_pil_image(cutout) for cutout in cutouts]
