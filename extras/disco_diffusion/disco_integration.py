@@ -44,8 +44,9 @@ class DiscoIntegration:
             presets = get_disco_presets()
             if disco_preset in presets:
                 preset_settings = presets[disco_preset]
-                # Override with preset values
-                disco_scale = preset_settings.get('disco_scale', disco_scale)
+                # Get base scale from preset and multiply by UI slider (0-1)
+                base_disco_scale = preset_settings.get('disco_scale', 5000.0)  # Default high value
+                disco_scale = base_disco_scale * disco_scale  # UI slider multiplies preset base
                 disco_transforms = preset_settings.get('disco_transforms', disco_transforms)
                 disco_zoom_factor = preset_settings.get('disco_zoom_factor', disco_zoom_factor)
                 disco_rotation_speed = preset_settings.get('disco_rotation_speed', disco_rotation_speed)
