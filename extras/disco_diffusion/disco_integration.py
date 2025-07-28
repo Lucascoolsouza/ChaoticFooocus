@@ -30,6 +30,7 @@ class DiscoIntegration:
                         disco_contrast_boost=1.1,
                         disco_symmetry_mode='none',
                         disco_fractal_octaves=3,
+                        disco_clip_model='RN50',
                         disco_noise_schedule='linear',
                         disco_steps_schedule=None):
         """Initialize disco diffusion with given parameters"""
@@ -77,6 +78,7 @@ class DiscoIntegration:
         disco_sampler.disco_contrast_boost = disco_contrast_boost
         disco_sampler.disco_symmetry_mode = disco_symmetry_mode
         disco_sampler.disco_fractal_octaves = disco_fractal_octaves
+        disco_sampler.disco_clip_model = disco_clip_model
         disco_sampler.disco_noise_schedule = disco_noise_schedule
         disco_sampler.disco_steps_schedule = disco_steps_schedule
         

@@ -337,7 +337,7 @@ def get_candidate_vae(steps, switch, denoise=1.0, refiner_swap_method='joint'):
 
 @torch.no_grad()
 @torch.inference_mode()
-def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, original_prompt=None, original_negative_prompt=None, detail_daemon_enabled=False, detail_daemon_amount=0.25, detail_daemon_start=0.2, detail_daemon_end=0.8, detail_daemon_bias=0.71, detail_daemon_base_multiplier=0.85, detail_daemon_start_offset=0, detail_daemon_end_offset=-0.15, detail_daemon_exponent=1, detail_daemon_fade=0, detail_daemon_mode='both', detail_daemon_smooth=True, tpg_enabled=False, tpg_scale=3.0, tpg_applied_layers=None, tpg_shuffle_strength=1.0, tpg_adaptive_strength=True, nag_enabled=False, nag_scale=1.5, nag_tau=5.0, nag_alpha=0.5, nag_negative_prompt="", nag_end=1.0, disco_enabled=False, disco_scale=0.5, disco_preset='custom', disco_transforms=None, disco_seed=None, disco_animation_mode='none', disco_zoom_factor=1.02, disco_rotation_speed=0.1, disco_translation_x=0.0, disco_translation_y=0.0, disco_color_coherence=0.5, disco_saturation_boost=1.2, disco_contrast_boost=1.1, disco_symmetry_mode='none', disco_fractal_octaves=3):
+def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, original_prompt=None, original_negative_prompt=None, detail_daemon_enabled=False, detail_daemon_amount=0.25, detail_daemon_start=0.2, detail_daemon_end=0.8, detail_daemon_bias=0.71, detail_daemon_base_multiplier=0.85, detail_daemon_start_offset=0, detail_daemon_end_offset=-0.15, detail_daemon_exponent=1, detail_daemon_fade=0, detail_daemon_mode='both', detail_daemon_smooth=True, tpg_enabled=False, tpg_scale=3.0, tpg_applied_layers=None, tpg_shuffle_strength=1.0, tpg_adaptive_strength=True, nag_enabled=False, nag_scale=1.5, nag_tau=5.0, nag_alpha=0.5, nag_negative_prompt="", nag_end=1.0, disco_enabled=False, disco_scale=0.5, disco_preset='custom', disco_transforms=None, disco_seed=None, disco_animation_mode='none', disco_zoom_factor=1.02, disco_rotation_speed=0.1, disco_translation_x=0.0, disco_translation_y=0.0, disco_color_coherence=0.5, disco_saturation_boost=1.2, disco_contrast_boost=1.1, disco_symmetry_mode='none', disco_fractal_octaves=3, disco_clip_model='RN50'):
     print(f"[PROCESS_DIFFUSION ENTRY]")
     imgs = [] # Initialize imgs to an empty list
     if steps == 0:
@@ -397,7 +397,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 'disco_enabled': disco_enabled,
                 'disco_scale': disco_scale,
                 'disco_preset': disco_preset,
-                'disco_transforms': disco_transforms or ['spherical', 'color_shift'],
+                'disco_transforms': disco_transforms or ['translate', 'rotate', 'zoom'],
                 'disco_seed': disco_seed,
                 'disco_animation_mode': disco_animation_mode,
                 'disco_zoom_factor': disco_zoom_factor,
@@ -409,6 +409,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 'disco_contrast_boost': disco_contrast_boost,
                 'disco_symmetry_mode': disco_symmetry_mode,
                 'disco_fractal_octaves': disco_fractal_octaves,
+                'disco_clip_model': disco_clip_model,
                 'disco_noise_schedule': 'linear',
                 'disco_steps_schedule': [0.2, 0.4, 0.6, 0.8]
             }

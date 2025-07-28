@@ -917,6 +917,11 @@ with shared.gradio_root:
                     disco_seed = gr.Number(label='Disco Seed', value=None, visible=False,
                                           info='Seed for disco effects (leave empty for random)')
                     
+                    disco_clip_model = gr.Dropdown(label='CLIP Model', 
+                                                   choices=modules.flags.disco_clip_models,
+                                                   value=modules.config.default_disco_clip_model, visible=False,
+                                                   info='CLIP model for semantic guidance (RN50=fast, ViT-L/14=quality)')
+                    
                     with gr.Accordion(label='Animation & Movement', open=False, visible=False) as disco_animation_accordion:
                         disco_animation_mode = gr.Dropdown(label='Animation Mode', 
                                                           choices=['none', 'zoom', 'rotate', 'translate'],
@@ -957,7 +962,7 @@ with shared.gradio_root:
                                              value='Disco Diffusion: Disabled', visible=False)
                     
                     def update_disco_visibility(enabled):
-                        return [gr.update(visible=enabled)] * 6
+                        return [gr.update(visible=enabled)] * 7
                     
                     def update_disco_preset(preset):
                         if preset == 'custom':
@@ -976,17 +981,17 @@ with shared.gradio_root:
                         
                         return gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
                     
-                    def update_disco_status(enabled, scale, preset, transforms, saturation, contrast):
+                    def update_disco_status(enabled, scale, preset, transforms, saturation, contrast, clip_model):
                         if not enabled:
                             return "Disco Diffusion: Disabled"
                         
                         transform_str = ", ".join(transforms) if transforms else "none"
-                        return f"Disco: {preset.title()} | Scale: {scale} | Effects: {transform_str} | Sat: {saturation} | Con: {contrast}"
+                        return f"Disco: {preset.title()} | Scale: {scale} | CLIP: {clip_model} | Effects: {transform_str} | Sat: {saturation} | Con: {contrast}"
                     
                     disco_enabled.change(update_disco_visibility, 
                                         inputs=disco_enabled,
                                         outputs=[disco_scale, disco_preset, disco_transforms, disco_seed, 
-                                                disco_animation_accordion, disco_visual_accordion],
+                                                disco_clip_model, disco_animation_accordion, disco_visual_accordion],
                                         queue=False, show_progress=False)
                     
                     disco_preset.change(update_disco_preset,
@@ -997,7 +1002,7 @@ with shared.gradio_root:
                     
                     # Update status when any disco parameter changes
                     disco_inputs = [disco_enabled, disco_scale, disco_preset, disco_transforms, 
-                                   disco_saturation_boost, disco_contrast_boost]
+                                   disco_saturation_boost, disco_contrast_boost, disco_clip_model]
                     for input_component in disco_inputs:
                         input_component.change(update_disco_status,
                                              inputs=disco_inputs,
@@ -1385,7 +1390,7 @@ with shared.gradio_root:
         
         # Disco Diffusion controls
         ctrls += [disco_enabled, disco_scale, disco_preset, disco_transforms, disco_seed,
-                  disco_animation_mode, disco_zoom_factor, disco_rotation_speed, 
+                  disco_clip_model, disco_animation_mode, disco_zoom_factor, disco_rotation_speed, 
                   disco_translation_x, disco_translation_y, disco_color_coherence,
                   disco_saturation_boost, disco_contrast_boost, disco_symmetry_mode, disco_fractal_octaves]
 

@@ -500,7 +500,8 @@ def worker():
             disco_saturation_boost=async_task.disco_saturation_boost,
             disco_contrast_boost=async_task.disco_contrast_boost,
             disco_symmetry_mode=async_task.disco_symmetry_mode,
-            disco_fractal_octaves=async_task.disco_fractal_octaves
+            disco_fractal_octaves=async_task.disco_fractal_octaves,
+            disco_clip_model=async_task.disco_clip_model
         )
 
         if imgs is None:
