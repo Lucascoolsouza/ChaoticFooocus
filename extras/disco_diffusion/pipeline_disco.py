@@ -1,4 +1,4 @@
-# True Disco Diffusion Extension for Fooocus
+s# True Disco Diffusion Extension for Fooocus
 # Implements the real Disco Diffusion algorithm with CLIP guidance and geometric transforms
 
 import torch
@@ -301,7 +301,7 @@ class DiscoSampler:
         
         self.disco_enabled = disco_enabled
         self.disco_scale = disco_scale
-        self.disco_steps_schedule = disco_steps_schedule or [0.2, 0.4, 0.6, 0.8]
+        self.disco_steps_schedule = disco_steps_schedule or [0.0, 1.0]  # Apply from start to end (every step)
         self.disco_transforms = disco_transforms or ['translate', 'rotate', 'zoom']
         self.disco_seed = disco_seed
         self.disco_animation_mode = disco_animation_mode
@@ -418,9 +418,9 @@ class DiscoSampler:
         if not self.disco_steps_schedule:
             return True
         
-        # Apply disco effects more frequently for better results
-        # Apply every few steps instead of only at scheduled points
-        return self.step_count % 3 == 0  # Apply every 3rd step
+        # Apply disco effects at every step for maximum CLIP guidance
+        # Apply every step for strongest possible influence
+        return True  # Apply every single step
     
     def _apply_geometric_transforms_to_latent(self, x):
         """Apply geometric transforms directly to latent space"""
