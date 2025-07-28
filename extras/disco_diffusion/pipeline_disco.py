@@ -74,6 +74,9 @@ def run_clip_guidance_loop(
     print("[Disco] Starting CLIP guidance pre-sampling loop...")
     
     try:
+        vae.eval()
+        clip_model.eval()
+
         # Initial progress update for Disco Diffusion
         if async_task is not None:
             async_task.yields.append(['preview', (1, 'Starting Disco Diffusion...', None)])
