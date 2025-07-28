@@ -1407,14 +1407,14 @@ with shared.gradio_root:
         ctrls += [disco_enabled, disco_scale, disco_preset, disco_transforms, disco_seed,
                   disco_clip_model, disco_animation_mode, disco_zoom_factor, disco_rotation_speed, 
                   disco_translation_x, disco_translation_y, disco_color_coherence,
-                  disco_saturation_boost, disco_contrast_boost, disco_symmetry_mode, disco_fractal_octaves,
-                  disco_guidance_steps, disco_cutn, disco_tv_scale, disco_range_scale]
+                  disco_saturation_boost, disco_contrast_boost, disco_symmetry_mode, disco_fractal_octaves]
 
         ctrls += ip_ctrls
         ctrls += [debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox,
                   enhance_input_image, enhance_checkbox, enhance_uov_method, enhance_bg_removal_model, 
                   enhance_uov_processing_order, enhance_uov_prompt_type, enhance_seamless_tiling_method, enhance_seamless_tiling_overlap]
         ctrls += enhance_ctrls
+        ctrls += [disco_guidance_steps, disco_cutn, disco_tv_scale, disco_range_scale]
 
         def parse_meta(raw_prompt_txt, is_generating):
             loaded_json = None
