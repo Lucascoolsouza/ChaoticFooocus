@@ -102,7 +102,7 @@ def run_clip_guidance_loop(
             optimizer.zero_grad()
             
             # Decode latent to image for CLIP
-            image_for_clip = (latent_tensor / vae.config.scaling_factor).to(vae.dtype)
+            image_for_clip = (latent_tensor / vae.scaling_factor).to(vae.dtype)
             image_for_clip = vae.decode(image_for_clip).sample
             image_for_clip = (image_for_clip / 2 + 0.5).clamp(0, 1)
             

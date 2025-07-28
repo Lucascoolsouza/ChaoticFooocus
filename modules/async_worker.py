@@ -290,6 +290,10 @@ class AsyncTask:
         self.images_to_enhance_count = 0
         self.enhance_stats = {}
 
+        # Pop prompt and negative prompt after all other controls
+        self.negative_prompt = args.pop()
+        self.prompt = args.pop()
+
 async_tasks = []
 
 

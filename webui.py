@@ -1415,6 +1415,7 @@ with shared.gradio_root:
                   enhance_uov_processing_order, enhance_uov_prompt_type, enhance_seamless_tiling_method, enhance_seamless_tiling_overlap]
         ctrls += enhance_ctrls
         ctrls += [disco_guidance_steps, disco_cutn, disco_tv_scale, disco_range_scale]
+        ctrls += [prompt, negative_prompt]
 
         def parse_meta(raw_prompt_txt, is_generating):
             loaded_json = None
