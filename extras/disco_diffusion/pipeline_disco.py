@@ -148,10 +148,16 @@ def run_clip_guidance_loop(
             
             # Calculate losses
             dist_loss = spherical_dist_loss(image_embeds, text_embeds.expand_as(image_embeds)).sum()
-            tv_loss_val = tv_loss(latent_tensor) * tv_scale
-            range_loss_val = range_loss(latent_tensor) * range_scale
-            
-            total_loss = dist_loss * disco_scale + tv_loss_val + range_loss_val
+
+            # Ensure scales are on the correct device
+            disco_scale_tensor = torch.tensor(disco_scale, device=device)
+            tv_scale_tensor = torch.tensor(tv_scale, device=device)
+            range_scale_tensor = torch.tensor(range_scale, device=device)
+
+            tv_loss_val = tv_loss(latent_tensor) * tv_scale_tensor
+            range_loss_val = range_loss(latent_tensor) * range_scale_tensor
+
+            total_loss = dist_loss * disco_scale_tensor + tv_loss_val + range_loss_val
             
             if i % 20 == 0:
                 print(f"[Disco Guidance] Step {i}, Loss: {total_loss.item():.4f}")
