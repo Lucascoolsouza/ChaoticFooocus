@@ -906,15 +906,18 @@ def _apply_disco_guidance_impl(self, model, x, timestep, noise_pred, cond, model
 def _apply_full_disco_guidance(self, model, x, timestep, noise_pred, cond, model_options):
     """Apply full scientific Disco Diffusion guidance."""
     try:
-        # 1. Get VAE and text embeddings
-        vae = model.first_stage_model
+        # 1. Get VAE and sampler from model_options, and text embeddings
+        vae = model_options.get('vae')
+        sampler = model_options.get('sampler')
         text_embeds = self._extract_text_embeddings(cond)
 
-        if text_embeds is None:
+        if vae is None or sampler is None or text_embeds is None:
+            if vae is None: logger.warning("VAE not found in model_options.")
+            if sampler is None: logger.warning("Sampler not found in model_options.")
             return noise_pred
 
         # 2. Predict x0 (the clean image)
-        sigma = model.model_sampling.sigmas[timestep[0].int()]
+        sigma = sampler.sigmas[timestep[0].int()]
         x_0_pred = x - sigma * noise_pred
 
         # 3. Set up for gradient calculation
