@@ -2538,6 +2538,7 @@ def sample_disco_diffusion(model, x, sigmas, extra_args=None, callback=None, dis
     
     This sampler introduces periodic patterns and color variations during the denoising process
     to create vibrant, hallucinogenic-like images similar to the original disco diffusion.
+    The effect is strongest at the beginning and gradually weakens toward the end.
     
     Args:
         model: The denoising model
@@ -2620,22 +2621,28 @@ def sample_disco_diffusion(model, x, sigmas, extra_args=None, callback=None, dis
         # Calculate current time factor (0 to 1)
         t = i / (len(sigmas) - 2) if len(sigmas) > 2 else 0
         
+        # Calculate dynamic pattern strength - heavy at start, weak at end
+        # Use exponential decay for more dramatic falloff
+        progress = t  # 0 at start, 1 at end
+        dynamic_pattern_strength = pattern_strength * (1.0 - progress) ** 2.5  # Strong exponential decay
+        dynamic_color_intensity = color_intensity * (1.0 - progress * 0.7)  # Gradual color reduction
+        
         # Apply the denoising model
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         
         # Apply disco patterns to the denoised result
-        if pattern_strength > 0 and channels >= 3:
+        if dynamic_pattern_strength > 0.01 and channels >= 3:
             # Multi-scale pattern generation
             pattern_list = []
             
             for scale in scales:
                 if abs(scale - 1.0) < 0.01:
                     # Use original resolution
-                    color_patterns = generate_disco_patterns(coords, t, frequency_factor, color_intensity)
+                    color_patterns = generate_disco_patterns(coords, t, frequency_factor, dynamic_color_intensity)
                 else:
                     # Generate patterns at different scales
                     scaled_coords = resize_latent(coords, scale)
-                    color_patterns_scaled = generate_disco_patterns(scaled_coords, t, frequency_factor * (2 - scale), color_intensity)
+                    color_patterns_scaled = generate_disco_patterns(scaled_coords, t, frequency_factor * (2 - scale), dynamic_color_intensity)
                     # Resize back to original resolution
                     color_patterns = resize_back(color_patterns_scaled, original_shape)
                 
@@ -2656,14 +2663,15 @@ def sample_disco_diffusion(model, x, sigmas, extra_args=None, callback=None, dis
                 combined_patterns = combined_patterns.mean(dim=1, keepdim=True)
             
             # Blend the disco patterns with the denoised result
-            # Use a much stronger blending approach for vivid psychedelic effects
-            # Scale patterns to latent space range and apply much stronger effect
-            disco_effect = combined_patterns * pattern_strength * 2.0  # Much stronger effect
-            # Use additive blending for more vivid colors
-            denoised = denoised * (1 - pattern_strength * 0.2) + disco_effect
-            # Add additional color saturation boost
-            if pattern_strength > 0.2:
-                color_boost = torch.sin(combined_patterns * 3.0) * pattern_strength * 0.8
+            # Use dynamic strength that starts very strong and fades
+            disco_effect = combined_patterns * dynamic_pattern_strength * 3.0  # Very strong at start
+            # Use additive blending for more vivid colors, but reduce over time
+            blend_factor = dynamic_pattern_strength * 0.3  # Reduces as pattern weakens
+            denoised = denoised * (1 - blend_factor) + disco_effect
+            
+            # Add additional color saturation boost that fades over time
+            if dynamic_pattern_strength > 0.1:
+                color_boost = torch.sin(combined_patterns * 4.0) * dynamic_pattern_strength * 1.2
                 denoised = denoised + color_boost
         
         d = to_d(x, sigmas[i], denoised)
@@ -2685,7 +2693,7 @@ def sample_disco_diffusion(model, x, sigmas, extra_args=None, callback=None, dis
 @torch.no_grad()
 def sample_euler_disco(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., 
                       frequency_factor=1.0, color_intensity=2.0, pattern_strength=0.8):
-    """Euler method with disco diffusion patterns."""
+    """Euler method with disco diffusion patterns. Effect is heavy at start, weak at end."""
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     
@@ -2745,21 +2753,26 @@ def sample_euler_disco(model, x, sigmas, extra_args=None, callback=None, disable
     for i in trange(len(sigmas) - 1, disable=disable):
         t = i / (len(sigmas) - 2) if len(sigmas) > 2 else 0
         
+        # Calculate dynamic pattern strength - heavy at start, weak at end
+        progress = t  # 0 at start, 1 at end
+        dynamic_pattern_strength = pattern_strength * (1.0 - progress) ** 2.0  # Strong decay
+        dynamic_color_intensity = color_intensity * (1.0 - progress * 0.6)  # Gradual color reduction
+        
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         
-        # Apply disco effect
-        if pattern_strength > 0:
+        # Apply disco effect with dynamic strength
+        if dynamic_pattern_strength > 0.01:
             # Multi-scale pattern generation
             pattern_list = []
             
             for scale in scales:
                 if abs(scale - 1.0) < 0.01:
                     # Use original resolution
-                    color_patterns = generate_disco_patterns(coords, t, frequency_factor, color_intensity)
+                    color_patterns = generate_disco_patterns(coords, t, frequency_factor, dynamic_color_intensity)
                 else:
                     # Generate patterns at different scales
                     scaled_coords = resize_latent(coords, scale)
-                    color_patterns_scaled = generate_disco_patterns(scaled_coords, t, frequency_factor * (2 - scale), color_intensity)
+                    color_patterns_scaled = generate_disco_patterns(scaled_coords, t, frequency_factor * (2 - scale), dynamic_color_intensity)
                     # Resize back to original resolution
                     color_patterns = resize_back(color_patterns_scaled, original_shape)
                 
@@ -2779,9 +2792,10 @@ def sample_euler_disco(model, x, sigmas, extra_args=None, callback=None, disable
                 # For grayscale, use the average
                 combined_patterns = combined_patterns.mean(dim=1, keepdim=True)
             
-            # Use a more effective blending approach
-            disco_effect = combined_patterns * pattern_strength * 0.7
-            denoised = denoised * (1 - pattern_strength * 0.4) + disco_effect
+            # Use dynamic blending that starts very strong and fades
+            disco_effect = combined_patterns * dynamic_pattern_strength * 1.5  # Strong at start
+            blend_factor = dynamic_pattern_strength * 0.5  # Reduces as pattern weakens
+            denoised = denoised * (1 - blend_factor) + disco_effect
         
         d = to_d(x, sigmas[i], denoised)
         
@@ -2797,7 +2811,7 @@ def sample_euler_disco(model, x, sigmas, extra_args=None, callback=None, disable
 @torch.no_grad()
 def sample_heun_disco(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., 
                      frequency_factor=1.0, color_intensity=2.0, pattern_strength=0.8):
-    """Heun method with disco diffusion patterns."""
+    """Heun method with disco diffusion patterns. Effect is heavy at start, weak at end."""
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     
@@ -2857,22 +2871,27 @@ def sample_heun_disco(model, x, sigmas, extra_args=None, callback=None, disable=
     for i in trange(len(sigmas) - 1, disable=disable):
         t = i / (len(sigmas) - 2) if len(sigmas) > 2 else 0
         
+        # Calculate dynamic pattern strength - heavy at start, weak at end
+        progress = t  # 0 at start, 1 at end
+        dynamic_pattern_strength = pattern_strength * (1.0 - progress) ** 2.0  # Strong decay
+        dynamic_color_intensity = color_intensity * (1.0 - progress * 0.6)  # Gradual color reduction
+        
         # First prediction
         denoised = model(x, sigmas[i] * s_in, **extra_args)
         
-        # Apply disco effect
-        if pattern_strength > 0:
+        # Apply disco effect with dynamic strength
+        if dynamic_pattern_strength > 0.01:
             # Multi-scale pattern generation
             pattern_list = []
             
             for scale in scales:
                 if abs(scale - 1.0) < 0.01:
                     # Use original resolution
-                    color_patterns = generate_disco_patterns(coords, t, frequency_factor, color_intensity)
+                    color_patterns = generate_disco_patterns(coords, t, frequency_factor, dynamic_color_intensity)
                 else:
                     # Generate patterns at different scales
                     scaled_coords = resize_latent(coords, scale)
-                    color_patterns_scaled = generate_disco_patterns(scaled_coords, t, frequency_factor * (2 - scale), color_intensity)
+                    color_patterns_scaled = generate_disco_patterns(scaled_coords, t, frequency_factor * (2 - scale), dynamic_color_intensity)
                     # Resize back to original resolution
                     color_patterns = resize_back(color_patterns_scaled, original_shape)
                 
@@ -2892,9 +2911,10 @@ def sample_heun_disco(model, x, sigmas, extra_args=None, callback=None, disable=
                 # For grayscale, use the average
                 combined_patterns = combined_patterns.mean(dim=1, keepdim=True)
             
-            # Use a more effective blending approach
-            disco_effect = combined_patterns * pattern_strength * 0.7
-            denoised = denoised * (1 - pattern_strength * 0.4) + disco_effect
+            # Use dynamic blending that starts very strong and fades
+            disco_effect = combined_patterns * dynamic_pattern_strength * 1.5  # Strong at start
+            blend_factor = dynamic_pattern_strength * 0.5  # Reduces as pattern weakens
+            denoised = denoised * (1 - blend_factor) + disco_effect
         
         d = to_d(x, sigmas[i], denoised)
         
@@ -2912,19 +2932,19 @@ def sample_heun_disco(model, x, sigmas, extra_args=None, callback=None, disable=
             
             denoised_2 = model(x_2, sigmas[i + 1] * s_in, **extra_args)
             
-            # Apply disco effect to corrector
-            if pattern_strength > 0:
+            # Apply disco effect to corrector with dynamic strength
+            if dynamic_pattern_strength > 0.01:
                 # Multi-scale pattern generation for corrector
                 pattern_list_2 = []
                 
                 for scale in scales:
                     if abs(scale - 1.0) < 0.01:
                         # Use original resolution
-                        color_patterns_2 = generate_disco_patterns(coords, t, frequency_factor, color_intensity)
+                        color_patterns_2 = generate_disco_patterns(coords, t, frequency_factor, dynamic_color_intensity)
                     else:
                         # Generate patterns at different scales
                         scaled_coords = resize_latent(coords, scale)
-                        color_patterns_scaled_2 = generate_disco_patterns(scaled_coords, t, frequency_factor * (2 - scale), color_intensity)
+                        color_patterns_scaled_2 = generate_disco_patterns(scaled_coords, t, frequency_factor * (2 - scale), dynamic_color_intensity)
                         # Resize back to original resolution
                         color_patterns_2 = resize_back(color_patterns_scaled_2, original_shape)
                     
@@ -2944,14 +2964,14 @@ def sample_heun_disco(model, x, sigmas, extra_args=None, callback=None, disable=
                     # For grayscale, use the average
                     combined_patterns_2 = combined_patterns_2.mean(dim=1, keepdim=True)
                 
-                # Use a much stronger blending approach for vivid psychedelic effects
-                # Scale patterns to latent space range and apply much stronger effect
-                disco_effect_2 = combined_patterns_2 * pattern_strength * 2.0  # Much stronger effect
-                # Use additive blending for more vivid colors
-                denoised_2 = denoised_2 * (1 - pattern_strength * 0.2) + disco_effect_2
-                # Add additional color saturation boost
-                if pattern_strength > 0.2:
-                    color_boost_2 = torch.sin(combined_patterns_2 * 3.0) * pattern_strength * 0.8
+                # Use dynamic blending for corrector step
+                disco_effect_2 = combined_patterns_2 * dynamic_pattern_strength * 2.5  # Very strong at start
+                blend_factor_2 = dynamic_pattern_strength * 0.3  # Reduces as pattern weakens
+                denoised_2 = denoised_2 * (1 - blend_factor_2) + disco_effect_2
+                
+                # Add additional color saturation boost that fades over time
+                if dynamic_pattern_strength > 0.1:
+                    color_boost_2 = torch.sin(combined_patterns_2 * 4.0) * dynamic_pattern_strength * 1.0
                     denoised_2 = denoised_2 + color_boost_2
             
             d_2 = to_d(x_2, sigmas[i + 1], denoised_2)
