@@ -74,6 +74,9 @@ def run_clip_guidance_loop(
     print("[Disco] Starting CLIP guidance pre-sampling loop...")
     
     try:
+        # Initial progress update for Disco Diffusion
+        if async_task is not None:
+            async_task.yields.append(['preview', (1, 'Starting Disco Diffusion...', None)])
         # Ensure text_prompt is a string
         if text_prompt is None:
             text_prompt = ""
@@ -114,6 +117,12 @@ def run_clip_guidance_loop(
             if image_for_clip.shape[-1] <= 4 and image_for_clip.shape[1] > 4: # Heuristic: if last dim is small (channels) and second dim is large (height/width)
                 image_for_clip = image_for_clip.permute(0, 3, 1, 2) # Assuming (B, H, W, C) -> (B, C, H, W)
             image_for_clip = (image_for_clip / 2 + 0.5).clamp(0, 1)
+
+            # Ensure image_for_clip has 3 channels for PIL conversion
+            if image_for_clip.shape[1] > 4: # If more than 4 channels, assume it's not a standard image and take first 3
+                image_for_clip = image_for_clip[:, :3, :, :]
+            elif image_for_clip.shape[1] == 1: # If grayscale, convert to RGB
+                image_for_clip = image_for_clip.repeat(1, 3, 1, 1)
             
             # Create cutouts
             cutouts = DiscoTransforms.make_cutouts(image_for_clip, cut_size, cutn)
