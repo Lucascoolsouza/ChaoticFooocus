@@ -74,9 +74,9 @@ def run_clip_guidance_loop(
     print("[Disco] Starting CLIP guidance pre-sampling loop...")
     
     try:
+        try:
         # Revert vae.eval() as it caused an AttributeError
         clip_model.train() # Temporarily set to train mode to ensure gradient tracking
-        vae.train() # Also set VAE to train mode to ensure gradient tracking
 
         # Initial progress update for Disco Diffusion
         if async_task is not None:
@@ -111,11 +111,18 @@ def run_clip_guidance_loop(
         # 3. Get cutout function
         cut_size = clip_model.visual.input_resolution
         
+        # Set CLIP model to train mode to enable gradient computation
+        clip_model.train()
+        
         for i in range(steps):
             optimizer.zero_grad()
             
-            # Decode latent to image for CLIP - ensure gradients are maintained
+            # Decode latent to image for CLIP
             image_for_clip = vae.decode(latent_tensor)
+            # Permute dimensions to (B, C, H, W) if not already
+            if image_for_clip.shape[-1] <= 4 and image_for_clip.shape[1] > 4: # Heuristic: if last dim is small (channels) and second dim is large (height/width)
+                image_for_clip = image_for_clip.permute(0, 3, 1, 2) # Assuming (B, H, W, C) -> (B, C, H, W)
+            image_for_clip = (image_for_clip / 2 + 0.5).clamp(0, 1)
 
             # Ensure image_for_clip has 3 channels for PIL conversion
             if image_for_clip.shape[1] > 4: # If more than 4 channels, assume it's not a standard image and take first 3
@@ -143,7 +150,7 @@ def run_clip_guidance_loop(
             # Calculate losses
             dist_loss = spherical_dist_loss(image_embeds, text_embeds.expand_as(image_embeds)).sum()
 
-            # Ensure scales are on the correct device (no need for requires_grad here as they're scalar multipliers)
+            # Ensure scales are on the correct device (no need for requires_grad here)
             disco_scale_tensor = torch.tensor(disco_scale, device=device)
             tv_scale_tensor = torch.tensor(tv_scale, device=device)
             range_scale_tensor = torch.tensor(range_scale, device=device)
@@ -169,9 +176,13 @@ def run_clip_guidance_loop(
         print("[Disco] CLIP guidance pre-sampling loop finished.")
         latent['samples'] = latent_tensor.detach()
         clip_model.eval() # Restore CLIP model to evaluation mode
-        vae.eval() # Restore VAE to evaluation mode
         return latent
 
     except Exception as e:
         logger.error(f"CLIP guidance loop failed: {e}", exc_info=True)
+        # Restore CLIP model to evaluation mode even in case of error
+        try:
+            clip_model.eval()
+        except:
+            pass
         return latent # Return original latent on failure
