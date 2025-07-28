@@ -159,7 +159,7 @@ class InpaintWorker:
 
         # super resolution
         if get_image_shape_ceil(self.interested_image) < 1024:
-            self.interested_image = perform_upscale(self.interested_image)
+            self.interested_image = perform_upscale(self.interested_image, 'default')
 
         # resize to make images ready for diffusion
         self.interested_image = set_image_shape_ceil(self.interested_image, 1024)
