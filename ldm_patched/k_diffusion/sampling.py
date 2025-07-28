@@ -2530,3 +2530,224 @@ def sample_restart(model, x, sigmas, extra_args=None, callback=None, disable=Non
 
     return x
 
+
+@torch.no_grad()
+def sample_disco_diffusion(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., 
+                          frequency_factor=1.0, color_intensity=1.0, pattern_strength=0.5, time_mixing=0.3):
+    """Implements a disco diffusion-like sampling method that creates colorful, psychedelic patterns.
+    
+    This sampler introduces periodic patterns and color variations during the denoising process
+    to create vibrant, hallucinogenic-like images similar to the original disco diffusion.
+    
+    Args:
+        model: The denoising model
+        x: Initial noise tensor
+        sigmas: Noise schedule
+        extra_args: Additional arguments for the model
+        callback: Callback function
+        disable: Disable progress bar
+        s_noise: Noise multiplier
+        frequency_factor: Controls the frequency of patterns (higher = more detailed patterns)
+        color_intensity: Controls color saturation and vibrancy
+        pattern_strength: Strength of the disco patterns
+        time_mixing: How much patterns change over time (higher = more temporal variation)
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    # Initialize pattern parameters
+    batch_size, channels, height, width = x.shape
+    
+    # Create coordinate grids for pattern generation
+    y_coords = torch.linspace(-1, 1, height, device=x.device).view(1, 1, height, 1).expand(batch_size, 1, height, width)
+    x_coords = torch.linspace(-1, 1, width, device=x.device).view(1, 1, 1, width).expand(batch_size, 1, height, width)
+    
+    # Create base coordinate grid
+    coords = torch.cat([y_coords, x_coords], dim=1)
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        # Calculate current time factor (0 to 1)
+        t = i / (len(sigmas) - 2) if len(sigmas) > 2 else 0
+        
+        # Generate dynamic patterns based on time and position
+        # Create radial patterns
+        radial = torch.sqrt(coords[:, 0]**2 + coords[:, 1]**2)
+        
+        # Create angular patterns
+        angular = torch.atan2(coords[:, 0], coords[:, 1])
+        
+        # Create time-varying wave patterns
+        waves = torch.sin(frequency_factor * (coords[:, 0] * torch.cos(t * time_mixing * 10) + 
+                                             coords[:, 1] * torch.sin(t * time_mixing * 10)))
+        
+        # Combine patterns
+        patterns = (torch.sin(radial * frequency_factor * 5 * (1 - t) + t * 10) + 
+                   torch.cos(angular * frequency_factor * 3 + t * 8) + 
+                   waves)
+        
+        # Normalize patterns
+        patterns = (patterns - patterns.mean()) / (patterns.std() + 1e-8)
+        
+        # Apply color transformations
+        # Create color channels from patterns
+        r_channel = torch.sin(patterns * color_intensity + t * 3.14 * 2)
+        g_channel = torch.sin(patterns * color_intensity + t * 3.14 * 2 + 2.09)
+        b_channel = torch.sin(patterns * color_intensity + t * 3.14 * 2 + 4.19)
+        
+        # Combine color channels
+        color_patterns = torch.stack([r_channel, g_channel, b_channel], dim=1)
+        
+        # Ensure we have the right number of channels
+        if channels > 3:
+            # For latent spaces with more channels, repeat the pattern
+            color_patterns = color_patterns.repeat(1, channels // 3 + 1, 1, 1)[:, :channels]
+        elif channels < 3:
+            # For grayscale, use the average
+            color_patterns = color_patterns.mean(dim=1, keepdim=True)
+        
+        # Apply the denoising model
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        
+        # Apply disco patterns to the denoised result
+        if pattern_strength > 0 and channels >= 3:
+            # Blend the disco patterns with the denoised result
+            denoised = denoised * (1 - pattern_strength) + color_patterns * pattern_strength * sigmas[i]
+        
+        d = to_d(x, sigmas[i], denoised)
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        
+        dt = sigmas[i + 1] - sigmas[i]
+        
+        # Apply noise
+        if sigmas[i + 1] > 0:
+            x = x + d * dt + torch.randn_like(x) * s_noise * dt
+        else:
+            x = x + d * dt
+    
+    return x
+
+
+@torch.no_grad()
+def sample_euler_disco(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., 
+                      frequency_factor=1.0, color_intensity=1.0, pattern_strength=0.3):
+    """Euler method with disco diffusion patterns."""
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    batch_size, channels, height, width = x.shape
+    
+    # Create coordinate grids
+    y_coords = torch.linspace(-1, 1, height, device=x.device).view(1, 1, height, 1).expand(batch_size, 1, height, width)
+    x_coords = torch.linspace(-1, 1, width, device=x.device).view(1, 1, 1, width).expand(batch_size, 1, height, width)
+    coords = torch.cat([y_coords, x_coords], dim=1)
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        t = i / (len(sigmas) - 2) if len(sigmas) > 2 else 0
+        
+        # Generate disco patterns
+        radial = torch.sqrt(coords[:, 0]**2 + coords[:, 1]**2)
+        angular = torch.atan2(coords[:, 0], coords[:, 1])
+        
+        patterns = (torch.sin(radial * frequency_factor * 8 + t * 12) + 
+                   torch.cos(angular * frequency_factor * 6 + t * 10))
+        
+        # Create colorful patterns
+        r_pattern = torch.sin(patterns * color_intensity + t * 6.28)
+        g_pattern = torch.sin(patterns * color_intensity + t * 6.28 + 2.09)
+        b_pattern = torch.sin(patterns * color_intensity + t * 6.28 + 4.19)
+        
+        color_patterns = torch.stack([r_pattern, g_pattern, b_pattern], dim=1)
+        
+        if channels > 3:
+            color_patterns = color_patterns.repeat(1, channels // 3 + 1, 1, 1)[:, :channels]
+        elif channels < 3:
+            color_patterns = color_patterns.mean(dim=1, keepdim=True)
+        
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        
+        # Apply disco effect
+        if pattern_strength > 0:
+            denoised = denoised * (1 - pattern_strength) + color_patterns * pattern_strength * sigmas[i] * 0.1
+        
+        d = to_d(x, sigmas[i], denoised)
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        
+        dt = sigmas[i + 1] - sigmas[i]
+        x = x + d * dt
+    
+    return x
+
+
+@torch.no_grad()
+def sample_heun_disco(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., 
+                     frequency_factor=1.0, color_intensity=1.0, pattern_strength=0.3):
+    """Heun method with disco diffusion patterns."""
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    batch_size, channels, height, width = x.shape
+    
+    # Create coordinate grids
+    y_coords = torch.linspace(-1, 1, height, device=x.device).view(1, 1, height, 1).expand(batch_size, 1, height, width)
+    x_coords = torch.linspace(-1, 1, width, device=x.device).view(1, 1, 1, width).expand(batch_size, 1, height, width)
+    coords = torch.cat([y_coords, x_coords], dim=1)
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        t = i / (len(sigmas) - 2) if len(sigmas) > 2 else 0
+        
+        # Generate disco patterns
+        radial = torch.sqrt(coords[:, 0]**2 + coords[:, 1]**2)
+        angular = torch.atan2(coords[:, 0], coords[:, 1])
+        
+        patterns = (torch.sin(radial * frequency_factor * 8 + t * 12) + 
+                   torch.cos(angular * frequency_factor * 6 + t * 10))
+        
+        # Create colorful patterns
+        r_pattern = torch.sin(patterns * color_intensity + t * 6.28)
+        g_pattern = torch.sin(patterns * color_intensity + t * 6.28 + 2.09)
+        b_pattern = torch.sin(patterns * color_intensity + t * 6.28 + 4.19)
+        
+        color_patterns = torch.stack([r_pattern, g_pattern, b_pattern], dim=1)
+        
+        if channels > 3:
+            color_patterns = color_patterns.repeat(1, channels // 3 + 1, 1, 1)[:, :channels]
+        elif channels < 3:
+            color_patterns = color_patterns.mean(dim=1, keepdim=True)
+        
+        # First prediction
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        
+        # Apply disco effect
+        if pattern_strength > 0:
+            denoised = denoised * (1 - pattern_strength) + color_patterns * pattern_strength * sigmas[i] * 0.1
+        
+        d = to_d(x, sigmas[i], denoised)
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        
+        dt = sigmas[i + 1] - sigmas[i]
+        
+        if sigmas[i + 1] == 0:
+            # Euler step for final iteration
+            x = x + d * dt
+        else:
+            # Heun's method: predictor-corrector
+            x_2 = x + d * dt
+            
+            denoised_2 = model(x_2, sigmas[i + 1] * s_in, **extra_args)
+            
+            # Apply disco effect to corrector
+            if pattern_strength > 0:
+                denoised_2 = denoised_2 * (1 - pattern_strength) + color_patterns * pattern_strength * sigmas[i + 1] * 0.1
+            
+            d_2 = to_d(x_2, sigmas[i + 1], denoised_2)
+            d_prime = (d + d_2) / 2
+            x = x + d_prime * dt
+    
+    return x
+

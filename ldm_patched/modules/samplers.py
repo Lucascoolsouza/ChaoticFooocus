@@ -527,7 +527,9 @@ KSAMPLER_NAMES = ["euler", "euler_ancestral","euler_chaotic","euler_triangle_wav
                   "dpmpp_2m", "dpmpp_2m_sde", "dpmpp_2m_sde_gpu", "dpmpp_3m_sde", "dpmpp_3m_sde_gpu", "ddpm", "lcm", "tcd", "edm_playground_v2.5", "restart", "dpmpp_unipc_restart", "euler_token_shuffle", "heun_token_shuffle", "heun_nag", "dpmpp_2m_nag", "euler_multiscale", "heun_multiscale",
     "dpmpp_sde_gpu_token_shuffle",
     "euler_pixel_art",
-    "heun_pixel_art",]
+    "heun_pixel_art",
+    "euler_disco",
+    "heun_disco",]
 
 class KSAMPLER(Sampler):
     def __init__(self, sampler_function, extra_options={}, inpaint_options={}):
