@@ -76,6 +76,7 @@ def run_clip_guidance_loop(
     try:
         # Revert vae.eval() as it caused an AttributeError
         clip_model.train() # Temporarily set to train mode to ensure gradient tracking
+        vae.train() # Also set VAE to train mode to ensure gradient tracking
 
         # Initial progress update for Disco Diffusion
         if async_task is not None:
@@ -104,7 +105,7 @@ def run_clip_guidance_loop(
             text_embeds = F.normalize(text_embeds, dim=-1)
 
         # 2. Set up latent for optimization
-        latent_tensor = latent_tensor.detach().clone().to(device).requires_grad_()
+        latent_tensor = latent_tensor.detach().clone().to(device).requires_grad_(True)
         optimizer = torch.optim.Adam([latent_tensor], lr=0.05)
         
         # 3. Get cutout function
@@ -113,12 +114,8 @@ def run_clip_guidance_loop(
         for i in range(steps):
             optimizer.zero_grad()
             
-            # Decode latent to image for CLIP
-            image_for_clip = vae.decode(latent_tensor).to(device)
-            # Permute dimensions to (B, C, H, W) if not already
-            if image_for_clip.shape[-1] <= 4 and image_for_clip.shape[1] > 4: # Heuristic: if last dim is small (channels) and second dim is large (height/width)
-                image_for_clip = image_for_clip.permute(0, 3, 1, 2) # Assuming (B, H, W, C) -> (B, C, H, W)
-            image_for_clip = (image_for_clip / 2 + 0.5).clamp(0, 1)
+            # Decode latent to image for CLIP - ensure gradients are maintained
+            image_for_clip = vae.decode(latent_tensor)
 
             # Ensure image_for_clip has 3 channels for PIL conversion
             if image_for_clip.shape[1] > 4: # If more than 4 channels, assume it's not a standard image and take first 3
@@ -139,14 +136,14 @@ def run_clip_guidance_loop(
             clip_std = torch.tensor([0.26862954, 0.26130258, 0.27577711], device=device).view(1, -1, 1, 1)
             processed_cutouts = (processed_cutouts - clip_mean) / clip_std
             
-            # Get image embeddings
+            # Get image embeddings - ensure gradients are tracked
             image_embeds = clip_model.encode_image(processed_cutouts).float()
             image_embeds = F.normalize(image_embeds, dim=-1)
             
             # Calculate losses
             dist_loss = spherical_dist_loss(image_embeds, text_embeds.expand_as(image_embeds)).sum()
 
-            # Ensure scales are on the correct device
+            # Ensure scales are on the correct device (no need for requires_grad here as they're scalar multipliers)
             disco_scale_tensor = torch.tensor(disco_scale, device=device)
             tv_scale_tensor = torch.tensor(tv_scale, device=device)
             range_scale_tensor = torch.tensor(range_scale, device=device)
@@ -172,6 +169,7 @@ def run_clip_guidance_loop(
         print("[Disco] CLIP guidance pre-sampling loop finished.")
         latent['samples'] = latent_tensor.detach()
         clip_model.eval() # Restore CLIP model to evaluation mode
+        vae.eval() # Restore VAE to evaluation mode
         return latent
 
     except Exception as e:
