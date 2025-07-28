@@ -34,7 +34,7 @@ class DiscoIntegration:
                 logger.error(f"Failed to load CLIP model: {e}", exc_info=True)
                 self.clip_model = None
 
-    def run_disco_guidance(self, latent, vae, text_prompt):
+    def run_disco_guidance(self, latent, vae, text_prompt, async_task=None):
         """Run the pre-sampling CLIP guidance loop."""
         if not self.is_initialized or not getattr(disco_settings, 'disco_enabled', False):
             return latent
@@ -50,6 +50,7 @@ class DiscoIntegration:
             clip_model=self.clip_model,
             clip_preprocess=self.clip_preprocess,
             text_prompt=text_prompt,
+            async_task=async_task,
             steps=getattr(disco_settings, 'disco_guidance_steps', 100),
             disco_scale=disco_settings.disco_scale,
             cutn=getattr(disco_settings, 'cutn', 16),
