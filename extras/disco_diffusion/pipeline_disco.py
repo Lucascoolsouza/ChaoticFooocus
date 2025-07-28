@@ -141,8 +141,10 @@ def run_clip_guidance_loop(
 
             # Normalize (CLIP's specific normalization)
             # Mean and Std for CLIP models (common values)
-            clip_mean = torch.tensor([0.48145466, 0.4578275, 0.40821073], device=device).view(1, -1, 1, 1)
-            clip_std = torch.tensor([0.26862954, 0.26130258, 0.27577711], device=device).view(1, -1, 1, 1)
+            clip_mean = torch.tensor([0.48145466, 0.4578275, 0.40821073], device=device)
+            clip_std = torch.tensor([0.26862954, 0.26130258, 0.27577711], device=device)
+            clip_mean = clip_mean.view(1, -1, 1, 1)
+            clip_std = clip_std.view(1, -1, 1, 1)
             processed_cutouts = (processed_cutouts - clip_mean) / clip_std
             
             # Get image embeddings - ensure gradients are tracked
