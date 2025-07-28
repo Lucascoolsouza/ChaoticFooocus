@@ -914,16 +914,63 @@ def _apply_disco_guidance_impl(self, model, x, timestep, noise_pred, cond, model
 def _apply_full_disco_guidance(self, model, x, timestep, noise_pred, cond, model_options):
     """Apply full scientific Disco Diffusion guidance."""
     try:
-        # 1. Get VAE and text embeddings from the ModelPatcher
+        # Check if the model has a VAE attribute
+        if not hasattr(model, 'vae'):
+            logger.warning("Model does not have a 'vae' attribute. Falling back to geometric transforms.")
+            return self._apply_geometric_disco_fallback(x, timestep, noise_pred)
+
+        # Get VAE and text embeddings
         vae = model.vae
         text_embeds = self._extract_text_embeddings(cond)
 
         if text_embeds is None:
             return noise_pred
 
-        # 2. Predict x0 (the clean image)
+        # Predict x0 (the clean image)
         sigma = model.model.model_sampling.sigmas[timestep[0].int()]
         x_0_pred = x - sigma * noise_pred
+
+        # Set up for gradient calculation
+        x_cur = x_0_pred.detach().clone().requires_grad_()
+        device = x.device
+
+        # Decode latent, create cutouts, and get image embeddings
+        image_for_clip = self._decode_latent_to_image(x_cur, vae)
+        if image_for_clip is None:
+            return noise_pred
+
+        clip_input_res = self.clip_model.visual.input_resolution
+        image_cutouts = DiscoTransforms.make_cutouts(image_for_clip, clip_input_res, self.cutn)
+        
+        processed_cutouts = self.clip_preprocess(image_cutouts).to(device)
+        image_embeds = self.clip_model.encode_image(processed_cutouts)
+        
+        # Normalize embeddings for spherical distance loss
+        image_embeds = F.normalize(image_embeds, dim=-1)
+        text_embeds = F.normalize(text_embeds, dim=-1)
+
+        # Calculate losses
+        dist_loss = spherical_dist_loss(image_embeds, text_embeds.repeat(self.cutn, 1))
+        tv_loss_val = tv_loss(x_cur) * self.tv_scale
+        range_loss_val = range_loss(x_cur) * self.range_scale
+        
+        total_loss = dist_loss.sum() + tv_loss_val + range_loss_val
+        
+        # Calculate gradient
+        grad = torch.autograd.grad(total_loss, x_cur)[0]
+
+        # Modify noise prediction based on gradient
+        alpha = (1 - sigma**2).sqrt()
+        
+        grad_adjustment = (alpha / sigma) * grad * self.disco_scale * 0.1
+        guided_noise = noise_pred + grad_adjustment
+        
+        print(f"[Disco] Full CLIP guidance applied. Loss: {total_loss.item():.4f}")
+        return guided_noise
+
+    except Exception as e:
+        logger.error(f"Full CLIP guidance failed: {e}", exc_info=True)
+        return self._apply_geometric_disco_fallback(x, timestep, noise_pred)
 
         # 3. Set up for gradient calculation
         x_cur = x_0_pred.detach().clone().requires_grad_()
