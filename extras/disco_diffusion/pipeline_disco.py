@@ -192,32 +192,42 @@ def run_clip_guidance_loop(
         
         print(f"[Disco] Starting finite difference optimization...")
         
-        # Super simple random search approach (much faster than finite differences)
+        # Finite difference optimization (gradient-like guidance)
+        learning_rate = 0.1
+        eps = 0.01
+        
+        print(f"[Disco] Starting finite difference optimization...")
+
         for i in range(steps):
+            # Compute approximate gradient using multiple directional samples
+            gradient_approx = torch.zeros_like(image_tensor)
+            
+            # Compute approximate gradient using a single random direction
+            # Create random direction
+            direction = torch.randn_like(image_tensor)
+            direction = direction / direction.norm() * eps  # Normalize to fixed step size
+            
+            # Test positive direction
+            test_image_pos = (image_tensor + direction).clamp(0, 1)
+            loss_pos = clip_loss(test_image_pos)
+            
+            # Test negative direction  
+            test_image_neg = (image_tensor - direction).clamp(0, 1)
+            loss_neg = clip_loss(test_image_neg)
+            
+            # Compute gradient in this direction
+            grad_in_direction = (loss_pos - loss_neg) / (2 * eps)
+            
+            # The gradient approximation is simply in this direction
+            gradient_approx = direction * grad_in_direction
+            
+            # Apply gradient update
+            image_tensor = (image_tensor - learning_rate * gradient_approx).clamp(0, 1)
+            
+            # Calculate loss after update for printing
             current_loss = clip_loss(image_tensor)
-            
-            # Try a few random perturbations and pick the best one
-            best_image = image_tensor.clone()
-            best_loss = current_loss
-            
-            # Try 5 random perturbations for better exploration
-            for attempt in range(5):
-                # Create random perturbation with higher strength
-                perturbation = torch.randn_like(image_tensor) * 0.05  # Larger random changes
-                test_image = (image_tensor + perturbation).clamp(0, 1)
-                
-                # Test this perturbation
-                test_loss = clip_loss(test_image)
-                
-                # Keep if better
-                if test_loss < best_loss:
-                    best_loss = test_loss
-                    best_image = test_image.clone()
-            
-            # Update image to best found
-            image_tensor = best_image
-            
-            print(f"[Disco] Step {i}, Loss: {best_loss:.4f}")
+
+            print(f"[Disco] Step {i}, Loss: {current_loss:.4f}")
             
             # Update progress
             if async_task is not None:
