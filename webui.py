@@ -1079,7 +1079,7 @@ with shared.gradio_root:
                         )
                 
                 with gr.Accordion(label='Confuse VAE', open=False):
-                    artistic_strength = gr.Slider(label='Artistic Strength', minimum=0.0, maximum=1.0, step=0.01,
+                    artistic_strength = gr.Slider(label='Artistic Strength', minimum=0.0, maximum=10.0, step=0.01,
                                                   value=0.0,
                                                   info='Controls the level of artistic distortion in the VAE output.')
                 dev_mode = gr.Checkbox(label='Developer Debug Mode', value=modules.config.default_developer_debug_mode_checkbox, container=False)
