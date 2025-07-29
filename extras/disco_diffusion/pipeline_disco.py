@@ -92,7 +92,7 @@ disco_settings = DiscoSettings()
 
 def run_clip_guidance_loop(
     latent, vae, clip_model, clip_preprocess, text_prompt, async_task,
-    steps=50, disco_scale=1.0, cutn=16, tv_scale=0.0, range_scale=0.0
+    steps=20, disco_scale=1.0, cutn=8, tv_scale=0.0, range_scale=0.0
 ):
     """
     CLIP guidance using finite differences (gradient-free optimization)
@@ -158,8 +158,15 @@ def run_clip_guidance_loop(
             std=(0.26862954, 0.26130258, 0.27577711)
         )
         
-        # Working image tensor (no gradients needed for finite differences)
-        image_tensor = init_image.clone().detach().to(device)
+        # Downscale image for much faster optimization
+        original_size = (init_image.shape[2], init_image.shape[3])
+        # Scale down to 25% of original size for 16x speed improvement
+        downscale_factor = 0.25
+        small_size = (int(original_size[0] * downscale_factor), int(original_size[1] * downscale_factor))
+        
+        print(f"[Disco] Downscaling from {original_size} to {small_size} for speed")
+        image_tensor = F.interpolate(init_image, size=small_size, mode='bilinear', align_corners=False)
+        image_tensor = image_tensor.clone().detach().to(device)
         
         # If the latent was all zeros (empty latent), add some noise to the image for better optimization
         if latent_tensor.abs().max().item() < 1e-6:  # Latent is essentially all zeros
@@ -179,9 +186,9 @@ def run_clip_guidance_loop(
                 similarity = (text_features @ image_features.T).mean()
                 return -similarity.item()
         
-        # 4. Finite difference optimization (optimized for speed)
-        learning_rate = 0.1  # Higher learning rate for faster convergence
-        eps = 1e-3  # Larger epsilon for more stable gradients
+        # 4. Finite difference optimization (heavily optimized for speed)
+        learning_rate = 0.2  # Much higher learning rate for faster convergence
+        eps = 2e-3  # Larger epsilon for more stable gradients
         
         print(f"[Disco] Starting finite difference optimization...")
         
@@ -191,9 +198,9 @@ def run_clip_guidance_loop(
             # Compute gradients using finite differences (optimized)
             grad_approx = torch.zeros_like(image_tensor)
             
-            # Much sparser sampling for speed - every 16th pixel
+            # Extremely sparse sampling for speed - every 32nd pixel
             h, w = image_tensor.shape[2], image_tensor.shape[3]
-            step_h, step_w = max(1, h // 16), max(1, w // 16)
+            step_h, step_w = max(1, h // 32), max(1, w // 32)
             
             # Batch process pixels for better efficiency
             pixel_count = 0
@@ -234,16 +241,17 @@ def run_clip_guidance_loop(
                 if async_task is not None:
                     progress = int((i + 1) / steps * 100)
                     
-                    # Debug preview image generation
-                    preview_tensor = image_tensor.permute(0, 2, 3, 1) * 255
+                    # Upscale back to original size for preview
+                    preview_upscaled = F.interpolate(image_tensor, size=original_size, mode='bilinear', align_corners=False)
+                    preview_tensor = preview_upscaled.permute(0, 2, 3, 1) * 255
                     preview_clamped = preview_tensor.clamp(0, 255)
                     preview_uint8 = preview_clamped.to(torch.uint8)
                     preview_image_np = preview_uint8.cpu().numpy()[0]
                     
                     if i == 0:  # Debug first preview
-                        print(f"[DEBUG] Preview tensor range: {preview_tensor.min().item():.1f} to {preview_tensor.max().item():.1f}")
+                        print(f"[DEBUG] Small image size: {image_tensor.shape}")
+                        print(f"[DEBUG] Preview upscaled size: {preview_upscaled.shape}")
                         print(f"[DEBUG] Preview mean: {preview_tensor.mean().item():.1f}")
-                        print(f"[DEBUG] Preview shape: {preview_image_np.shape}")
                     
                     async_task.yields.append(['preview', (progress, f'Disco Step {i+1}/{steps}', preview_image_np)])
 
