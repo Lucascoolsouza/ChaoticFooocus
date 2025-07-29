@@ -90,17 +90,23 @@ class DiscoSettings:
 # Global settings object
 disco_settings = DiscoSettings()
 
+def texture_std_penalty(img_tensor):
+    """Penalizes images with high standard deviation in their color channels."""
+    # Calculate std dev for each image in the batch across spatial dimensions (H, W) for each channel
+    std_per_channel = img_tensor.std(dim=[2, 3], keepdim=False)  # Shape: (batch_size, channels)
+    # Return the mean std dev across channels for each image in the batch
+    return std_per_channel.mean(dim=1)  # Shape: (batch_size,)
+
 def run_clip_guidance_loop(
     latent, vae, clip_model, clip_preprocess, text_prompt, async_task,
-    steps=30, disco_scale=5.0, cutn=12, tv_scale=0.0, range_scale=0.0,
+    steps=30, disco_scale=5.0, cutn=12, tv_scale=0.0, range_scale=0.0, # tv_scale will control texture penalty
     n_candidates=8, blend_factor=0.5
 ):
     """
     CLIP guidance on the latent space using a gradient-free search method.
-    This approach perturbs the latent space, decodes candidates, and selects the best one
-    based on a composite score (CLIP, TV, Range), avoiding direct gradient calculations.
+    This version uses a perceptual penalty (texture std) to regularize the output.
     """
-    print("[Disco] Starting CLIP guidance (gradient-free latent search with regularization)...")
+    print("[Disco] Starting CLIP guidance (latent search with perceptual penalty)...")
     try:
         # Get device from latent
         latent_tensor = latent['samples']
@@ -113,17 +119,11 @@ def run_clip_guidance_loop(
         
         # 1. Prepare text embeddings
         with torch.no_grad():
-            try:
-                text_tokens = clip.tokenize([text_prompt], truncate=True).to(device)
-            except:
-                words = text_prompt.split()[:50]
-                text_tokens = clip.tokenize([" ".join(words)], truncate=True).to(device)
-                
+            text_tokens = clip.tokenize([text_prompt], truncate=True).to(device)
             text_features = clip_model.encode_text(text_tokens).float()
             text_features = text_features / text_features.norm(dim=-1, keepdim=True)
 
         # 2. Set up for latent space optimization
-        # Use a more conservative noise strength to prevent chaos, as suggested.
         noise_strength = disco_scale / 400.0
         
         cut_size = clip_model.visual.input_resolution
@@ -136,8 +136,8 @@ def run_clip_guidance_loop(
         current_latent = latent_tensor.clone()
 
         print(f"[Disco] Starting latent search: {steps} steps, {n_candidates} candidates, noise strength {noise_strength:.4f}")
-        if tv_scale > 0 or range_scale > 0:
-            print(f"[Disco] Regularization enabled: TV scale {tv_scale}, Range scale {range_scale}")
+        if tv_scale > 0:
+            print(f"[Disco] Perceptual penalty enabled: scale {tv_scale}")
 
         for i in range(steps):
             with torch.no_grad():
@@ -150,7 +150,7 @@ def run_clip_guidance_loop(
                 decoded_images = vae.decode(candidate_latents)
                 decoded_images = (decoded_images / 2 + 0.5).clamp(0, 1)
 
-                # c. Apply a light denoiser (smoothing) before scoring to reduce noise influence
+                # c. Apply a light denoiser (smoothing) before CLIP scoring
                 smoothed_images = F.avg_pool2d(decoded_images, kernel_size=3, stride=1, padding=1)
 
                 # d. Score decoded images with a composite score
@@ -162,18 +162,15 @@ def run_clip_guidance_loop(
                 image_features = image_features / image_features.norm(dim=-1, keepdim=True)
                 image_features = image_features.view(n_candidates, cutn, -1)
                 
-                # Calculate CLIP similarity scores
                 clip_scores = torch.einsum('cf,bcf->bc', text_features.squeeze(0), image_features).mean(dim=1)
 
-                # Calculate regularization losses on the original (non-smoothed) images
-                tv_losses = tv_loss(decoded_images)
-                range_losses = range_loss(decoded_images)
+                # Calculate perceptual penalty on the original (non-smoothed) decoded images
+                texture_penalties = texture_std_penalty(decoded_images)
                 
-                # Combine scores: Maximize CLIP score while minimizing regularization losses.
-                # The scales are high for gradient-based methods, so we scale them down to act as penalties.
-                tv_penalty = tv_losses * (tv_scale * 0.0001)
-                range_penalty = range_losses * (range_scale * 0.001)
-                total_scores = clip_scores - tv_penalty - range_penalty
+                # Combine scores: Maximize CLIP score while minimizing texture penalty.
+                # We use tv_scale to control the strength of this penalty.
+                penalty_amount = texture_penalties * (tv_scale / 100.0) # Arbitrary scaling factor
+                total_scores = clip_scores - penalty_amount
 
                 # e. Select the best latent from candidates based on the composite score
                 best_idx = torch.argmax(total_scores)
@@ -183,16 +180,15 @@ def run_clip_guidance_loop(
                 current_latent = (1 - blend_factor) * current_latent + blend_factor * best_latent
             
             if i % 5 == 0 or i == steps - 1:
-                print(f"[Disco] Step {i+1}/{steps}, Best Score: {total_scores.max().item():.4f} (CLIP: {clip_scores[best_idx]:.4f}, TV: {tv_losses[best_idx]:.4f}, Range: {range_losses[best_idx]:.4f})")
+                print(f"[Disco] Step {i+1}/{steps}, Best Score: {total_scores.max().item():.4f} (CLIP: {clip_scores[best_idx]:.4f}, Penalty: {texture_penalties[best_idx]:.4f})")
             
             # Update progress with a preview image
-            if async_task is not None:
-                if i % 2 == 0 or i == steps - 1:
-                    progress = int((i + 1) / steps * 100)
-                    preview_image = vae.decode(current_latent)
-                    preview_image = (preview_image / 2 + 0.5).clamp(0, 1)
-                    preview_image_np = (preview_image.squeeze(0).permute(1, 2, 0) * 255).clamp(0, 255).to(torch.uint8).cpu().numpy()
-                    async_task.yields.append(['preview', (progress, f'Disco Step {i+1}/{steps}', preview_image_np)])
+            if async_task is not None and (i % 2 == 0 or i == steps - 1):
+                progress = int((i + 1) / steps * 100)
+                preview_image = vae.decode(current_latent)
+                preview_image = (preview_image / 2 + 0.5).clamp(0, 1)
+                preview_image_np = (preview_image.squeeze(0).permute(1, 2, 0) * 255).clamp(0, 255).to(torch.uint8).cpu().numpy()
+                async_task.yields.append(['preview', (progress, f'Disco Step {i+1}/{steps}', preview_image_np)])
 
         # Store the optimized latent back into the dictionary
         latent['samples'] = current_latent
