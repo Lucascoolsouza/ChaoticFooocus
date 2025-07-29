@@ -1,34 +1,11 @@
-# True Disco Diffusion Extension for Fooocus
-# Simple implementation based on original CLIP method
-
+# Simple CLIP Guidance - Based on Original Method
 import torch
 import torch.nn.functional as F
-import numpy as np
-import math
-import random
-from typing import Optional, List, Tuple
-import logging
 import clip
+import logging
 from torchvision import transforms
 
 logger = logging.getLogger(__name__)
-
-def spherical_dist_loss(x, y):
-    """Spherical distance loss for CLIP guidance"""
-    x = F.normalize(x, dim=-1)
-    y = F.normalize(y, dim=-1)
-    return (x - y).norm(dim=-1).div(2).arcsin().pow(2).mul(2)
-
-def tv_loss(input):
-    """Total variation loss for smoothness"""
-    input = F.pad(input, (0, 1, 0, 1), 'replicate')
-    x_diff = input[..., :-1, 1:] - input[..., :-1, :-1]
-    y_diff = input[..., 1:, :-1] - input[..., :-1, :-1]
-    return (x_diff**2 + y_diff**2).mean([1, 2, 3])
-
-def range_loss(input):
-    """Range loss to keep values in reasonable bounds"""
-    return (input - input.clamp(-1, 1)).pow(2).mean([1, 2, 3])
 
 class SimpleMakeCutouts(torch.nn.Module):
     """Simple cutout class like the original, using torchvision transforms"""
@@ -45,18 +22,6 @@ class SimpleMakeCutouts(torch.nn.Module):
 
     def forward(self, input):
         return torch.cat([self.augs(input) for _ in range(self.cutn)], dim=0)
-
-class DiscoSettings:
-    """A simple container for Disco Diffusion settings."""
-    def __init__(self, **kwargs):
-        self.update(**kwargs)
-
-    def update(self, **kwargs):
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-
-# Global settings object
-disco_settings = DiscoSettings()
 
 def run_clip_guidance_loop(
     latent, vae, clip_model, clip_preprocess, text_prompt, async_task,
