@@ -7,7 +7,8 @@ import torchsde
 from tqdm.auto import trange, tqdm
 import numpy as np
 import torch.nn.functional as F
-
+import math
+import random
 from . import utils
 
 
@@ -111,7 +112,44 @@ def get_sigmas_karras_trow_random_blsht(n, sigma_min, sigma_max, num_levels=10, 
     sigmas = torch.exp(log_sigmas)
     return append_zero(sigmas).to(device)
 
+class PsychoEulerSampler:
+    def __init__(self, scheduler, guidance_scale=7.5, mode="wave_noise"):
+        self.scheduler = scheduler
+        self.guidance_scale = guidance_scale
+        self.mode = mode
 
+    def step(self, model_fn, latents, text_embeddings, t, i, total_steps):
+        latents = latents.clone()
+
+        if self.mode == "wave_noise":
+            noise = torch.randn_like(latents) * (0.04 * math.sin(i / 4.0))
+            latents += noise
+
+        elif self.mode == "forgetful":
+            if random.random() < 0.25:
+                latents += torch.randn_like(latents) * 0.1
+
+        elif self.mode == "drunk_sine_guidance":
+            scale = self.guidance_scale + math.sin(i / 3.0) * 3.0
+        else:
+            scale = self.guidance_scale
+
+        if self.mode == "chaos_steps":
+            t = self.scheduler.timesteps[random.randint(0, len(self.scheduler.timesteps) - 1)]
+
+        # Scheduler step
+        latent_model_input = torch.cat([latents] * 2)
+        noise_pred = model_fn(latent_model_input, t, encoder_hidden_states=text_embeddings)
+        noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+
+        if self.mode == "drunk_sine_guidance":
+            guided_noise = noise_pred_uncond + scale * (noise_pred_text - noise_pred_uncond)
+        else:
+            guided_noise = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
+
+        latents = self.scheduler.step(guided_noise, t, latents).prev_sample
+
+        return latents
 
 
 
