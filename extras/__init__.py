@@ -1,0 +1,1 @@
+# Extras package for Fooocus extensions

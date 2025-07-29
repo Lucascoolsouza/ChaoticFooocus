@@ -471,9 +471,12 @@ def load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, o
             vae_sd = ldm_patched.modules.utils.load_torch_file(vae_filename_param)
             vae_filename = vae_filename_param
         if artistic_strength > 0:
+            print(f"[DEBUG] Creating ConfuseVAE with artistic_strength = {artistic_strength}")
             from extras.confuse_vae import ConfuseVAE
             vae = ConfuseVAE(sd=vae_sd, artistic_strength=artistic_strength)
+            print(f"[DEBUG] ConfuseVAE created successfully")
         else:
+            print(f"[DEBUG] Creating standard VAE (artistic_strength = {artistic_strength})")
             vae = VAE(sd=vae_sd)
 
     if output_clip:

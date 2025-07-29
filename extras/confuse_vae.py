@@ -13,8 +13,14 @@ class ConfuseVAE(VAE):
 
     def _apply_artistic_confusion(self, samples):
         """Apply various artistic confusion effects to the latent samples"""
+        print(f"[DEBUG] ConfuseVAE: artistic_strength = {self.artistic_strength}")
+        print(f"[DEBUG] ConfuseVAE: samples shape = {samples.shape}")
+        
         if self.artistic_strength <= 0:
+            print("[DEBUG] ConfuseVAE: No effects applied (strength <= 0)")
             return samples
+        
+        print(f"[DEBUG] ConfuseVAE: Applying artistic effects with strength {self.artistic_strength}")
         
         # Create a copy to avoid modifying the original
         confused_samples = samples.clone()
@@ -139,6 +145,7 @@ class ConfuseVAE(VAE):
 
     def decode(self, samples_in):
         """Decode latent samples with artistic confusion effects"""
+        print(f"[DEBUG] ConfuseVAE.decode called with artistic_strength = {self.artistic_strength}")
         if self.artistic_strength > 0:
             samples_in = self._apply_artistic_confusion(samples_in)
         
@@ -146,6 +153,7 @@ class ConfuseVAE(VAE):
 
     def decode_tiled(self, samples, tile_x=64, tile_y=64, overlap=16):
         """Decode tiled samples with artistic confusion effects"""
+        print(f"[DEBUG] ConfuseVAE.decode_tiled called with artistic_strength = {self.artistic_strength}")
         if self.artistic_strength > 0:
             samples = self._apply_artistic_confusion(samples)
         
