@@ -6,6 +6,7 @@ import math
 import random
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 class DRUNKUNetSampler:
     """
@@ -166,7 +167,9 @@ class DRUNKUNetSampler:
         # 'tpg_applied_layers' pode ser usado para filtrar 'mid', 'up', etc.
         # Este é um exemplo genérico. O nome exato pode variar ('attn2', 'CrossAttention', etc.)
         try:
-            for name, module in unet.named_modules():
+            # Access the actual UNet model from the ModelPatcher
+            actual_unet = unet.model if hasattr(unet, 'model') else unet
+            for name, module in actual_unet.named_modules():
                  # Exemplo de filtro, ajuste conforme a estrutura real do UNet
                  if "attn2" in name: 
                      handle = module.register_forward_hook(attn_noise_hook)
@@ -230,7 +233,10 @@ class DRUNKUNetSampler:
         try:
             # Registrar em camadas estratégicas, por exemplo, após blocos principais ou antes da saída
             # Este é um exemplo genérico, ajuste conforme a arquitetura do UNet
-            for name, module in unet.named_modules():
+        try:
+            # Access the actual UNet model from the ModelPatcher
+            actual_unet = unet.model if hasattr(unet, 'model') else unet
+            for name, module in actual_unet.named_modules():
                 # Exemplo: aplicar em blocos de saída ou em camadas intermediárias importantes
                 if "output_blocks" in name or "mid_block" in name:
                     handle = module.register_forward_hook(cognitive_echo_hook)
