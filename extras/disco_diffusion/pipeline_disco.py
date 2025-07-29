@@ -108,6 +108,10 @@ def run_clip_guidance_loop(
         latent_tensor.requires_grad_(True)  # Ensure gradients are tracked
         optimizer = torch.optim.Adam([latent_tensor], lr=0.05)
         
+        # Ensure VAE is in train mode for gradient computation
+        vae_was_training = vae.training
+        vae.train()
+        
         # 3. Get cutout function
         cut_size = clip_model.visual.input_resolution
         
@@ -118,8 +122,15 @@ def run_clip_guidance_loop(
             optimizer.zero_grad()
             
             # Decode latent to image for CLIP - ensure gradients are maintained
-            image_for_clip = vae.decode(latent_tensor)
+            # Create a fresh tensor that requires gradients
+            latent_for_decode = latent_tensor.clone().requires_grad_(True)
+            image_for_clip = vae.decode(latent_for_decode)
             image_for_clip = image_for_clip.to(device)
+            
+            # Ensure the decoded image requires gradients
+            if not image_for_clip.requires_grad:
+                print(f"[DEBUG] Warning: VAE decode output doesn't require grad, enabling...")
+                image_for_clip.requires_grad_(True)
             # Permute dimensions to (B, C, H, W) if not already
             if image_for_clip.shape[-1] <= 4 and image_for_clip.shape[1] > 4: # Heuristic: if last dim is small (channels) and second dim is large (height/width)
                 image_for_clip = image_for_clip.permute(0, 3, 1, 2) # Assuming (B, H, W, C) -> (B, C, H, W)
@@ -158,17 +169,31 @@ def run_clip_guidance_loop(
             tv_scale_tensor = torch.tensor(tv_scale, device=device, dtype=torch.float32)
             range_scale_tensor = torch.tensor(range_scale, device=device, dtype=torch.float32)
 
-            tv_loss_val = tv_loss(latent_tensor) * tv_scale_tensor
-            range_loss_val = range_loss(latent_tensor) * range_scale_tensor
+            # Use the gradient-enabled latent for loss calculations
+            tv_loss_val = tv_loss(latent_for_decode) * tv_scale_tensor
+            range_loss_val = range_loss(latent_for_decode) * range_scale_tensor
 
             total_loss = dist_loss * disco_scale_tensor + tv_loss_val + range_loss_val
+            
+            # Debug gradient information
+            if i == 0:
+                print(f"[DEBUG] latent_tensor.requires_grad: {latent_tensor.requires_grad}")
+                print(f"[DEBUG] latent_for_decode.requires_grad: {latent_for_decode.requires_grad}")
+                print(f"[DEBUG] image_for_clip.requires_grad: {image_for_clip.requires_grad}")
+                print(f"[DEBUG] image_embeds.requires_grad: {image_embeds.requires_grad}")
+                print(f"[DEBUG] dist_loss.requires_grad: {dist_loss.requires_grad}")
+                print(f"[DEBUG] total_loss.requires_grad: {total_loss.requires_grad}")
             
             if i % 20 == 0:
                 print(f"[Disco Guidance] Step {i}, Loss: {total_loss.item():.4f}")
             
             # Backpropagate and update latent
-            total_loss.backward()
-            optimizer.step()
+            if total_loss.requires_grad:
+                total_loss.backward()
+                optimizer.step()
+            else:
+                print(f"[DEBUG] Warning: total_loss doesn't require grad at step {i}")
+                break
 
             # Update progress and preview
             if async_task is not None:
@@ -178,14 +203,18 @@ def run_clip_guidance_loop(
 
         print("[Disco] CLIP guidance pre-sampling loop finished.")
         latent['samples'] = latent_tensor.detach()
-        clip_model.eval() # Restore CLIP model to evaluation mode
+        
+        # Restore original modes
+        clip_model.eval()
+        vae.train(vae_was_training)
         return latent
 
     except Exception as e:
         logger.error(f"CLIP guidance loop failed: {e}", exc_info=True)
-        # Restore CLIP model to evaluation mode even in case of error
+        # Restore models to original modes even in case of error
         try:
             clip_model.eval()
+            vae.train(vae_was_training)
         except:
             pass
         return latent # Return original latent on failure
