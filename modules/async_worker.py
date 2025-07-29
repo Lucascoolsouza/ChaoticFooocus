@@ -292,6 +292,12 @@ class AsyncTask:
         self.images_to_enhance_count = 0
         self.enhance_stats = {}
 
+        # Disco parameters (4 parameters added to match webui.py ctrls order)
+        self.disco_guidance_steps = args.pop()
+        self.disco_cutn = args.pop()
+        self.disco_tv_scale = args.pop()
+        self.disco_range_scale = args.pop()
+
         # Performance selection (added at the end to match webui.py ctrls order)
         self.performance_selection = Performance(args.pop())
         self.steps = self.performance_selection.steps()
