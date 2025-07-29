@@ -22,6 +22,7 @@ class ForceGridUNet:
         self.blend_strength = blend_strength
         self.is_active = False
         self.original_forward = None
+        self.patched_model = None
         
     def activate(self, unet_model):
         """Activate Force Grid by patching the UNet forward pass"""
