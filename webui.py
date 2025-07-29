@@ -8,6 +8,7 @@ import modules.config
 import fooocus_version
 import modules.html
 import modules.async_worker as worker
+from modules.default_pipeline import refresh_everything
 import modules.constants as constants
 import modules.flags as flags
 import modules.gradio_hijack as grh
