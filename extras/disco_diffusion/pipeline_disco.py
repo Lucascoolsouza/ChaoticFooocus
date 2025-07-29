@@ -193,7 +193,7 @@ def run_clip_guidance_loop(
         print(f"[Disco] Starting finite difference optimization...")
         
         # Finite difference optimization (gradient-like guidance)
-        learning_rate = 0.1
+        learning_rate = 1.1
         eps = 0.01
         
         print(f"[Disco] Starting finite difference optimization...")
