@@ -221,7 +221,7 @@ def run_clip_guidance_loop(
             
             # Update progress
             if async_task is not None:
-                progress = int((i + 1) / steps * 100)
+                progress = int((i + 1) / steps * 500)
                 
                 # Upscale back to original size for preview
                 preview_upscaled = F.interpolate(image_tensor, size=original_size, mode='bilinear', align_corners=False)
