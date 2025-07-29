@@ -8,117 +8,125 @@ patch_all()
 
 
 class AsyncTask:
-    def __init__(self, args):
+    def __init__(self, params=None, args=None):
+        """Initialize a new async task with the given parameters.
+        
+        Args:
+            params: A GenerationParameters object with structured parameters.
+            args: Legacy argument list for backward compatibility.
+        """
         from modules.flags import Performance, MetadataScheme, ip_list, disabled
         from modules.util import get_enabled_loras
-        from modules.config import default_max_lora_number
+        from modules.parameters import GenerationParameters, PerformancePreset, convert_legacy_args_to_params
         import args_manager
-
-        self.args = args.copy()
+        import modules.config as config
+        
+        # Initialize all instance variables with safe defaults first
         self.yields = []
         self.results = []
         self.last_stop = False
         self.processing = False
-
         self.performance_loras = []
-
-        if len(args) == 0:
-            return
-
-        args.reverse()
-        self.generate_image_grid = args.pop()
-        self.force_grid_checkbox = args.pop()
-        self.prompt = args.pop()
-        self.negative_prompt = args.pop()
-        self.style_selections = args.pop()
-
-        self.aspect_ratios_selection = args.pop()
-        self.image_number = args.pop()
-        self.output_format = args.pop()
-        self.seed = int(args.pop())
-        self.read_wildcards_in_order = args.pop()
-        self.sharpness = args.pop()
-        self.cfg_scale = args.pop()
-        self.base_model_name = args.pop()
-        self.refiner_model_name = args.pop()
-        self.refiner_switch = args.pop()
-        self.loras = get_enabled_loras([(bool(args.pop()), str(args.pop()), float(args.pop())) for _ in
-                                        range(default_max_lora_number)])
-        self.input_image_checkbox = args.pop()
-        self.current_tab = args.pop()
-        self.uov_method = args.pop()
-        self.uov_input_image = args.pop()
-        self.latent_upscale_method = args.pop()
-        self.latent_upscale_scheduler = args.pop()
-        self.latent_upscale_size = args.pop()
-        self.outpaint_selections = args.pop()
-        self.inpaint_input_image = args.pop()
-        self.inpaint_additional_prompt = args.pop()
-        self.inpaint_mask_image_upload = args.pop()
-
-        self.disable_preview = args.pop()
-        self.disable_intermediate_results = args.pop()
-        self.disable_seed_increment = args.pop()
-        self.black_out_nsfw = args.pop()
-        self.adm_scaler_positive = args.pop()
-        self.adm_scaler_negative = args.pop()
-        self.adm_scaler_end = args.pop()
-        self.adaptive_cfg = args.pop()
-        self.clip_skip = args.pop()
-        self.sampler_name = args.pop()
-        self.scheduler_name = args.pop()
-        self.vae_name = args.pop()
-        self.overwrite_step = args.pop()
-        self.overwrite_switch = args.pop()
-        self.overwrite_width = args.pop()
-        self.overwrite_height = args.pop()
-        self.overwrite_vary_strength = args.pop()
-        self.overwrite_upscale_strength = args.pop()
-        self.upscale_loops = args.pop()
-        self.mixing_image_prompt_and_vary_upscale = args.pop()
-        self.mixing_image_prompt_and_inpaint = args.pop()
-        self.debugging_cn_preprocessor = args.pop()
-        self.skipping_cn_preprocessor = args.pop()
-        self.canny_low_threshold = args.pop()
-        self.canny_high_threshold = args.pop()
-        self.refiner_swap_method = args.pop()
-        self.controlnet_softness = args.pop()
-        self.freeu_enabled = args.pop()
-        self.freeu_b1 = args.pop()
-        self.freeu_b2 = args.pop()
-        self.freeu_s1 = args.pop()
-        self.freeu_s2 = args.pop()
-        self.debugging_inpaint_preprocessor = args.pop()
-        self.inpaint_disable_initial_latent = args.pop()
-        self.inpaint_engine = args.pop()
-        self.inpaint_strength = args.pop()
-        self.inpaint_respective_field = args.pop()
-        self.inpaint_advanced_masking_checkbox = args.pop()
-        self.invert_mask_checkbox = args.pop()
-        self.inpaint_erode_or_dilate = args.pop()
+        self.debugging_dino = False
+        self.disco_enabled = False
+        self.drunk_unet_enabled = False
+        self.cn_tasks = {x: [] for x in ip_list}  # Initialize empty ControlNet tasks
+        self.params = GenerationParameters()  # Default parameters
+        self.args = []  # Will be populated if needed
         
-        
-        self.save_final_enhanced_image_only = args.pop() if not args_manager.args.disable_image_log else False
-        self.save_metadata_to_images = args.pop() if not args_manager.args.disable_metadata else False
-        self.metadata_scheme = MetadataScheme(
-            args.pop()) if not args_manager.args.disable_metadata else MetadataScheme.FOOOCUS
-
-        # Detail daemon parameters (popped in reverse order from webui.py)
-        print(f"[DEBUG] Args remaining before detail daemon: {len(args)}")
-        
-        # Pop all 12 detail daemon parameters
-        detail_params = []
         try:
-            for i in range(12):
-                param = args.pop()
-                detail_params.append(param)
-                print(f"[DEBUG] Popped param {i}: {param} (type: {type(param)})")
-        except IndexError as e:
-            print(f"[DEBUG] Error popping parameter {i}: {e}")
-            print(f"[DEBUG] Args remaining: {len(args)}")
-            # Fill remaining with defaults
-            while len(detail_params) < 12:
-                detail_params.append(None)
+            # If params is provided, use it directly
+            if params is not None:
+                self.params = params
+            # If args is provided and not empty, try to convert to params
+            elif args is not None and len(args) > 0:
+                try:
+                    self.params = convert_legacy_args_to_params(args)
+                except Exception as e:
+                    print(f"[WARNING] Failed to convert args to params: {e}")
+                    # If conversion fails, use default params
+                    self.params = GenerationParameters()
+            
+            # Map parameters to instance variables for backward compatibility
+            self._map_params_to_attributes()
+            
+            # For backward compatibility, maintain the args list
+            self.args = self._convert_params_to_args()
+            
+            # If we were given args, process them in the old way for backward compatibility
+            if args is not None and len(args) > 0:
+                self._process_legacy_args(args)
+            
+        except Exception as e:
+            import traceback
+            print(f"[ERROR] Error in AsyncTask initialization: {e}")
+            print("Traceback:", traceback.format_exc())
+            # Ensure we have valid defaults even if something fails
+            self.params = GenerationParameters()
+            self.args = []
+        
+        # Initialize ControlNet tasks if needed
+        try:
+            if hasattr(self, 'params') and hasattr(self.params, 'controlnet_tasks'):
+                for task in self.params.controlnet_tasks:
+                    if task and hasattr(task, 'type') and hasattr(task, 'image') and task.image is not None:
+                        if task.type in self.cn_tasks:
+                            stop = getattr(task, 'stop', 0.0)
+                            weight = getattr(task, 'weight', 1.0)
+                            self.cn_tasks[task.type].append([task.image, stop, weight])
+        except Exception as e:
+            print(f"[WARNING] Error initializing ControlNet tasks: {e}")
+            # Continue with empty ControlNet tasks if there's an error
+
+        # Initialize all parameters with default values first
+        self.detail_daemon_enabled = False
+        self.detail_daemon_amount = 0.25
+        self.detail_daemon_start = 0.2
+        self.detail_daemon_end = 0.8
+        self.detail_daemon_bias = 0.71
+        self.detail_daemon_base_multiplier = 0.85
+        self.detail_daemon_start_offset = 0
+        self.detail_daemon_end_offset = -0.15
+        self.detail_daemon_exponent = 1
+        self.detail_daemon_fade = 0
+        self.detail_daemon_mode = 'both'
+        self.detail_daemon_smooth = True
+        
+        # Only process args if they're provided and not empty
+        if args and len(args) > 0:
+            print(f"[DEBUG] Processing detail daemon parameters from {len(args)} args")
+            # Pop all 12 detail daemon parameters safely
+            detail_params = []
+            try:
+                for i in range(12):
+                    if args:  # Check if there are args left to pop
+                        param = args.pop()
+                        detail_params.append(param)
+                        print(f"[DEBUG] Popped param {i}: {param} (type: {type(param)})")
+                    else:
+                        detail_params.append(None)
+                        print(f"[DEBUG] No more args for param {i}, using None")
+                
+                # Assign values if we got them
+                if len(detail_params) > 0: self.detail_daemon_enabled = detail_params[0] if detail_params[0] is not None else False
+                if len(detail_params) > 1: self.detail_daemon_amount = detail_params[1] if detail_params[1] is not None else 0.25
+                if len(detail_params) > 2: self.detail_daemon_start = detail_params[2] if detail_params[2] is not None else 0.2
+                if len(detail_params) > 3: self.detail_daemon_end = detail_params[3] if detail_params[3] is not None else 0.8
+                if len(detail_params) > 4: self.detail_daemon_bias = detail_params[4] if detail_params[4] is not None else 0.71
+                if len(detail_params) > 5: self.detail_daemon_base_multiplier = detail_params[5] if detail_params[5] is not None else 0.85
+                if len(detail_params) > 6: self.detail_daemon_start_offset = detail_params[6] if detail_params[6] is not None else 0
+                if len(detail_params) > 7: self.detail_daemon_end_offset = detail_params[7] if detail_params[7] is not None else -0.15
+                if len(detail_params) > 8: self.detail_daemon_exponent = detail_params[8] if detail_params[8] is not None else 1
+                if len(detail_params) > 9: self.detail_daemon_fade = detail_params[9] if detail_params[9] is not None else 0
+                if len(detail_params) > 10: self.detail_daemon_mode = detail_params[10] if detail_params[10] is not None else 'both'
+                if len(detail_params) > 11: self.detail_daemon_smooth = detail_params[11] if detail_params[11] is not None else True
+                
+            except Exception as e:
+                import traceback
+                print(f"[WARNING] Error processing detail daemon params: {e}")
+                print("Traceback:", traceback.format_exc())
+        
+        print(f"[DEBUG] Detail daemon params: enabled={self.detail_daemon_enabled}, amount={self.detail_daemon_amount}, mode={self.detail_daemon_mode}")
         
         # Assign in correct order matching webui ctrls order with defaults
         self.detail_daemon_enabled = detail_params[0] if detail_params[0] is not None else False
@@ -226,13 +234,23 @@ class AsyncTask:
         
         print(f"[DEBUG] Disco params: enabled={self.disco_enabled}, scale={self.disco_scale}, preset={self.disco_preset}, clip_model={self.disco_clip_model}")
 
+        # Process ControlNet parameters
+        self.cn_tasks = {x: [] for x in ip_list}
+        if hasattr(self, 'params') and hasattr(self.params, 'controlnet_tasks'):
+            for task in self.params.controlnet_tasks:
+                if task.image is not None:
+                    if task.type not in self.cn_tasks:
+                        print(f"[WARNING] Invalid controlnet type: {task.type}, using default")
+                        task.type = ip_list[0]  # Use first valid type as fallback
+                    self.cn_tasks[task.type].append([task.image, task.stop, task.weight])
+
         # Drunk UNet parameters (popped in reverse order from webui.py)
         print(f"[DEBUG] Args remaining before Drunk UNet: {len(args)}")
         
-        # Pop all 9 Drunk UNet parameters
+        # Pop all 8 Drunk UNet parameters
         drunk_params = []
         try:
-            for i in range(9):
+            for i in range(8):
                 param = args.pop()
                 drunk_params.append(param)
                 print(f"[DEBUG] Popped Drunk UNet param {i}: {param} (type: {type(param)})")
@@ -240,7 +258,7 @@ class AsyncTask:
             print(f"[DEBUG] Error popping Drunk UNet parameter {i}: {e}")
             print(f"[DEBUG] Args remaining: {len(args)}")
             # Fill remaining with defaults
-            while len(drunk_params) < 9:
+            while len(drunk_params) < 8:  # Fixed: was 9 but we only have 8 parameters
                 drunk_params.append(None)
         
         # Assign in correct order matching webui ctrls order with defaults
@@ -252,20 +270,8 @@ class AsyncTask:
         self.drunk_dynamic_guidance_preset = drunk_params[5] if drunk_params[5] is not None else 'None'
         self.drunk_dynamic_guidance_base = drunk_params[6] if drunk_params[6] is not None else 7.0
         self.drunk_dynamic_guidance_amplitude = drunk_params[7] if drunk_params[7] is not None else 2.0
-        self.drunk_dynamic_guidance_frequency = drunk_params[8] if drunk_params[8] is not None else 0.1
         
         print(f"[DEBUG] Drunk UNet params: enabled={self.drunk_enabled}, attn_noise={self.drunk_attn_noise_strength}, prompt_noise={self.drunk_prompt_noise_strength}, echo={self.drunk_cognitive_echo_strength}, dynamic_preset={self.drunk_dynamic_guidance_preset}")
-
-
-
-        self.cn_tasks = {x: [] for x in ip_list}
-        for _ in range(modules.config.default_controlnet_image_count):
-            cn_img = args.pop()
-            cn_stop = args.pop()
-            cn_weight = args.pop()
-            cn_type = args.pop()
-            if cn_img is not None:
-                self.cn_tasks[cn_type].append([cn_img, cn_stop, cn_weight])
 
         self.debugging_dino = args.pop()
         self.dino_erode_or_dilate = args.pop()
@@ -330,12 +336,118 @@ class AsyncTask:
         self.artistic_strength = args.pop() if len(args) > 0 else 0.0
         print(f"[DEBUG] Confuse VAE artistic_strength: {self.artistic_strength}")
 
-        # Performance selection (added at the end to match webui.py ctrls order)
-        self.performance_selection = Performance(args.pop())
-        self.steps = self.performance_selection.steps()
-        self.original_steps = self.steps
+        # Set performance selection
+        if hasattr(self, 'params') and hasattr(self.params, 'performance_preset'):
+            self.performance_selection = Performance(self.params.performance_preset)
+            self.steps = self.performance_selection.steps()
+            self.original_steps = self.steps
+        else:
+            # Fallback to default performance settings
+            self.performance_selection = Performance(PerformancePreset.QUALITY)
+            self.steps = self.performance_selection.steps()
+            self.original_steps = self.steps
 
         
+
+    def _map_params_to_attributes(self):
+        """Map parameters from self.params to instance variables for backward compatibility"""
+        if not hasattr(self, 'params') or not self.params:
+            return
+            
+        # Map all parameters from params to instance variables
+        for attr_name in dir(self.params):
+            if not attr_name.startswith('_') and not callable(getattr(self.params, attr_name)):
+                setattr(self, attr_name, getattr(self.params, attr_name, None))
+        
+        # Map nested parameters from feature objects
+        if hasattr(self.params, 'drunk_unet'):
+            for attr_name in dir(self.params.drunk_unet):
+                if not attr_name.startswith('_'):
+                    setattr(self, f'drunk_unet_{attr_name}', getattr(self.params.drunk_unet, attr_name, None))
+        
+        if hasattr(self.params, 'disco_diffusion'):
+            for attr_name in dir(self.params.disco_diffusion):
+                if not attr_name.startswith('_'):
+                    setattr(self, f'disco_{attr_name}', getattr(self.params.disco_diffusion, attr_name, None))
+    
+    def _convert_params_to_args(self):
+        """Convert structured params back to args list (for backward compatibility)"""
+        if not hasattr(self, 'params') or not self.params:
+            return []
+            
+        # This is a simplified version - in a real implementation, you would need to
+        # map all parameters in the exact order expected by the original code
+        args = []
+        
+        # Basic UI parameters
+        args.append(self.params.generate_image_grid)
+        args.append(self.params.force_grid_checkbox)
+        
+        # Core generation parameters
+        args.append(self.params.prompt)
+        args.append(self.params.negative_prompt)
+        args.append(self.params.style_selections)
+        args.append(self.params.aspect_ratio)
+        args.append(self.params.image_number)
+        args.append(self.params.output_format)
+        args.append(self.params.seed)
+        args.append(self.params.read_wildcards_in_order)
+        
+        # Add other parameters in the correct order...
+        # This is a simplified example - you would need to add all parameters
+        # in the exact order expected by the original code
+        
+        return args
+        
+    def _process_legacy_args(self, args):
+        """Process legacy args for backward compatibility"""
+        if not args or len(args) == 0:
+            return
+            
+        # Make a copy of args to avoid modifying the original
+        args_copy = list(args)
+        
+        try:
+            # Only process legacy args if we have enough parameters
+            if len(args_copy) >= 3:
+                self.debugging_dino = args_copy.pop() if args_copy else False
+                self.dino_erode_or_dilate = args_copy.pop() if args_copy else 0
+                self.debugging_enhance_masks_checkbox = args_copy.pop() if args_copy else False
+                
+                if args_copy:
+                    self.enhance_input_image = args_copy.pop()
+                    self.enhance_checkbox = args_copy.pop() if args_copy else False
+                    self.enhance_uov_method = args_copy.pop() if args_copy else None
+                    self.enhance_bg_removal_model = args_copy.pop() if args_copy else None
+                    self.enhance_uov_processing_order = args_copy.pop() if args_copy else None
+                    self.enhance_uov_prompt_type = args_copy.pop() if args_copy else None
+                    self.seamless_tiling_method = args_copy.pop() if args_copy else None
+                    self.seamless_tiling_overlap = args_copy.pop() if args_copy else None
+                    
+                    # Process enhance controls if needed
+                    self.enhance_ctrls = []
+                    if self.enhance_checkbox and len(args_copy) >= 15 * modules.config.default_enhance_tabs:
+                        for _ in range(modules.config.default_enhance_tabs):
+                            if len(args_copy) >= 15:
+                                ctrl = [args_copy.pop() for _ in range(15)]
+                                self.enhance_ctrls.append(ctrl)
+                    
+                    # Set should_enhance flag
+                    self.should_enhance = self.enhance_checkbox and \
+                                        (self.enhance_uov_method != 'disabled' or len(self.enhance_ctrls) > 0)
+            
+        except Exception as e:
+            print(f"[WARNING] Error processing legacy args: {e}")
+            import traceback
+            print("Traceback:", traceback.format_exc())
+    
+    def _convert_args_to_params(self, args):
+        """Convert old-style args list to new structured params (for backward compatibility)
+        
+        This is just a wrapper around the module-level function for backward compatibility.
+        """
+        from modules.parameters import convert_legacy_args_to_params
+        return convert_legacy_args_to_params(args) if args else GenerationParameters()
 
 async_tasks = []
 

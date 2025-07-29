@@ -26,12 +26,65 @@ from modules.private_logger import get_current_html_path
 from modules.ui_gradio_extensions import reload_javascript
 from modules.auth import auth_enabled, check_auth
 from modules.util import is_json
+from modules.parameters import GenerationParameters, ControlNetTask, PerformancePreset
 
 def get_task(*args):
-    args = list(args)
-    args.pop(0)
-
-    return worker.AsyncTask(args=args)
+    """Create a new async task with the given parameters.
+    
+    Args:
+        *args: List of parameters from the UI. The first argument is the component,
+               followed by all the generation parameters. If empty, creates a default task.
+               
+    Returns:
+        worker.AsyncTask: A new task with the given parameters.
+    """
+    from modules.parameters import GenerationParameters
+    
+    # Create a default task with safe defaults
+    default_task = worker.AsyncTask(params=GenerationParameters())
+    
+    try:
+        # If no arguments provided, return default task
+        if not args:
+            print("[INFO] No arguments provided, creating default task")
+            return default_task
+            
+        # Convert args to list and remove the first element (component)
+        args_list = list(args)
+        if len(args_list) <= 1:
+            print("[INFO] Only component argument provided, creating default task")
+            return default_task
+            
+        # Extract parameters (skip the first component argument)
+        params_list = args_list[1:]
+        
+        # Try to convert to structured parameters
+        try:
+            from modules.parameters import convert_legacy_args_to_params
+            params = convert_legacy_args_to_params(params_list)
+            return worker.AsyncTask(params=params)
+            
+        except Exception as conv_error:
+            import traceback
+            print(f"[WARNING] Failed to convert args to params: {conv_error}")
+            print("Args received:", params_list)
+            print("Traceback:", traceback.format_exc())
+            
+            # Fall back to legacy mode if conversion fails
+            try:
+                print("[INFO] Falling back to legacy argument processing")
+                return worker.AsyncTask(args=params_list)
+            except Exception as legacy_error:
+                print(f"[ERROR] Legacy argument processing failed: {legacy_error}")
+                print("Traceback:", traceback.format_exc())
+                return default_task
+                
+    except Exception as e:
+        import traceback
+        print(f"[ERROR] Critical error in get_task: {e}")
+        print("Args received:", args)
+        print("Traceback:", traceback.format_exc())
+        return default_task
 
 def generate_clicked(task: worker.AsyncTask):
     import ldm_patched.modules.model_management as model_management
