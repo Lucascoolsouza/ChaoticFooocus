@@ -341,22 +341,39 @@ def get_candidate_vae(steps, switch, denoise=1.0, refiner_swap_method='joint'):
 def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, original_prompt=None, original_negative_prompt=None, detail_daemon_enabled=False, detail_daemon_amount=0.25, detail_daemon_start=0.2, detail_daemon_end=0.8, detail_daemon_bias=0.71, detail_daemon_base_multiplier=0.85, detail_daemon_start_offset=0, detail_daemon_end_offset=-0.15, detail_daemon_exponent=1, detail_daemon_fade=0, detail_daemon_mode='both', detail_daemon_smooth=True, tpg_enabled=False, tpg_scale=3.0, tpg_applied_layers=None, tpg_shuffle_strength=1.0, tpg_adaptive_strength=True, nag_enabled=False, nag_scale=1.5, nag_tau=5.0, nag_alpha=0.5, nag_negative_prompt="", nag_end=1.0, disco_enabled=False, disco_scale=0.5, disco_preset='custom', disco_transforms=None, disco_seed=None, disco_animation_mode='none', disco_zoom_factor=1.02, disco_rotation_speed=0.1, disco_translation_x=0.0, disco_translation_y=0.0, disco_color_coherence=0.5, disco_saturation_boost=1.2, disco_contrast_boost=1.1, disco_symmetry_mode='none', disco_fractal_octaves=3, disco_clip_model='RN50', disco_guidance_steps=100, disco_cutn=16, disco_tv_scale=150.0, disco_range_scale=50.0, force_grid_checkbox=False, async_task=None):
     print(f"[PROCESS_DIFFUSION ENTRY]")
 
-    force_grid_context = None # Initialize to None for cleanup
+    force_grid_unet_context = None # Initialize to None for cleanup
     imgs = [] # Initialize imgs to an empty list
 
     try:
-        # Force Grid Integration
+        # Force Grid UNet Integration
+        force_grid_unet_context = None
         if force_grid_checkbox:
             try:
-                from extensions.force_grid_integration import ForceGridContext
-                force_grid_context = ForceGridContext()
-                force_grid_context.__enter__() # Manually enter the context
-                print("[Force Grid] Force Grid enabled for this generation.")
+                from extensions.force_grid_unet import ForceGridUNetContext
+                # Calculate grid size based on image dimensions
+                # For larger images, use bigger grids
+                if width >= 1024 and height >= 1024:
+                    grid_size = (3, 3)  # 3x3 grid for large images
+                elif width >= 768 or height >= 768:
+                    grid_size = (2, 2)  # 2x2 grid for medium images
+                else:
+                    grid_size = (2, 2)  # 2x2 grid for smaller images
+                
+                # Get the UNet model from the pipeline
+                unet_model = final_unet
+                
+                force_grid_unet_context = ForceGridUNetContext(
+                    unet_model=unet_model,
+                    grid_size=grid_size,
+                    blend_strength=0.15  # Moderate blend strength
+                )
+                force_grid_unet_context.__enter__()
+                print(f"[Force Grid UNet] Enabled with {grid_size} grid for {width}x{height} image")
             except Exception as e:
-                print(f"[Force Grid] Error enabling Force Grid: {e}")
+                print(f"[Force Grid UNet] Error enabling: {e}")
                 import traceback
                 traceback.print_exc()
-                force_grid_checkbox = False # Disable if error occurs
+                force_grid_checkbox = False
         
         if steps == 0:
             # If steps is 0, no diffusion is performed. Return the initial latent or an empty list.
@@ -603,10 +620,10 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         
         return imgs
     finally:
-        if force_grid_checkbox and force_grid_context is not None:
+        if force_grid_checkbox and force_grid_unet_context is not None:
             try:
-                force_grid_context.__exit__(None, None, None)
-                print("[Force Grid] Force Grid disabled after generation.")
+                force_grid_unet_context.__exit__(None, None, None)
+                print("[Force Grid UNet] Disabled after generation.")
             except Exception as e:
                 print(f"[Force Grid] Error disabling Force Grid: {e}")
                 import traceback
