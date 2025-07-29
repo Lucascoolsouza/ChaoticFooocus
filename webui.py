@@ -1114,6 +1114,8 @@ with shared.gradio_root:
                         generate_image_grid = gr.Checkbox(label='Generate Image Grid for Each Batch',
                                                           info='(Experimental) This may cause performance problems on some computers and certain internet conditions.',
                                                           value=False)
+                        force_grid_checkbox = gr.Checkbox(label='Generate Grid Image (Experimental)', value=False,
+                                                          info='Generate a single grid image from multiple outputs.')
 
                         overwrite_step = gr.Slider(label='Forced Overwrite of Sampling Step',
                                                    minimum=-1, maximum=200, step=1,
@@ -1367,7 +1369,7 @@ with shared.gradio_root:
                                            inpaint_mask_sam_max_detections, dino_erode_or_dilate, debugging_dino],
                                    outputs=inpaint_mask_image, show_progress=True, queue=True)
 
-        ctrls = [currentTask, generate_image_grid]
+        ctrls = [currentTask, generate_image_grid, force_grid_checkbox]
         ctrls += [
             prompt, negative_prompt, style_selections,
             performance_selection, aspect_ratios_selection, image_number, output_format, image_seed,
