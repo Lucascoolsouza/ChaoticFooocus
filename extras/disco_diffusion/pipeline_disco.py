@@ -223,19 +223,41 @@ def run_clip_guidance_loop(
         with torch.no_grad():
             # Prepare image for VAE encoding
             final_image = image_tensor.detach().clamp(0, 1)
-            # Convert back to VAE input format [-1, 1]
-            final_image = final_image * 2 - 1
             
-            # Encode to latent
-            if hasattr(vae, 'encode'):
-                final_latent = vae.encode(final_image)
-                if isinstance(final_latent, dict) and 'samples' in final_latent:
-                    latent['samples'] = final_latent['samples']
-                else:
-                    latent['samples'] = final_latent
+            # Debug image dimensions
+            print(f"[DEBUG] final_image shape before processing: {final_image.shape}")
+            
+            # Ensure correct dimensions: should be [B, C, H, W]
+            if len(final_image.shape) == 4:
+                B, C, H, W = final_image.shape
+                if C != 3:
+                    print(f"[DEBUG] Warning: Expected 3 channels, got {C}")
+                    if C > 3:
+                        final_image = final_image[:, :3, :, :]  # Take first 3 channels
+                    elif C == 1:
+                        final_image = final_image.repeat(1, 3, 1, 1)  # Convert grayscale to RGB
+                
+                print(f"[DEBUG] final_image shape after channel fix: {final_image.shape}")
+                
+                # Convert back to VAE input format [-1, 1]
+                final_image = final_image * 2 - 1
+                
+                # Encode to latent
+                try:
+                    if hasattr(vae, 'encode'):
+                        final_latent = vae.encode(final_image)
+                        if isinstance(final_latent, dict) and 'samples' in final_latent:
+                            latent['samples'] = final_latent['samples']
+                        else:
+                            latent['samples'] = final_latent
+                        print(f"[DEBUG] Successfully encoded to latent shape: {latent['samples'].shape}")
+                    else:
+                        print("[Disco] Warning: VAE encode not available, keeping original latent")
+                except Exception as encode_error:
+                    print(f"[Disco] VAE encode failed: {encode_error}")
+                    print("[Disco] Keeping original latent")
             else:
-                # Fallback: keep original latent if encoding fails
-                print("[Disco] Warning: VAE encode not available, keeping original latent")
+                print(f"[Disco] Warning: Unexpected image shape {final_image.shape}, keeping original latent")
 
         print("[Disco] CLIP guidance image generation finished.")
         
