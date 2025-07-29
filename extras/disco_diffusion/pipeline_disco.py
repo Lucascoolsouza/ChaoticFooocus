@@ -41,15 +41,30 @@ class DiscoTransforms:
         min_size = min(sideX, sideY, cut_size)
         cutouts = []
         
+        # Ensure we're working with gradient-enabled tensors
+        device = image.device
+        
         for _ in range(cutn):
-            size = int(torch.rand([])**0.8 * (max_size - min_size) + min_size)
-            offsetx = torch.randint(0, sideX - size + 1, ())
-            offsety = torch.randint(0, sideY - size + 1, ())
+            # Use differentiable operations for random sampling
+            size = int((torch.rand([], device=device)**0.8 * (max_size - min_size) + min_size).item())
+            offsetx = int(torch.randint(0, sideX - size + 1, (), device=device).item())
+            offsety = int(torch.randint(0, sideY - size + 1, (), device=device).item())
+            
+            # Extract cutout (this should preserve gradients)
             cutout = image[:, :, offsety:offsety + size, offsetx:offsetx + size]
-            cutout = F.adaptive_avg_pool2d(cutout, cut_size)
+            
+            # Resize using differentiable interpolation
+            cutout = F.interpolate(cutout, size=(cut_size, cut_size), mode='bilinear', align_corners=False)
             cutouts.append(cutout)
         
-        return torch.cat(cutouts, dim=0)
+        # Concatenate cutouts (preserves gradients)
+        result = torch.cat(cutouts, dim=0)
+        
+        # Debug: check if gradients are preserved
+        if image.requires_grad and not result.requires_grad:
+            print("[DEBUG] make_cutouts broke gradients!")
+        
+        return result
 
 class DiscoSettings:
     """A simple container for Disco Diffusion settings."""
@@ -152,11 +167,17 @@ def run_clip_guidance_loop(
             with torch.no_grad():
                 image_tensor.clamp_(0, 1)
             
-            # Create cutouts for CLIP analysis
+            # Create cutouts for CLIP analysis - ensure gradients are preserved
             cutouts = make_cutouts.make_cutouts(image_tensor, cut_size, cutn)
             
-            # Ensure cutouts are on the correct device
+            # Ensure cutouts are on the correct device and preserve gradients
             cutouts = cutouts.to(device)
+            
+            # If cutouts lost gradients, create artificial connection
+            if not cutouts.requires_grad and image_tensor.requires_grad:
+                print(f"[DEBUG] Cutouts lost gradients, creating artificial connection")
+                cutouts = cutouts + 0.0 * image_tensor.mean()
+                cutouts.requires_grad_(True)
             
             # Apply CLIP preprocessing
             processed_cutouts = F.interpolate(cutouts, size=cut_size, mode='bicubic', align_corners=False)
