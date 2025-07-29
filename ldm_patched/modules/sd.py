@@ -21,7 +21,7 @@ import ldm_patched.modules.lora
 import ldm_patched.t2ia.adapter
 import ldm_patched.modules.supported_models_base
 import ldm_patched.taesd.taesd
-from extras.confuse_vae import ConfuseVAE
+
 
 def load_model_weights(model, sd):
     m, u = model.load_state_dict(sd, strict=False)
@@ -470,7 +470,11 @@ def load_checkpoint_guess_config(ckpt_path, output_vae=True, output_clip=True, o
         else:
             vae_sd = ldm_patched.modules.utils.load_torch_file(vae_filename_param)
             vae_filename = vae_filename_param
-        vae = VAE(sd=vae_sd, artistic_strength=artistic_strength) if artistic_strength > 0 else VAE(sd=vae_sd)
+        if artistic_strength > 0:
+            from extras.confuse_vae import ConfuseVAE
+            vae = ConfuseVAE(sd=vae_sd, artistic_strength=artistic_strength)
+        else:
+            vae = VAE(sd=vae_sd)
 
     if output_clip:
         w = WeightsLoader()
