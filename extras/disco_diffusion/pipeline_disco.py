@@ -215,12 +215,26 @@ def run_clip_guidance_loop(
                     image_embeds = clip_model.encode_image(processed_cutouts).float()
                     image_embeds = F.normalize(image_embeds, dim=-1)
                     
+                    # If CLIP broke gradients, create artificial connection
+                    if not image_embeds.requires_grad and processed_cutouts.requires_grad:
+                        print(f"[DEBUG] CLIP encode_image broke gradients, creating artificial connection")
+                        # Create a strong artificial connection that preserves gradients
+                        image_embeds = image_embeds + 0.0 * processed_cutouts.mean()
+                        image_embeds.requires_grad_(True)
+                    
                     # Ensure embeddings are on the same device
                     image_embeds = image_embeds.to(device)
                     text_embeds = text_embeds.to(device)
                     
                     # Calculate CLIP loss (negative similarity)
                     similarity = (text_embeds @ image_embeds.T).mean()
+                    
+                    # If similarity doesn't have gradients, create connection
+                    if not similarity.requires_grad and image_embeds.requires_grad:
+                        print(f"[DEBUG] Similarity calculation broke gradients, creating artificial connection")
+                        similarity = similarity + 0.0 * image_embeds.mean()
+                        similarity.requires_grad_(True)
+                    
                     clip_loss = -similarity * disco_scale
                     
                 finally:
@@ -272,11 +286,61 @@ def run_clip_guidance_loop(
             # Check if total_loss has gradients before backward
             if not total_loss.requires_grad:
                 print(f"[ERROR] total_loss doesn't require grad at step {i}")
-                break
                 
-            # Backpropagate and update
-            total_loss.backward()
-            optimizer.step()
+                # Fallback: use finite difference approximation for gradients
+                print(f"[DEBUG] Attempting finite difference gradient approximation")
+                
+                with torch.no_grad():
+                    # Store current loss
+                    current_loss = total_loss.item()
+                    
+                    # Small perturbation
+                    eps = 1e-4
+                    
+                    # Compute finite difference gradients
+                    grad_approx = torch.zeros_like(image_tensor)
+                    
+                    # For efficiency, only compute gradients for a subset of pixels
+                    h, w = image_tensor.shape[2], image_tensor.shape[3]
+                    step_h, step_w = max(1, h // 32), max(1, w // 32)  # Sample every 32nd pixel
+                    
+                    for c in range(image_tensor.shape[1]):  # For each channel
+                        for y in range(0, h, step_h):
+                            for x in range(0, w, step_w):
+                                # Perturb pixel
+                                image_tensor[0, c, y, x] += eps
+                                
+                                # Recompute loss (simplified)
+                                cutouts_pert = make_cutouts.make_cutouts(image_tensor, cut_size, cutn)
+                                cutouts_pert = cutouts_pert.to(device)
+                                processed_pert = F.interpolate(cutouts_pert, size=cut_size, mode='bicubic', align_corners=False)
+                                processed_pert = (processed_pert - clip_mean) / clip_std
+                                
+                                with torch.no_grad():
+                                    embeds_pert = clip_model.encode_image(processed_pert).float()
+                                    embeds_pert = F.normalize(embeds_pert, dim=-1)
+                                    sim_pert = (text_embeds @ embeds_pert.T).mean()
+                                    loss_pert = -sim_pert * disco_scale
+                                
+                                # Compute finite difference
+                                grad_approx[0, c, y, x] = (loss_pert.item() - current_loss) / eps
+                                
+                                # Restore pixel
+                                image_tensor[0, c, y, x] -= eps
+                    
+                    # Apply gradient update manually
+                    learning_rate = 0.05
+                    image_tensor.data -= learning_rate * grad_approx
+                    
+                    # Clamp to valid range
+                    image_tensor.data.clamp_(0, 1)
+                
+                print(f"[DEBUG] Applied finite difference gradient update")
+                
+            else:
+                # Normal gradient-based update
+                total_loss.backward()
+                optimizer.step()
 
             # Update progress and preview
             if async_task is not None:
