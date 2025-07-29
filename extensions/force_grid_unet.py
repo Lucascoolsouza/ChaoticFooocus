@@ -30,14 +30,46 @@ class ForceGridUNet:
             
         print(f"[Force Grid UNet] Activating with grid size {self.grid_size}")
         
-        # Store original forward method
-        self.original_forward = unet_model.forward
-        
-        # Replace with grid-enhanced forward
-        unet_model.forward = self._create_grid_forward(unet_model, self.original_forward)
-        
-        self.is_active = True
-        print("[Force Grid UNet] Successfully patched UNet forward pass")
+        try:
+            # Handle ModelPatcher objects (common in Fooocus)
+            if hasattr(unet_model, 'model'):
+                # This is a ModelPatcher, get the actual model
+                actual_model = unet_model.model
+                print(f"[Force Grid UNet] Detected ModelPatcher, accessing underlying model: {type(actual_model)}")
+            else:
+                # Direct model
+                actual_model = unet_model
+                print(f"[Force Grid UNet] Direct model detected: {type(actual_model)}")
+            
+            # Check if the model has a forward method
+            if hasattr(actual_model, 'forward'):
+                # Store original forward method
+                self.original_forward = actual_model.forward
+                self.patched_model = actual_model
+                
+                # Replace with grid-enhanced forward
+                actual_model.forward = self._create_grid_forward(actual_model, self.original_forward)
+                
+                self.is_active = True
+                print("[Force Grid UNet] Successfully patched UNet forward pass")
+            else:
+                print(f"[Force Grid UNet] Model {type(actual_model)} has no forward method")
+                print(f"[Force Grid UNet] Available attributes: {[attr for attr in dir(actual_model) if not attr.startswith('_')]}")
+                
+                # Try alternative approach - patch the __call__ method if it exists
+                if hasattr(actual_model, '__call__'):
+                    self.original_forward = actual_model.__call__
+                    self.patched_model = actual_model
+                    actual_model.__call__ = self._create_grid_forward(actual_model, self.original_forward)
+                    self.is_active = True
+                    print("[Force Grid UNet] Successfully patched UNet __call__ method")
+                else:
+                    print("[Force Grid UNet] Cannot find suitable method to patch")
+                    
+        except Exception as e:
+            print(f"[Force Grid UNet] Error during activation: {e}")
+            import traceback
+            traceback.print_exc()
     
     def deactivate(self, unet_model):
         """Deactivate Force Grid by restoring original UNet forward pass"""
@@ -45,9 +77,25 @@ class ForceGridUNet:
             return
             
         print("[Force Grid UNet] Deactivating Force Grid")
-        unet_model.forward = self.original_forward
-        self.is_active = False
-        print("[Force Grid UNet] Restored original UNet forward pass")
+        
+        try:
+            # Restore the original method on the patched model
+            if hasattr(self, 'patched_model') and self.patched_model is not None:
+                if hasattr(self.patched_model, 'forward'):
+                    self.patched_model.forward = self.original_forward
+                    print("[Force Grid UNet] Restored original forward method")
+                elif hasattr(self.patched_model, '__call__'):
+                    self.patched_model.__call__ = self.original_forward
+                    print("[Force Grid UNet] Restored original __call__ method")
+            
+            self.is_active = False
+            self.patched_model = None
+            print("[Force Grid UNet] Force Grid deactivated")
+            
+        except Exception as e:
+            print(f"[Force Grid UNet] Error during deactivation: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _create_grid_forward(self, unet_model, original_forward):
         """Create a grid-enhanced forward pass for the UNet"""
