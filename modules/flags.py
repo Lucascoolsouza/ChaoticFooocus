@@ -63,6 +63,7 @@ KSAMPLER = {
     "heun_pixel_art": "Heun Pixel Art",
     "euler_disco": "Euler Disco",
     "heun_disco": "Heun Disco",
+    "psycho_euler": "Psycho Euler",
     "euler_wave_noise": "Euler Wave Noise",
     "euler_forgetful": "Euler Forgetful",
     "euler_drunk_guidance": "Euler Drunk Guidance",
