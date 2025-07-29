@@ -104,11 +104,14 @@ def run_clip_guidance_loop(
         latent_tensor = latent['samples']
         device = latent_tensor.device
         
-        # Load our own CLIP model if needed (like original method)
-        if clip_model is None or not hasattr(clip_model, 'visual'):
-            print("[Disco] Loading fresh CLIP model...")
-            clip_model, _ = clip.load("RN50", device=device)
-            clip_model.eval()
+        # Always load our own CLIP model to ensure gradients work
+        print("[Disco] Loading fresh CLIP model for gradient optimization...")
+        clip_model, _ = clip.load("RN50", device=device)
+        clip_model.eval()
+        
+        # Ensure CLIP parameters can have gradients flow through them
+        for param in clip_model.parameters():
+            param.requires_grad_(False)  # Don't update CLIP weights, but allow gradients to flow
         
         # 1. Prepare text embeddings (like original)
         try:
