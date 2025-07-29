@@ -519,6 +519,10 @@ def worker():
             disco_symmetry_mode=async_task.disco_symmetry_mode,
             disco_fractal_octaves=async_task.disco_fractal_octaves,
             disco_clip_model=async_task.disco_clip_model,
+            disco_guidance_steps=async_task.disco_guidance_steps,
+            disco_cutn=async_task.disco_cutn,
+            disco_tv_scale=async_task.disco_tv_scale,
+            disco_range_scale=async_task.disco_range_scale,
             force_grid_checkbox=async_task.force_grid_checkbox
         )
 
