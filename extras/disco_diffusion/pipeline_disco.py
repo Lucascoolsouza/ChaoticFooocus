@@ -139,8 +139,12 @@ def run_clip_guidance_loop(
         clip_mean = torch.tensor([0.48145466, 0.4578275, 0.40821073], device=device, dtype=torch.float32).view(1, -1, 1, 1)
         clip_std = torch.tensor([0.26862954, 0.26130258, 0.27577711], device=device, dtype=torch.float32).view(1, -1, 1, 1)
         
-        # Set CLIP to eval mode (standard for inference)
-        clip_model.eval()
+        # Set CLIP to train mode to enable gradient computation
+        clip_model.train()
+        
+        # Enable gradients for CLIP parameters (needed for gradient flow)
+        for param in clip_model.parameters():
+            param.requires_grad_(False)  # We don't want to update CLIP weights, just compute gradients through it
         
         for i in range(steps):
             optimizer.zero_grad()
@@ -178,14 +182,31 @@ def run_clip_guidance_loop(
             clip_loss = -similarity * disco_scale
             
             # Regularization losses (ensure tensors are on correct device)
-            tv_loss_val = tv_loss(image_tensor.to(device)) * tv_scale
-            range_loss_val = range_loss(image_tensor.to(device)) * range_scale
+            tv_loss_val = tv_loss(image_tensor) * tv_scale
+            range_loss_val = range_loss(image_tensor) * range_scale
             
             total_loss = clip_loss + tv_loss_val + range_loss_val
+            
+            # Debug gradient information
+            if i == 0:
+                print(f"[DEBUG] image_tensor.requires_grad: {image_tensor.requires_grad}")
+                print(f"[DEBUG] cutouts.requires_grad: {cutouts.requires_grad}")
+                print(f"[DEBUG] processed_cutouts.requires_grad: {processed_cutouts.requires_grad}")
+                print(f"[DEBUG] image_embeds.requires_grad: {image_embeds.requires_grad}")
+                print(f"[DEBUG] similarity.requires_grad: {similarity.requires_grad}")
+                print(f"[DEBUG] clip_loss.requires_grad: {clip_loss.requires_grad}")
+                print(f"[DEBUG] tv_loss_val.requires_grad: {tv_loss_val.requires_grad}")
+                print(f"[DEBUG] range_loss_val.requires_grad: {range_loss_val.requires_grad}")
+                print(f"[DEBUG] total_loss.requires_grad: {total_loss.requires_grad}")
             
             if i % 20 == 0:
                 print(f"[Disco Guidance] Step {i}, Loss: {total_loss.item():.4f}, Similarity: {similarity.item():.4f}")
             
+            # Check if total_loss has gradients before backward
+            if not total_loss.requires_grad:
+                print(f"[ERROR] total_loss doesn't require grad at step {i}")
+                break
+                
             # Backpropagate and update
             total_loss.backward()
             optimizer.step()
@@ -217,8 +238,16 @@ def run_clip_guidance_loop(
                 print("[Disco] Warning: VAE encode not available, keeping original latent")
 
         print("[Disco] CLIP guidance image generation finished.")
+        
+        # Restore CLIP to eval mode
+        clip_model.eval()
         return latent
 
     except Exception as e:
         logger.error(f"CLIP guidance loop failed: {e}", exc_info=True)
+        # Restore CLIP to eval mode even on failure
+        try:
+            clip_model.eval()
+        except:
+            pass
         return latent  # Return original latent on failure
