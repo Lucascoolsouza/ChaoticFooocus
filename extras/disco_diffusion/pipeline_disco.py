@@ -124,7 +124,7 @@ def run_clip_guidance_loop(
             text_features = text_features / text_features.norm(dim=-1, keepdim=True)
 
         # 2. Set up for latent space optimization
-        noise_strength = disco_scale / 4000.0
+        noise_strength = disco_scale / 4.0
         
         cut_size = clip_model.visual.input_resolution
         make_cutouts = SimpleMakeCutouts(cut_size, cutn)

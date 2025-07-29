@@ -62,7 +62,8 @@ KSAMPLER = {
     "euler_pixel_art": "Euler Pixel Art",
     "heun_pixel_art": "Heun Pixel Art",
     "euler_disco": "Euler Disco",
-    "heun_disco": "Heun Disco"
+    "heun_disco": "Heun Disco",
+    "psycho_euler": "Psycho Euler"
 }
 
 SAMPLER_EXTRA = {

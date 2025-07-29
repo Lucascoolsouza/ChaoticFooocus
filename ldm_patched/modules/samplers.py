@@ -529,7 +529,8 @@ KSAMPLER_NAMES = ["euler", "euler_ancestral","euler_chaotic","euler_triangle_wav
     "euler_pixel_art",
     "heun_pixel_art",
     "euler_disco",
-    "heun_disco",]
+    "heun_disco",
+    "psycho_euler",]
 
 class KSAMPLER(Sampler):
     def __init__(self, sampler_function, extra_options={}, inpaint_options={}):
