@@ -1514,7 +1514,12 @@ with shared.gradio_root:
         ctrls += [nag_enabled, nag_scale, nag_tau, nag_alpha, nag_negative_prompt, nag_end]
         
         # Drunk UNet controls
-        ctrls += [drunk_enabled, drunk_attn_noise_strength, drunk_layer_dropout_prob, drunk_prompt_noise_strength, drunk_cognitive_echo_strength, drunk_dynamic_guidance_preset, drunk_dynamic_guidance_base, drunk_dynamic_guidance_amplitude, drunk_dynamic_guidance_frequency]
+        # Attempting to fix parameter misalignment by adding a dummy state.
+        # The backend appears to be reading Drunk UNet parameters from an incorrect offset.
+        # Specifically, 'drunk_enabled' is being read as 'freeu_b2' (1.02).
+        # Adding a dummy boolean state here to shift subsequent parameters by one,
+        # hoping to align 'drunk_enabled' with the backend's expected position.
+        ctrls += [gr.State(False), drunk_enabled, drunk_attn_noise_strength, drunk_layer_dropout_prob, drunk_prompt_noise_strength, drunk_cognitive_echo_strength, drunk_dynamic_guidance_preset, drunk_dynamic_guidance_base, drunk_dynamic_guidance_amplitude, drunk_dynamic_guidance_frequency]
         
         # Disco Diffusion controls
         ctrls += [disco_enabled, disco_scale, disco_preset, disco_transforms, disco_seed,
