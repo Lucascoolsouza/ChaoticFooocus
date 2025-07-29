@@ -351,7 +351,16 @@ def run_clip_guidance_loop(
                     preview_image_np = (image_tensor.detach().permute(0, 2, 3, 1) * 255).clamp(0, 255).to(torch.uint8).cpu().numpy()[0]
                     async_task.yields.append(['preview', (current_progress, f'Disco Guidance Step {i+1}/{steps}...', preview_image_np)])
 
-        # 4. For now, skip VAE re-encoding due to dimension issues
+        # 4. Upscale the optimized image back to original size
+        print(f"[Disco] Upscaling optimized image from {downscaled_size} back to {original_size}")
+        with torch.no_grad():
+            # Upscale using nearest neighbor for sharp results
+            final_image = F.interpolate(image_tensor.detach(), size=original_size, mode='nearest')
+            final_image = final_image.clamp(0, 1)
+            
+            print(f"[DEBUG] Final upscaled image shape: {final_image.shape}")
+        
+        # For now, skip VAE re-encoding due to dimension issues
         # The CLIP optimization has modified the image, but we'll keep the original latent
         # This is a temporary workaround - the CLIP guidance still affects the generation
         print("[Disco] CLIP optimization completed. Using original latent (VAE re-encoding skipped due to dimension issues).")
