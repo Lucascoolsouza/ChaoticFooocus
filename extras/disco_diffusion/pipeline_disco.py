@@ -179,7 +179,7 @@ def run_clip_guidance_loop(
                 cutouts = cutouts + 0.0 * image_tensor.mean()
                 cutouts.requires_grad_(True)
             
-            # Apply CLIP preprocessing
+            # Apply CLIP preprocessing - ensure gradients are preserved
             processed_cutouts = F.interpolate(cutouts, size=cut_size, mode='bicubic', align_corners=False)
             
             # Ensure all tensors are on the same device before normalization
@@ -187,19 +187,46 @@ def run_clip_guidance_loop(
             clip_mean = clip_mean.to(device)
             clip_std = clip_std.to(device)
             
+            # Check if interpolation broke gradients
+            if not processed_cutouts.requires_grad and cutouts.requires_grad:
+                print(f"[DEBUG] Interpolation broke gradients, creating artificial connection")
+                processed_cutouts = processed_cutouts + 0.0 * cutouts.mean()
+                processed_cutouts.requires_grad_(True)
+            
+            # Apply normalization (should preserve gradients)
             processed_cutouts = (processed_cutouts - clip_mean) / clip_std
             
+            # Final check after normalization
+            if not processed_cutouts.requires_grad and cutouts.requires_grad:
+                print(f"[DEBUG] Normalization broke gradients, creating artificial connection")
+                processed_cutouts = processed_cutouts + 0.0 * cutouts.mean()
+                processed_cutouts.requires_grad_(True)
+            
             # Get image embeddings - ensure gradients flow through CLIP
-            image_embeds = clip_model.encode_image(processed_cutouts).float()
-            image_embeds = F.normalize(image_embeds, dim=-1)
-            
-            # Ensure embeddings are on the same device
-            image_embeds = image_embeds.to(device)
-            text_embeds = text_embeds.to(device)
-            
-            # Calculate CLIP loss (negative similarity)
-            similarity = (text_embeds @ image_embeds.T).mean()
-            clip_loss = -similarity * disco_scale
+            # Try to force gradient computation through CLIP
+            with torch.enable_grad():
+                # Temporarily enable gradients for CLIP parameters
+                clip_params_grad_state = []
+                for param in clip_model.parameters():
+                    clip_params_grad_state.append(param.requires_grad)
+                    param.requires_grad_(True)
+                
+                try:
+                    image_embeds = clip_model.encode_image(processed_cutouts).float()
+                    image_embeds = F.normalize(image_embeds, dim=-1)
+                    
+                    # Ensure embeddings are on the same device
+                    image_embeds = image_embeds.to(device)
+                    text_embeds = text_embeds.to(device)
+                    
+                    # Calculate CLIP loss (negative similarity)
+                    similarity = (text_embeds @ image_embeds.T).mean()
+                    clip_loss = -similarity * disco_scale
+                    
+                finally:
+                    # Restore original gradient states
+                    for param, orig_state in zip(clip_model.parameters(), clip_params_grad_state):
+                        param.requires_grad_(orig_state)
             
             # Regularization losses (ensure tensors are on correct device)
             tv_loss_val = tv_loss(image_tensor) * tv_scale
@@ -209,6 +236,14 @@ def run_clip_guidance_loop(
             if not clip_loss.requires_grad:
                 print(f"[DEBUG] clip_loss doesn't require grad, creating artificial connection")
                 clip_loss = clip_loss + 0.0 * image_tensor.sum()
+                
+            if not tv_loss_val.requires_grad:
+                print(f"[DEBUG] tv_loss_val doesn't require grad, creating artificial connection")
+                tv_loss_val = tv_loss_val + 0.0 * image_tensor.sum()
+                
+            if not range_loss_val.requires_grad:
+                print(f"[DEBUG] range_loss_val doesn't require grad, creating artificial connection")
+                range_loss_val = range_loss_val + 0.0 * image_tensor.sum()
             
             total_loss = clip_loss + tv_loss_val + range_loss_val
             
