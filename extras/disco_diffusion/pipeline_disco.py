@@ -225,7 +225,18 @@ def run_clip_guidance_loop(
                 # Update progress
                 if async_task is not None:
                     progress = int((i + 1) / steps * 100)
-                    preview_image_np = (image_tensor.permute(0, 2, 3, 1) * 255).clamp(0, 255).to(torch.uint8).cpu().numpy()[0]
+                    
+                    # Debug preview image generation
+                    preview_tensor = image_tensor.permute(0, 2, 3, 1) * 255
+                    preview_clamped = preview_tensor.clamp(0, 255)
+                    preview_uint8 = preview_clamped.to(torch.uint8)
+                    preview_image_np = preview_uint8.cpu().numpy()[0]
+                    
+                    if i == 0:  # Debug first preview
+                        print(f"[DEBUG] Preview tensor range: {preview_tensor.min().item():.1f} to {preview_tensor.max().item():.1f}")
+                        print(f"[DEBUG] Preview mean: {preview_tensor.mean().item():.1f}")
+                        print(f"[DEBUG] Preview shape: {preview_image_np.shape}")
+                    
                     async_task.yields.append(['preview', (progress, f'Disco Step {i+1}/{steps}', preview_image_np)])
 
         print("[Disco] Finite difference optimization completed.")
