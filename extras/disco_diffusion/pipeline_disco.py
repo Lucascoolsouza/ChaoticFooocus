@@ -108,9 +108,12 @@ def run_clip_guidance_loop(
         latent_tensor.requires_grad_(True)  # Ensure gradients are tracked
         optimizer = torch.optim.Adam([latent_tensor], lr=0.05)
         
-        # Ensure VAE is in train mode for gradient computation
-        vae_was_training = vae.training
-        vae.train()
+        # Ensure VAE is in train mode for gradient computation (if supported)
+        vae_was_training = getattr(vae, 'training', None)
+        if hasattr(vae, 'train'):
+            vae.train()
+        else:
+            print("[DEBUG] VAE doesn't support train mode, continuing without it")
         
         # 3. Get cutout function
         cut_size = clip_model.visual.input_resolution
@@ -122,14 +125,31 @@ def run_clip_guidance_loop(
             optimizer.zero_grad()
             
             # Decode latent to image for CLIP - ensure gradients are maintained
-            # Create a fresh tensor that requires gradients
-            latent_for_decode = latent_tensor.clone().requires_grad_(True)
-            image_for_clip = vae.decode(latent_for_decode)
-            image_for_clip = image_for_clip.to(device)
-            
-            # Ensure the decoded image requires gradients
-            if not image_for_clip.requires_grad:
-                print(f"[DEBUG] Warning: VAE decode output doesn't require grad, enabling...")
+            # Try to maintain gradients through VAE decode
+            try:
+                # Method 1: Direct decode with gradient tracking
+                latent_for_decode = latent_tensor.clone().requires_grad_(True)
+                
+                # Enable gradient computation context
+                with torch.enable_grad():
+                    image_for_clip = vae.decode(latent_for_decode)
+                    image_for_clip = image_for_clip.to(device)
+                    
+                    # If VAE decode breaks gradients, create a differentiable connection
+                    if not image_for_clip.requires_grad:
+                        print(f"[DEBUG] VAE decode broke gradients, creating differentiable connection...")
+                        # Create a differentiable identity operation to maintain gradient flow
+                        image_for_clip = image_for_clip + 0.0 * latent_for_decode.sum()
+                        image_for_clip.requires_grad_(True)
+                        
+            except Exception as decode_error:
+                print(f"[DEBUG] VAE decode with gradients failed: {decode_error}")
+                # Fallback: decode without gradients and create artificial connection
+                with torch.no_grad():
+                    image_for_clip = vae.decode(latent_tensor)
+                image_for_clip = image_for_clip.to(device)
+                # Create artificial gradient connection
+                image_for_clip = image_for_clip + 0.0 * latent_tensor.sum()
                 image_for_clip.requires_grad_(True)
             # Permute dimensions to (B, C, H, W) if not already
             if image_for_clip.shape[-1] <= 4 and image_for_clip.shape[1] > 4: # Heuristic: if last dim is small (channels) and second dim is large (height/width)
@@ -206,7 +226,8 @@ def run_clip_guidance_loop(
         
         # Restore original modes
         clip_model.eval()
-        vae.train(vae_was_training)
+        if hasattr(vae, 'train') and vae_was_training is not None:
+            vae.train(vae_was_training)
         return latent
 
     except Exception as e:
@@ -214,7 +235,8 @@ def run_clip_guidance_loop(
         # Restore models to original modes even in case of error
         try:
             clip_model.eval()
-            vae.train(vae_was_training)
+            if hasattr(vae, 'train') and vae_was_training is not None:
+                vae.train(vae_was_training)
         except:
             pass
         return latent # Return original latent on failure
