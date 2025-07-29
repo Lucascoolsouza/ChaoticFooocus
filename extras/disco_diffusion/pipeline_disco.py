@@ -192,61 +192,43 @@ def run_clip_guidance_loop(
         
         print(f"[Disco] Starting finite difference optimization...")
         
+        # Super simple random search approach (much faster than finite differences)
         for i in range(steps):
             current_loss = clip_loss(image_tensor)
             
-            # Compute gradients using finite differences (optimized)
-            grad_approx = torch.zeros_like(image_tensor)
+            # Try a few random perturbations and pick the best one
+            best_image = image_tensor.clone()
+            best_loss = current_loss
             
-            # Extremely sparse sampling for speed - every 32nd pixel
-            h, w = image_tensor.shape[2], image_tensor.shape[3]
-            step_h, step_w = max(1, h // 32), max(1, w // 32)
-            
-            # Batch process pixels for better efficiency
-            pixel_count = 0
-            for c in range(image_tensor.shape[1]):
-                for y in range(0, h, step_h):
-                    for x in range(0, w, step_w):
-                        # Perturb pixel
-                        image_tensor[0, c, y, x] += eps
-                        
-                        # Compute perturbed loss
-                        perturbed_loss = clip_loss(image_tensor)
-                        
-                        # Finite difference gradient
-                        grad_approx[0, c, y, x] = (perturbed_loss - current_loss) / eps
-                        
-                        # Restore pixel
-                        image_tensor[0, c, y, x] -= eps
-                        
-                        pixel_count += 1
-            
-            # Interpolate gradients to full resolution for smoother updates
-            if step_h > 1 or step_w > 1:
-                grad_approx = F.interpolate(grad_approx, size=(h, w), mode='bilinear', align_corners=False)
-            
-            # Apply gradient update with momentum-like smoothing
-            with torch.no_grad():
-                # Apply update
-                image_tensor -= learning_rate * grad_approx
-                image_tensor.clamp_(0, 1)
-            
-            if i % 5 == 0:  # More frequent progress updates
-                print(f"[Disco] Step {i}, Loss: {current_loss:.4f}, Pixels sampled: {pixel_count}")
-            
-            if i % 10 == 0:
-                print(f"[Disco] Step {i}, Loss: {current_loss:.4f}")
+            # Try 3 random perturbations (very fast)
+            for attempt in range(3):
+                # Create random perturbation
+                perturbation = torch.randn_like(image_tensor) * 0.02  # Small random changes
+                test_image = (image_tensor + perturbation).clamp(0, 1)
                 
-                # Update progress
-                if async_task is not None:
-                    progress = int((i + 1) / steps * 100)
-                    
-                    # Upscale back to original size for preview
-                    preview_upscaled = F.interpolate(image_tensor, size=original_size, mode='bilinear', align_corners=False)
-                    preview_tensor = preview_upscaled.permute(0, 2, 3, 1) * 255
-                    preview_clamped = preview_tensor.clamp(0, 255)
-                    preview_uint8 = preview_clamped.to(torch.uint8)
-                    preview_image_np = preview_uint8.cpu().numpy()[0]
+                # Test this perturbation
+                test_loss = clip_loss(test_image)
+                
+                # Keep if better
+                if test_loss < best_loss:
+                    best_loss = test_loss
+                    best_image = test_image.clone()
+            
+            # Update image to best found
+            image_tensor = best_image
+            
+            print(f"[Disco] Step {i}, Loss: {best_loss:.4f}")
+            
+            # Update progress
+            if async_task is not None:
+                progress = int((i + 1) / steps * 100)
+                
+                # Upscale back to original size for preview
+                preview_upscaled = F.interpolate(image_tensor, size=original_size, mode='bilinear', align_corners=False)
+                preview_tensor = preview_upscaled.permute(0, 2, 3, 1) * 255
+                preview_clamped = preview_tensor.clamp(0, 255)
+                preview_uint8 = preview_clamped.to(torch.uint8)
+                preview_image_np = preview_uint8.cpu().numpy()[0]
                     
                     if i == 0:  # Debug first preview
                         print(f"[DEBUG] Small image size: {image_tensor.shape}")
