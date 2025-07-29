@@ -295,30 +295,40 @@ def run_clip_post_processing(
         
         print(f"[Disco] Starting post-processing optimization...")
         
-        # Optimized random search for post-processing
+        # Directional optimization using CLIP guidance
         for i in range(steps):
             current_loss = clip_loss(working_image)
             
-            # Try random perturbations and pick the best one
-            best_image = working_image.clone()
-            best_loss = current_loss
+            # Compute approximate gradient using multiple directional samples
+            gradient_approx = torch.zeros_like(working_image)
+            eps = 0.01
             
-            # Try 5 random perturbations for better exploration
-            for attempt in range(5):
-                # Create random perturbation (smaller for post-processing to preserve image quality)
-                perturbation = torch.randn_like(working_image) * 0.03
-                test_image = (working_image + perturbation).clamp(0, 1)
+            # Sample 8 random directions and compute gradients
+            for direction_idx in range(8):
+                # Create random direction
+                direction = torch.randn_like(working_image)
+                direction = direction / direction.norm() * eps  # Normalize to fixed step size
                 
-                # Test this perturbation
-                test_loss = clip_loss(test_image)
+                # Test positive direction
+                test_image_pos = (working_image + direction).clamp(0, 1)
+                loss_pos = clip_loss(test_image_pos)
                 
-                # Keep if better
-                if test_loss < best_loss:
-                    best_loss = test_loss
-                    best_image = test_image.clone()
+                # Test negative direction  
+                test_image_neg = (working_image - direction).clamp(0, 1)
+                loss_neg = clip_loss(test_image_neg)
+                
+                # Compute gradient in this direction
+                grad_in_direction = (loss_pos - loss_neg) / (2 * eps)
+                
+                # Accumulate gradient
+                gradient_approx += direction * grad_in_direction
             
-            # Update image to best found
-            working_image = best_image
+            # Average the gradient
+            gradient_approx = gradient_approx / 8
+            
+            # Apply gradient update with momentum
+            learning_rate = 0.1
+            working_image = (working_image - learning_rate * gradient_approx).clamp(0, 1)
             
             if i % 5 == 0:
                 print(f"[Disco] Post-processing step {i}, Loss: {best_loss:.4f}")
