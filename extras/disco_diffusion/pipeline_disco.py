@@ -136,8 +136,15 @@ def run_clip_guidance_loop(
             elif init_image.shape[1] == 1:
                 init_image = init_image.repeat(1, 3, 1, 1)
         
+        # Downscale image by 10% for faster optimization
+        original_size = (init_image.shape[2], init_image.shape[3])
+        downscaled_size = (int(original_size[0] * 0.9), int(original_size[1] * 0.9))
+        
+        print(f"[Disco] Downscaling from {original_size} to {downscaled_size} for faster optimization")
+        downscaled_image = F.interpolate(init_image, size=downscaled_size, mode='bilinear', align_corners=False)
+        
         # Create optimizable image tensor (ensure it's on the right device)
-        image_tensor = torch.nn.Parameter(init_image.clone().detach().to(device).requires_grad_(True))
+        image_tensor = torch.nn.Parameter(downscaled_image.clone().detach().to(device).requires_grad_(True))
         optimizer = torch.optim.Adam([image_tensor], lr=0.05)
         
         # 3. CLIP preprocessing
