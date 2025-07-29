@@ -611,13 +611,4 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 print(f"[Force Grid] Error disabling Force Grid: {e}")
                 import traceback
                 traceback.print_exc()
-
-    finally:
-        if force_grid_checkbox and force_grid_context is not None:
-            try:
-                force_grid_context.__exit__(None, None, None)
-                print("[Force Grid] Force Grid disabled after generation.")
-            except Exception as e:
-                print(f"[Force Grid] Error disabling Force Grid: {e}")
-                import traceback
-                traceback.print_exc()
+    
