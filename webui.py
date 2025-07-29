@@ -1372,7 +1372,7 @@ with shared.gradio_root:
         ctrls = [currentTask, generate_image_grid, force_grid_checkbox]
         ctrls += [
             prompt, negative_prompt, style_selections,
-            performance_selection, aspect_ratios_selection, image_number, output_format, image_seed,
+            aspect_ratios_selection, image_number, output_format, image_seed,
             read_wildcards_in_order, sharpness, guidance_scale
         ]
 
@@ -1425,7 +1425,7 @@ with shared.gradio_root:
                   enhance_uov_processing_order, enhance_uov_prompt_type, enhance_seamless_tiling_method, enhance_seamless_tiling_overlap]
         ctrls += enhance_ctrls
         ctrls += [disco_guidance_steps, disco_cutn, disco_tv_scale, disco_range_scale]
-        ctrls += [prompt, negative_prompt]
+        ctrls += [performance_selection]
 
         def parse_meta(raw_prompt_txt, is_generating):
             loaded_json = None
