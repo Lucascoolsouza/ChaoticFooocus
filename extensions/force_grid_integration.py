@@ -41,51 +41,32 @@ def is_force_grid_enabled():
 
 def patch_sampling_for_force_grid():
     """
-    Patch the sampling function to include Force Grid support.
-    This will use the `force_grid_sampler` from `extensions/force_grid_pipeline.py`.
+    Enable Force Grid support by setting a global flag.
+    The actual grid creation will happen at the image output level, not sampling level.
     """
-    global _original_sampling_function
-    
     if not is_force_grid_enabled():
         return False
     
     try:
-        import ldm_patched.modules.samplers as samplers
-        from extensions.force_grid_pipeline import force_grid_sampler
-        
-        if _original_sampling_function is None:
-            _original_sampling_function = samplers.sampling_function
-            force_grid_sampler.force_grid_enabled = True
-            force_grid_sampler.activate(None) # Pass None for unet as it's not directly used in activate for this purpose
-            print("[Force Grid] Patched sampling_function for Force Grid")
-        
+        print("[Force Grid] Force Grid enabled - will process images at output level")
         return True
         
     except Exception as e:
-        logger.error(f"[Force Grid] Failed to patch for Force Grid: {e}")
+        logger.error(f"[Force Grid] Failed to enable Force Grid: {e}")
         import traceback
         traceback.print_exc()
         return False
 
 def unpatch_sampling_for_force_grid():
     """
-    Restore the original sampling function.
+    Disable Force Grid support.
     """
-    global _original_sampling_function
-    
     try:
-        import ldm_patched.modules.samplers as samplers
-        from extensions.force_grid_pipeline import force_grid_sampler
-        
-        if _original_sampling_function is not None:
-            force_grid_sampler.deactivate()
-            _original_sampling_function = None
-            print("[Force Grid] Successfully restored original sampling function")
-        
+        print("[Force Grid] Force Grid disabled")
         return True
             
     except Exception as e:
-        logger.error(f"[Force Grid] Failed to restore sampling function: {e}")
+        logger.error(f"[Force Grid] Failed to disable Force Grid: {e}")
         import traceback
         traceback.print_exc()
         return False
