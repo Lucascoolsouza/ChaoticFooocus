@@ -58,6 +58,30 @@ class DiscoIntegration:
             range_scale=getattr(disco_settings, 'range_scale', 50.0)
         )
 
+    def run_disco_post_processing(self, image_tensor, text_prompt, async_task=None):
+        """Run CLIP guidance on a generated image (post-processing)"""
+        if not self.is_initialized or not getattr(disco_settings, 'disco_enabled', False):
+            return image_tensor
+
+        self._load_clip_model()
+        if self.clip_model is None:
+            logger.error("Cannot run Disco post-processing without a CLIP model.")
+            return image_tensor
+
+        # Use the post-processing version of the CLIP guidance
+        from .pipeline_disco import run_clip_post_processing
+        
+        return run_clip_post_processing(
+            image_tensor=image_tensor,
+            clip_model=self.clip_model,
+            clip_preprocess=self.clip_preprocess,
+            text_prompt=text_prompt,
+            async_task=async_task,
+            steps=getattr(disco_settings, 'disco_guidance_steps', 30),
+            disco_scale=disco_settings.disco_scale,
+            cutn=getattr(disco_settings, 'cutn', 12)
+        )
+
     def deactivate_after_generation(self):
         """Clean up after generation is complete"""
         # Clean up CLIP model to free memory if needed

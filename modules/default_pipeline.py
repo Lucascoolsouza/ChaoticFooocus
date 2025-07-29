@@ -427,46 +427,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 traceback.print_exc()
         
         # Disco Diffusion Integration
-        if disco_enabled and disco_scale > 0:
-            try:
-                from extras.disco_diffusion.disco_integration import disco_integration
-                
-                print(f"[Disco] Enabling Disco Diffusion with scale={disco_scale}, preset={disco_preset}")
-                
-                disco_settings = {
-                    'disco_enabled': disco_enabled,
-                    'disco_scale': disco_scale,
-                    'disco_preset': disco_preset,
-                    'disco_transforms': disco_transforms or ['translate', 'rotate', 'zoom'],
-                    'disco_seed': disco_seed,
-                    'disco_animation_mode': disco_animation_mode,
-                    'disco_zoom_factor': disco_zoom_factor,
-                    'disco_rotation_speed': disco_rotation_speed,
-                    'disco_translation_x': disco_translation_x,
-                    'disco_translation_y': disco_translation_y,
-                    'disco_color_coherence': disco_color_coherence,
-                    'disco_saturation_boost': disco_saturation_boost,
-                    'disco_contrast_boost': disco_contrast_boost,
-                    'disco_symmetry_mode': disco_symmetry_mode,
-                    'disco_fractal_octaves': disco_fractal_octaves,
-                    'disco_clip_model': disco_clip_model,
-                    'disco_noise_schedule': 'linear',
-                    'disco_steps_schedule': [0.0, 1.0],
-                    'disco_guidance_steps': modules.config.default_disco_guidance_steps,
-                    'cutn': modules.config.default_disco_cutn,
-                    'tv_scale': modules.config.default_disco_tv_scale,
-                    'range_scale': modules.config.default_disco_range_scale
-                }
-                
-                disco_integration.initialize_disco(**disco_settings)
-                # Ensure initial_latent is on the correct device before passing to Disco Diffusion
-                initial_latent['samples'] = initial_latent['samples'].to(ldm_patched.modules.model_management.get_torch_device())
-                initial_latent = disco_integration.run_disco_guidance(initial_latent, final_vae, original_prompt, async_task=async_task)
-                
-            except Exception as e:
-                print(f"[Disco] Error enabling Disco Diffusion: {e}")
-                import traceback
-                traceback.print_exc()
+        # Disco Diffusion will be applied as post-processing after image generation
         
         target_unet, target_vae, target_refiner_unet, target_refiner_vae, target_clip         = final_unet, final_vae, final_refiner_unet, final_refiner_vae, final_clip
 
@@ -590,6 +551,60 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             imgs = core.pytorch_to_numpy(imgs)
         else:
             imgs = []
+        
+        # Disco Diffusion Post-Processing
+        if disco_enabled and disco_scale > 0 and len(imgs) > 0:
+            try:
+                from extras.disco_diffusion.disco_integration import disco_integration
+                
+                print(f"[Disco] Applying Disco Diffusion post-processing with scale={disco_scale}")
+                
+                disco_settings = {
+                    'disco_enabled': disco_enabled,
+                    'disco_scale': disco_scale,
+                    'disco_preset': disco_preset,
+                    'disco_transforms': disco_transforms or ['translate', 'rotate', 'zoom'],
+                    'disco_seed': disco_seed,
+                    'disco_animation_mode': disco_animation_mode,
+                    'disco_zoom_factor': disco_zoom_factor,
+                    'disco_rotation_speed': disco_rotation_speed,
+                    'disco_translation_x': disco_translation_x,
+                    'disco_translation_y': disco_translation_y,
+                    'disco_color_coherence': disco_color_coherence,
+                    'disco_saturation_boost': disco_saturation_boost,
+                    'disco_contrast_boost': disco_contrast_boost,
+                    'disco_symmetry_mode': disco_symmetry_mode,
+                    'disco_fractal_octaves': disco_fractal_octaves,
+                    'disco_clip_model': disco_clip_model,
+                    'disco_guidance_steps': disco_guidance_steps,
+                    'disco_cutn': disco_cutn,
+                    'disco_tv_scale': disco_tv_scale,
+                    'disco_range_scale': disco_range_scale
+                }
+                
+                disco_integration.initialize_disco(**disco_settings)
+                
+                # Apply disco to each generated image
+                processed_imgs = []
+                for i, img in enumerate(imgs):
+                    # Convert numpy image back to tensor format for processing
+                    img_tensor = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).float() / 255.0
+                    img_tensor = img_tensor.to(ldm_patched.modules.model_management.get_torch_device())
+                    
+                    # Apply disco processing
+                    processed_tensor = disco_integration.run_disco_post_processing(img_tensor, original_prompt, async_task=async_task)
+                    
+                    # Convert back to numpy
+                    processed_img = (processed_tensor.squeeze(0).permute(1, 2, 0).cpu().numpy() * 255).astype('uint8')
+                    processed_imgs.append(processed_img)
+                
+                imgs = processed_imgs
+                print(f"[Disco] Post-processing completed for {len(imgs)} images")
+                
+            except Exception as e:
+                print(f"[Disco] Error in post-processing: {e}")
+                import traceback
+                traceback.print_exc()
         
         # TPG Cleanup
         if tpg_enabled and tpg_scale > 0:

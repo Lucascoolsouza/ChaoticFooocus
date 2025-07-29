@@ -221,7 +221,7 @@ def run_clip_guidance_loop(
             
             # Update progress
             if async_task is not None:
-                progress = int((i + 1) / steps * 500)
+                progress = int((i + 1) / steps * 100)
                 
                 # Upscale back to original size for preview
                 preview_upscaled = F.interpolate(image_tensor, size=original_size, mode='bilinear', align_corners=False)
@@ -243,3 +243,95 @@ def run_clip_guidance_loop(
     except Exception as e:
         logger.error(f"CLIP guidance failed: {e}", exc_info=True)
         return latent
+
+def run_clip_post_processing(
+    image_tensor, clip_model, clip_preprocess, text_prompt, async_task,
+    steps=30, disco_scale=5.0, cutn=12
+):
+    """
+    CLIP guidance post-processing on generated images (much more effective!)
+    """
+    print("[Disco] Starting CLIP post-processing on generated image...")
+    
+    try:
+        device = image_tensor.device
+        
+        # Load CLIP model
+        print("[Disco] Loading CLIP model...")
+        clip_model, _ = clip.load("RN50", device=device)
+        clip_model.eval()
+        
+        # 1. Prepare text embeddings
+        try:
+            text_tokens = clip.tokenize([text_prompt], truncate=True).to(device)
+        except:
+            words = text_prompt.split()[:50]
+            text_tokens = clip.tokenize([" ".join(words)], truncate=True).to(device)
+            
+        with torch.no_grad():
+            text_features = clip_model.encode_text(text_tokens).float()
+            text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+
+        # 2. Set up for optimization on the actual generated image
+        cut_size = clip_model.visual.input_resolution
+        make_cutouts = SimpleMakeCutouts(cut_size, cutn)
+        normalize = transforms.Normalize(
+            mean=(0.48145466, 0.4578275, 0.40821073),
+            std=(0.26862954, 0.26130258, 0.27577711)
+        )
+        
+        # Work directly with the generated image (no downscaling needed since it's post-processing)
+        working_image = image_tensor.clone().detach().to(device)
+        
+        # CLIP loss function (no gradients)
+        def clip_loss(image_tensor):
+            with torch.no_grad():
+                cutouts = make_cutouts(image_tensor)
+                cutouts = normalize(cutouts)
+                image_features = clip_model.encode_image(cutouts).float()
+                image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+                similarity = (text_features @ image_features.T).mean()
+                return -similarity.item()
+        
+        print(f"[Disco] Starting post-processing optimization...")
+        
+        # Optimized random search for post-processing
+        for i in range(steps):
+            current_loss = clip_loss(working_image)
+            
+            # Try random perturbations and pick the best one
+            best_image = working_image.clone()
+            best_loss = current_loss
+            
+            # Try 5 random perturbations for better exploration
+            for attempt in range(5):
+                # Create random perturbation (smaller for post-processing to preserve image quality)
+                perturbation = torch.randn_like(working_image) * 0.03
+                test_image = (working_image + perturbation).clamp(0, 1)
+                
+                # Test this perturbation
+                test_loss = clip_loss(test_image)
+                
+                # Keep if better
+                if test_loss < best_loss:
+                    best_loss = test_loss
+                    best_image = test_image.clone()
+            
+            # Update image to best found
+            working_image = best_image
+            
+            if i % 5 == 0:
+                print(f"[Disco] Post-processing step {i}, Loss: {best_loss:.4f}")
+            
+            # Update progress
+            if async_task is not None and i % 10 == 0:
+                progress = int((i + 1) / steps * 100)
+                preview_image_np = (working_image.squeeze(0).permute(1, 2, 0) * 255).clamp(0, 255).to(torch.uint8).cpu().numpy()
+                async_task.yields.append(['preview', (progress, f'Disco Post-processing {i+1}/{steps}', preview_image_np)])
+
+        print("[Disco] Post-processing optimization completed.")
+        return working_image
+
+    except Exception as e:
+        logger.error(f"CLIP post-processing failed: {e}", exc_info=True)
+        return image_tensor
