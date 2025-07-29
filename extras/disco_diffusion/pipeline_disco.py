@@ -95,7 +95,17 @@ def run_clip_guidance_loop(
         image_h, image_w = latent_h * 8, latent_w * 8
         
         # 1. Prepare text embeddings
-        text_tokens = clip.tokenize([text_prompt]).to(device)
+        # Truncate text if too long for CLIP (77 tokens max)
+        try:
+            text_tokens = clip.tokenize([text_prompt], truncate=True).to(device)
+        except Exception as e:
+            print(f"[Disco] Text tokenization failed: {e}")
+            # Fallback: truncate text manually
+            words = text_prompt.split()
+            truncated_prompt = " ".join(words[:50])  # Keep first 50 words
+            print(f"[Disco] Using truncated prompt: {truncated_prompt[:100]}...")
+            text_tokens = clip.tokenize([truncated_prompt], truncate=True).to(device)
+            
         with torch.no_grad():
             text_embeds = clip_model.encode_text(text_tokens).float()
             text_embeds = F.normalize(text_embeds, dim=-1)
@@ -115,8 +125,8 @@ def run_clip_guidance_loop(
             elif init_image.shape[1] == 1:
                 init_image = init_image.repeat(1, 3, 1, 1)
         
-        # Create optimizable image tensor
-        image_tensor = torch.nn.Parameter(init_image.clone().detach().requires_grad_(True))
+        # Create optimizable image tensor (ensure it's on the right device)
+        image_tensor = torch.nn.Parameter(init_image.clone().detach().to(device).requires_grad_(True))
         optimizer = torch.optim.Adam([image_tensor], lr=0.05)
         
         # 3. CLIP preprocessing
@@ -125,9 +135,9 @@ def run_clip_guidance_loop(
         # Create cutout transforms (like original Disco Diffusion)
         make_cutouts = DiscoTransforms()
         
-        # CLIP normalization
-        clip_mean = torch.tensor([0.48145466, 0.4578275, 0.40821073], device=device).view(1, -1, 1, 1)
-        clip_std = torch.tensor([0.26862954, 0.26130258, 0.27577711], device=device).view(1, -1, 1, 1)
+        # CLIP normalization (ensure tensors are on correct device)
+        clip_mean = torch.tensor([0.48145466, 0.4578275, 0.40821073], device=device, dtype=torch.float32).view(1, -1, 1, 1)
+        clip_std = torch.tensor([0.26862954, 0.26130258, 0.27577711], device=device, dtype=torch.float32).view(1, -1, 1, 1)
         
         # Set CLIP to eval mode (standard for inference)
         clip_model.eval()
@@ -142,21 +152,34 @@ def run_clip_guidance_loop(
             # Create cutouts for CLIP analysis
             cutouts = make_cutouts.make_cutouts(image_tensor, cut_size, cutn)
             
+            # Ensure cutouts are on the correct device
+            cutouts = cutouts.to(device)
+            
             # Apply CLIP preprocessing
             processed_cutouts = F.interpolate(cutouts, size=cut_size, mode='bicubic', align_corners=False)
+            
+            # Ensure all tensors are on the same device before normalization
+            processed_cutouts = processed_cutouts.to(device)
+            clip_mean = clip_mean.to(device)
+            clip_std = clip_std.to(device)
+            
             processed_cutouts = (processed_cutouts - clip_mean) / clip_std
             
             # Get image embeddings
             image_embeds = clip_model.encode_image(processed_cutouts).float()
             image_embeds = F.normalize(image_embeds, dim=-1)
             
+            # Ensure embeddings are on the same device
+            image_embeds = image_embeds.to(device)
+            text_embeds = text_embeds.to(device)
+            
             # Calculate CLIP loss (negative similarity)
             similarity = (text_embeds @ image_embeds.T).mean()
             clip_loss = -similarity * disco_scale
             
-            # Regularization losses
-            tv_loss_val = tv_loss(image_tensor) * tv_scale
-            range_loss_val = range_loss(image_tensor) * range_scale
+            # Regularization losses (ensure tensors are on correct device)
+            tv_loss_val = tv_loss(image_tensor.to(device)) * tv_scale
+            range_loss_val = range_loss(image_tensor.to(device)) * range_scale
             
             total_loss = clip_loss + tv_loss_val + range_loss_val
             
