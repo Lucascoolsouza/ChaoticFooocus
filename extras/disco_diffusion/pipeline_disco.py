@@ -149,16 +149,37 @@ def run_clip_guidance_loop(
             std=(0.26862954, 0.26130258, 0.27577711)
         )
         
-        # Create optimizable parameter (ensure gradients work)
-        # The issue might be that init_image was created in no_grad context
-        image_tensor = torch.nn.Parameter(init_image.clone().detach().to(device).requires_grad_(True))
+        # Create tensor from scratch to avoid any gradient context issues
+        print("[DEBUG] Creating tensor from scratch...")
         
-        # Double-check the parameter is set up correctly
-        print(f"[DEBUG] Created image_tensor: requires_grad={image_tensor.requires_grad}, is_leaf={image_tensor.is_leaf}")
-        
-        # Test if basic operations preserve gradients
-        test_op = image_tensor * 2.0
-        print(f"[DEBUG] Test operation (image_tensor * 2.0): requires_grad={test_op.requires_grad}")
+        # Method 1: Create completely fresh tensor
+        with torch.enable_grad():
+            # Get the shape and values, but create a completely new tensor
+            init_shape = init_image.shape
+            init_values = init_image.detach().cpu().numpy()
+            
+            # Create fresh tensor with gradients enabled from the start
+            image_tensor = torch.tensor(init_values, device=device, dtype=torch.float32, requires_grad=True)
+            image_tensor = torch.nn.Parameter(image_tensor)
+            
+            print(f"[DEBUG] Fresh tensor: requires_grad={image_tensor.requires_grad}, is_leaf={image_tensor.is_leaf}")
+            
+            # Test basic operation
+            test_op = image_tensor * 2.0
+            print(f"[DEBUG] Fresh tensor operation: requires_grad={test_op.requires_grad}")
+            
+            # If that doesn't work, try creating random tensor (should definitely work)
+            if not test_op.requires_grad:
+                print("[DEBUG] Fresh tensor failed, trying random tensor...")
+                random_tensor = torch.randn(init_shape, device=device, requires_grad=True)
+                random_tensor = torch.nn.Parameter(random_tensor)
+                
+                test_random = random_tensor * 2.0
+                print(f"[DEBUG] Random tensor operation: requires_grad={test_random.requires_grad}")
+                
+                if test_random.requires_grad:
+                    print("[DEBUG] Using random tensor as fallback")
+                    image_tensor = random_tensor
         
         optimizer = torch.optim.Adam([image_tensor], lr=0.05)
         
