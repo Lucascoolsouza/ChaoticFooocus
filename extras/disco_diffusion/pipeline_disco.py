@@ -60,10 +60,6 @@ class DiscoTransforms:
         # Concatenate cutouts (preserves gradients)
         result = torch.cat(cutouts, dim=0)
         
-        # Debug: check if gradients are preserved
-        if image.requires_grad and not result.requires_grad:
-            print("[DEBUG] make_cutouts broke gradients!")
-        
         return result
 
 class DiscoSettings:
@@ -175,7 +171,6 @@ def run_clip_guidance_loop(
             
             # If cutouts lost gradients, create artificial connection
             if not cutouts.requires_grad and image_tensor.requires_grad:
-                print(f"[DEBUG] Cutouts lost gradients, creating artificial connection")
                 cutouts = cutouts + 0.0 * image_tensor.mean()
                 cutouts.requires_grad_(True)
             
