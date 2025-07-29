@@ -32,10 +32,6 @@ class AsyncTask:
         self.negative_prompt = args.pop()
         self.style_selections = args.pop()
 
-        self.performance_selection = Performance(args.pop())
-        self.steps = self.performance_selection.steps()
-        self.original_steps = self.steps
-
         self.aspect_ratios_selection = args.pop()
         self.image_number = args.pop()
         self.output_format = args.pop()
