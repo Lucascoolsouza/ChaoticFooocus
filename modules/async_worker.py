@@ -226,10 +226,7 @@ class AsyncTask:
         
         print(f"[DEBUG] Disco params: enabled={self.disco_enabled}, scale={self.disco_scale}, preset={self.disco_preset}, clip_model={self.disco_clip_model}")
 
-        # Confuse VAE parameters
-        print(f"[DEBUG] Args remaining before Confuse VAE: {len(args)}")
-        self.artistic_strength = args.pop() if len(args) > 0 else 0.0
-        print(f"[DEBUG] Confuse VAE artistic_strength: {self.artistic_strength}")
+
 
         self.cn_tasks = {x: [] for x in ip_list}
         for _ in range(modules.config.default_controlnet_image_count):
@@ -297,6 +294,11 @@ class AsyncTask:
         self.disco_cutn = args.pop()
         self.disco_tv_scale = args.pop()
         self.disco_range_scale = args.pop()
+        
+        # Confuse VAE parameters (must be after all disco parameters)
+        print(f"[DEBUG] Args remaining before Confuse VAE: {len(args)}")
+        self.artistic_strength = args.pop() if len(args) > 0 else 0.0
+        print(f"[DEBUG] Confuse VAE artistic_strength: {self.artistic_strength}")
 
         # Performance selection (added at the end to match webui.py ctrls order)
         self.performance_selection = Performance(args.pop())
