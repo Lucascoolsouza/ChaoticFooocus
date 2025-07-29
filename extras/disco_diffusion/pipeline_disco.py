@@ -104,6 +104,12 @@ def run_clip_guidance_loop(
         latent_tensor = latent['samples']
         device = latent_tensor.device
         
+        # Load our own CLIP model if needed (like original method)
+        if clip_model is None or not hasattr(clip_model, 'visual'):
+            print("[Disco] Loading fresh CLIP model...")
+            clip_model, _ = clip.load("RN50", device=device)
+            clip_model.eval()
+        
         # 1. Prepare text embeddings (like original)
         try:
             text_tokens = clip.tokenize([text_prompt], truncate=True).to(device)
@@ -153,12 +159,26 @@ def run_clip_guidance_loop(
             similarity = (text_embed @ image_features.T).mean()
             return -similarity
         
-        # 4. Optimization loop (exactly like original)
+        # 4. Optimization loop with gradient checking
         for i in range(steps):
             optimizer.zero_grad()
             loss = clip_loss(image_tensor, text_features)
-            loss.backward()
-            optimizer.step()
+            
+            # Check if loss has gradients
+            if not loss.requires_grad:
+                print(f"[Disco] Warning: Loss doesn't require grad at step {i}, skipping optimization")
+                break
+            
+            try:
+                loss.backward()
+                optimizer.step()
+            except RuntimeError as e:
+                if "does not require grad" in str(e):
+                    print(f"[Disco] Gradient error at step {i}: {e}")
+                    print("[Disco] Stopping optimization due to gradient issues")
+                    break
+                else:
+                    raise e
             
             # Clamp to valid range (like original)
             with torch.no_grad():
