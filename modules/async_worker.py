@@ -27,6 +27,7 @@ class AsyncTask:
 
         args.reverse()
         self.generate_image_grid = args.pop()
+        self.force_grid_checkbox = args.pop()
         self.prompt = args.pop()
         self.negative_prompt = args.pop()
         self.style_selections = args.pop()
@@ -510,7 +511,8 @@ def worker():
             disco_contrast_boost=async_task.disco_contrast_boost,
             disco_symmetry_mode=async_task.disco_symmetry_mode,
             disco_fractal_octaves=async_task.disco_fractal_octaves,
-            disco_clip_model=async_task.disco_clip_model
+            disco_clip_model=async_task.disco_clip_model,
+            force_grid_checkbox=async_task.force_grid_checkbox
         )
 
         if imgs is None:
