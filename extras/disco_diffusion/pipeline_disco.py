@@ -227,8 +227,24 @@ def run_clip_guidance_loop(
             # Debug image dimensions
             print(f"[DEBUG] final_image shape before processing: {final_image.shape}")
             
-            # Ensure correct dimensions: should be [B, C, H, W]
+            # Fix tensor dimensions - the error shows [1, 896, 3, 1152] but we need [1, 3, 896, 1152]
             if len(final_image.shape) == 4:
+                current_shape = final_image.shape
+                print(f"[DEBUG] Current shape: {current_shape}")
+                
+                # Check if dimensions are wrong (channels not in position 1)
+                if current_shape[1] != 3 and current_shape[2] == 3:
+                    # Shape is [B, H, C, W] but should be [B, C, H, W]
+                    print("[DEBUG] Detected wrong dimension order, permuting...")
+                    final_image = final_image.permute(0, 2, 1, 3)  # [B, H, C, W] -> [B, C, H, W]
+                    print(f"[DEBUG] Shape after permute: {final_image.shape}")
+                elif current_shape[1] != 3 and current_shape[3] == 3:
+                    # Shape is [B, H, W, C] but should be [B, C, H, W]
+                    print("[DEBUG] Detected BHWC format, permuting...")
+                    final_image = final_image.permute(0, 3, 1, 2)  # [B, H, W, C] -> [B, C, H, W]
+                    print(f"[DEBUG] Shape after permute: {final_image.shape}")
+                
+                # Now ensure we have 3 channels
                 B, C, H, W = final_image.shape
                 if C != 3:
                     print(f"[DEBUG] Warning: Expected 3 channels, got {C}")
@@ -237,7 +253,7 @@ def run_clip_guidance_loop(
                     elif C == 1:
                         final_image = final_image.repeat(1, 3, 1, 1)  # Convert grayscale to RGB
                 
-                print(f"[DEBUG] final_image shape after channel fix: {final_image.shape}")
+                print(f"[DEBUG] final_image shape after all fixes: {final_image.shape}")
                 
                 # Convert back to VAE input format [-1, 1]
                 final_image = final_image * 2 - 1
