@@ -112,44 +112,7 @@ def get_sigmas_karras_trow_random_blsht(n, sigma_min, sigma_max, num_levels=10, 
     sigmas = torch.exp(log_sigmas)
     return append_zero(sigmas).to(device)
 
-class PsychoEulerSampler:
-    def __init__(self, scheduler, guidance_scale=7.5, mode="wave_noise"):
-        self.scheduler = scheduler
-        self.guidance_scale = guidance_scale
-        self.mode = mode
 
-    def step(self, model_fn, latents, text_embeddings, t, i, total_steps):
-        latents = latents.clone()
-
-        if self.mode == "wave_noise":
-            noise = torch.randn_like(latents) * (0.04 * math.sin(i / 4.0))
-            latents += noise
-
-        elif self.mode == "forgetful":
-            if random.random() < 0.25:
-                latents += torch.randn_like(latents) * 0.1
-
-        elif self.mode == "drunk_sine_guidance":
-            scale = self.guidance_scale + math.sin(i / 3.0) * 3.0
-        else:
-            scale = self.guidance_scale
-
-        if self.mode == "chaos_steps":
-            t = self.scheduler.timesteps[random.randint(0, len(self.scheduler.timesteps) - 1)]
-
-        # Scheduler step
-        latent_model_input = torch.cat([latents] * 2)
-        noise_pred = model_fn(latent_model_input, t, encoder_hidden_states=text_embeddings)
-        noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-
-        if self.mode == "drunk_sine_guidance":
-            guided_noise = noise_pred_uncond + scale * (noise_pred_text - noise_pred_uncond)
-        else:
-            guided_noise = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
-
-        latents = self.scheduler.step(guided_noise, t, latents).prev_sample
-
-        return latents
 
 
 
@@ -384,6 +347,92 @@ def sample_euler(model, x, sigmas, extra_args=None, callback=None, disable=None,
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
         dt = sigmas[i + 1] - sigma_hat
         # Euler method
+        x = x + d * dt
+    return x
+@torch.no_grad()
+def sample_euler_wave_noise(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                             s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    for i in trange(len(sigmas) - 1, disable=disable):
+        gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
+        sigma_hat = sigmas[i] * (gamma + 1)
+        if gamma > 0:
+            eps = torch.randn_like(x) * s_noise
+            x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
+        # wave noise injection
+        x = x + torch.randn_like(x) * (0.04 * math.sin(i / 4.0))
+        denoised = model(x, sigma_hat * s_in, **extra_args)
+        d = to_d(x, sigma_hat, denoised)
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
+        dt = sigmas[i + 1] - sigma_hat
+        x = x + d * dt
+    return x
+
+@torch.no_grad()
+def sample_euler_forgetful(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                           s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    for i in trange(len(sigmas) - 1, disable=disable):
+        gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
+        sigma_hat = sigmas[i] * (gamma + 1)
+        if gamma > 0:
+            eps = torch.randn_like(x) * s_noise
+            x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
+        # forgetful behavior
+        if random.random() < 0.25:
+            x = x + torch.randn_like(x) * 0.1
+        denoised = model(x, sigma_hat * s_in, **extra_args)
+        d = to_d(x, sigma_hat, denoised)
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
+        dt = sigmas[i + 1] - sigma_hat
+        x = x + d * dt
+    return x
+
+@torch.no_grad()
+def sample_euler_drunk_guidance(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                                s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1., base_guidance=7.5):
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    for i in trange(len(sigmas) - 1, disable=disable):
+        gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas[i] <= s_tmax else 0.
+        sigma_hat = sigmas[i] * (gamma + 1)
+        if gamma > 0:
+            eps = torch.randn_like(x) * s_noise
+            x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
+        # drunk sine oscillating guidance
+        guidance = base_guidance + math.sin(i / 3.0) * 3.0
+        denoised = model(x, sigma_hat * s_in, **extra_args)
+        d = to_d(x, sigma_hat, denoised * guidance)
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
+        dt = sigmas[i + 1] - sigma_hat
+        x = x + d * dt
+    return x
+
+@torch.no_grad()
+def sample_euler_chaos_steps(model, x, sigmas, extra_args=None, callback=None, disable=None,
+                             s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    sigmas_shuffled = sigmas.clone()
+    indices = list(range(len(sigmas_shuffled) - 1))
+    random.shuffle(indices)
+    for i in trange(len(indices), disable=disable):
+        idx = indices[i]
+        gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas_shuffled[idx] <= s_tmax else 0.
+        sigma_hat = sigmas_shuffled[idx] * (gamma + 1)
+        if gamma > 0:
+            eps = torch.randn_like(x) * s_noise
+            x = x + eps * (sigma_hat ** 2 - sigmas_shuffled[idx] ** 2) ** 0.5
+        denoised = model(x, sigma_hat * s_in, **extra_args)
+        d = to_d(x, sigma_hat, denoised)
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas_shuffled[idx], 'sigma_hat': sigma_hat, 'denoised': denoised})
+        dt = sigmas_shuffled[idx + 1] - sigma_hat if idx + 1 < len(sigmas_shuffled) else -sigma_hat
         x = x + d * dt
     return x
 
