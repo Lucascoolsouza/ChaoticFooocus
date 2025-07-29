@@ -92,7 +92,7 @@ disco_settings = DiscoSettings()
 
 def run_clip_guidance_loop(
     latent, vae, clip_model, clip_preprocess, text_prompt, async_task,
-    steps=20, disco_scale=1.0, cutn=8, tv_scale=0.0, range_scale=0.0
+    steps=30, disco_scale=5.0, cutn=12, tv_scale=0.0, range_scale=0.0
 ):
     """
     CLIP guidance using finite differences (gradient-free optimization)
@@ -158,10 +158,10 @@ def run_clip_guidance_loop(
             std=(0.26862954, 0.26130258, 0.27577711)
         )
         
-        # Downscale image for much faster optimization
+        # Downscale image for faster optimization (less aggressive for better quality)
         original_size = (init_image.shape[2], init_image.shape[3])
-        # Scale down to 25% of original size for 16x speed improvement
-        downscale_factor = 0.25
+        # Scale down to 40% of original size for better detail retention
+        downscale_factor = 0.4
         small_size = (int(original_size[0] * downscale_factor), int(original_size[1] * downscale_factor))
         
         print(f"[Disco] Downscaling from {original_size} to {small_size} for speed")
@@ -171,7 +171,7 @@ def run_clip_guidance_loop(
         # If the latent was all zeros (empty latent), add some noise to the image for better optimization
         if latent_tensor.abs().max().item() < 1e-6:  # Latent is essentially all zeros
             print("[Disco] Detected empty latent, adding noise for better optimization...")
-            noise_strength = 0.1
+            noise_strength = 0.15  # Stronger initial noise for more dramatic changes
             noise = torch.randn_like(image_tensor) * noise_strength
             image_tensor = (image_tensor + noise).clamp(0, 1)
             print(f"[DEBUG] After adding noise: mean {image_tensor.mean().item():.3f}, range {image_tensor.min().item():.3f} to {image_tensor.max().item():.3f}")
@@ -200,10 +200,10 @@ def run_clip_guidance_loop(
             best_image = image_tensor.clone()
             best_loss = current_loss
             
-            # Try 3 random perturbations (very fast)
-            for attempt in range(3):
-                # Create random perturbation
-                perturbation = torch.randn_like(image_tensor) * 0.02  # Small random changes
+            # Try 5 random perturbations for better exploration
+            for attempt in range(5):
+                # Create random perturbation with higher strength
+                perturbation = torch.randn_like(image_tensor) * 0.05  # Larger random changes
                 test_image = (image_tensor + perturbation).clamp(0, 1)
                 
                 # Test this perturbation

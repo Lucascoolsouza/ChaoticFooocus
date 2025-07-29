@@ -58,5 +58,18 @@ class DiscoIntegration:
             range_scale=getattr(disco_settings, 'range_scale', 50.0)
         )
 
+    def deactivate_after_generation(self):
+        """Clean up after generation is complete"""
+        # Clean up CLIP model to free memory if needed
+        if self.clip_model is not None:
+            # Move to CPU to free GPU memory
+            try:
+                self.clip_model.cpu()
+                print("[Disco] CLIP model moved to CPU to free GPU memory")
+            except Exception as e:
+                logger.warning(f"Failed to move CLIP model to CPU: {e}")
+        
+        print("[Disco] Deactivated after generation")
+
 # Global integration instance
 disco_integration = DiscoIntegration()
