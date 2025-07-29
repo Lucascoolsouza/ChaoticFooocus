@@ -292,6 +292,11 @@ class AsyncTask:
         self.images_to_enhance_count = 0
         self.enhance_stats = {}
 
+        # Performance selection (added at the end to match webui.py ctrls order)
+        self.performance_selection = Performance(args.pop())
+        self.steps = self.performance_selection.steps()
+        self.original_steps = self.steps
+
         
 
 async_tasks = []
