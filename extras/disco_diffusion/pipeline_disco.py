@@ -30,6 +30,38 @@ def range_loss(input):
     """Range loss to keep values in reasonable bounds"""
     return (input - input.clamp(-1, 1)).pow(2).mean([1, 2, 3])
 
+class DiscoTransforms:
+    """Real Disco Diffusion geometric transforms"""
+    
+    @staticmethod
+    def make_cutouts(image, cut_size, cutn):
+        """Create random cutouts for CLIP analysis (core Disco Diffusion technique)"""
+        sideY, sideX = image.shape[2:4]
+        max_size = min(sideX, sideY)
+        min_size = min(sideX, sideY, cut_size)
+        cutouts = []
+        
+        # Ensure we're working with gradient-enabled tensors
+        device = image.device
+        
+        for _ in range(cutn):
+            # Use differentiable operations for random sampling
+            size = int((torch.rand([], device=device)**0.8 * (max_size - min_size) + min_size).item())
+            offsetx = int(torch.randint(0, sideX - size + 1, (), device=device).item())
+            offsety = int(torch.randint(0, sideY - size + 1, (), device=device).item())
+            
+            # Extract cutout (this should preserve gradients)
+            cutout = image[:, :, offsety:offsety + size, offsetx:offsetx + size]
+            
+            # Resize using differentiable interpolation
+            cutout = F.interpolate(cutout, size=(cut_size, cut_size), mode='bilinear', align_corners=False)
+            cutouts.append(cutout)
+        
+        # Concatenate cutouts (preserves gradients)
+        result = torch.cat(cutouts, dim=0)
+        
+        return result
+
 class SimpleMakeCutouts(torch.nn.Module):
     """Simple cutout class like the original, using torchvision transforms"""
     def __init__(self, cut_size, cutn):
