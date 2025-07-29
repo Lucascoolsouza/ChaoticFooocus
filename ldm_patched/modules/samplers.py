@@ -530,7 +530,6 @@ KSAMPLER_NAMES = ["euler", "euler_ancestral","euler_chaotic","euler_triangle_wav
     "heun_pixel_art",
     "euler_disco",
     "heun_disco",
-    "psycho_euler",
     "euler_wave_noise",
     "euler_forgetful",
     "euler_drunk_guidance",
