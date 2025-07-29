@@ -13,20 +13,27 @@ class ConfuseVAE(VAE):
 
     def _apply_artistic_confusion(self, samples):
         """Apply various artistic confusion effects to the latent samples"""
-        print(f"[DEBUG] ConfuseVAE: artistic_strength = {self.artistic_strength}")
+        print(f"[DEBUG] ConfuseVAE: artistic_strength = {self.artistic_strength} (type: {type(self.artistic_strength)})")
         print(f"[DEBUG] ConfuseVAE: samples shape = {samples.shape}")
         
-        if self.artistic_strength <= 0:
-            print("[DEBUG] ConfuseVAE: No effects applied (strength <= 0)")
+        # Ensure artistic_strength is a number and > 0
+        try:
+            strength_value = float(self.artistic_strength)
+        except (ValueError, TypeError):
+            print(f"[DEBUG] ConfuseVAE: Invalid artistic_strength value, defaulting to 0")
+            strength_value = 0.0
+        
+        if strength_value <= 0:
+            print(f"[DEBUG] ConfuseVAE: No effects applied (strength = {strength_value} <= 0)")
             return samples
         
-        print(f"[DEBUG] ConfuseVAE: Applying artistic effects with strength {self.artistic_strength}")
+        print(f"[DEBUG] ConfuseVAE: Applying artistic effects with strength {strength_value}")
         
         # Create a copy to avoid modifying the original
         confused_samples = samples.clone()
         
         # Scale the strength (0-10 range mapped to 0-1 for internal use)
-        strength = min(self.artistic_strength / 10.0, 1.0)
+        strength = min(strength_value / 10.0, 1.0)
         
         # 1. Latent Space Noise (subtle background texture)
         if strength > 0.1:
@@ -146,15 +153,27 @@ class ConfuseVAE(VAE):
     def decode(self, samples_in):
         """Decode latent samples with artistic confusion effects"""
         print(f"[DEBUG] ConfuseVAE.decode called with artistic_strength = {self.artistic_strength}")
-        if self.artistic_strength > 0:
-            samples_in = self._apply_artistic_confusion(samples_in)
+        try:
+            strength_value = float(self.artistic_strength)
+            if strength_value > 0:
+                samples_in = self._apply_artistic_confusion(samples_in)
+            else:
+                print(f"[DEBUG] ConfuseVAE.decode: Skipping effects (strength = {strength_value})")
+        except (ValueError, TypeError):
+            print(f"[DEBUG] ConfuseVAE.decode: Invalid strength value, skipping effects")
         
         return super().decode(samples_in)
 
     def decode_tiled(self, samples, tile_x=64, tile_y=64, overlap=16):
         """Decode tiled samples with artistic confusion effects"""
         print(f"[DEBUG] ConfuseVAE.decode_tiled called with artistic_strength = {self.artistic_strength}")
-        if self.artistic_strength > 0:
-            samples = self._apply_artistic_confusion(samples)
+        try:
+            strength_value = float(self.artistic_strength)
+            if strength_value > 0:
+                samples = self._apply_artistic_confusion(samples)
+            else:
+                print(f"[DEBUG] ConfuseVAE.decode_tiled: Skipping effects (strength = {strength_value})")
+        except (ValueError, TypeError):
+            print(f"[DEBUG] ConfuseVAE.decode_tiled: Invalid strength value, skipping effects")
         
         return super().decode_tiled(samples, tile_x, tile_y, overlap)
