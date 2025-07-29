@@ -95,41 +95,23 @@ def run_clip_guidance_loop(
     steps=50, disco_scale=1.0, cutn=16, tv_scale=0.0, range_scale=0.0
 ):
     """
-    Simple CLIP guidance like the original method - fast and clean
+    CLIP guidance using finite differences (gradient-free optimization)
     """
-    print("[Disco] Starting CLIP guidance (simple method)...")
-    
-    # CRITICAL: We're being called from within @torch.no_grad() and @torch.inference_mode()
-    # We need to temporarily exit these contexts to enable gradients
-    print("[Disco] Temporarily enabling gradients (exiting no_grad context)...")
-    
-    # Exit inference mode and enable gradients
-    with torch.enable_grad():
-        torch.set_grad_enabled(True)
-        
-        return _run_clip_guidance_with_gradients(latent, vae, clip_model, clip_preprocess, text_prompt, async_task, steps, disco_scale, cutn, tv_scale, range_scale)
-
-def _run_clip_guidance_with_gradients(latent, vae, clip_model, clip_preprocess, text_prompt, async_task, steps, disco_scale, cutn, tv_scale, range_scale):
-    """Internal function that runs with gradients enabled"""
+    print("[Disco] Starting CLIP guidance (finite difference method)...")
     try:
         # Get device from latent
         latent_tensor = latent['samples']
         device = latent_tensor.device
         
-        # Always load our own CLIP model to ensure gradients work
-        print("[Disco] Loading fresh CLIP model for gradient optimization...")
+        # Load CLIP model
+        print("[Disco] Loading CLIP model...")
         clip_model, _ = clip.load("RN50", device=device)
         clip_model.eval()
         
-        # Ensure CLIP parameters can have gradients flow through them
-        for param in clip_model.parameters():
-            param.requires_grad_(False)  # Don't update CLIP weights, but allow gradients to flow
-        
-        # 1. Prepare text embeddings (like original)
+        # 1. Prepare text embeddings
         try:
             text_tokens = clip.tokenize([text_prompt], truncate=True).to(device)
         except:
-            # Fallback for long text
             words = text_prompt.split()[:50]
             text_tokens = clip.tokenize([" ".join(words)], truncate=True).to(device)
             
@@ -140,160 +122,82 @@ def _run_clip_guidance_with_gradients(latent, vae, clip_model, clip_preprocess, 
         # 2. Initialize image from latent
         with torch.no_grad():
             init_image = vae.decode(latent_tensor)
-            # Normalize to [0, 1]
             if init_image.shape[-1] <= 4 and init_image.shape[1] > 4:
                 init_image = init_image.permute(0, 3, 1, 2)
             init_image = (init_image / 2 + 0.5).clamp(0, 1)
             
-            # Ensure 3 channels
             if init_image.shape[1] > 3:
                 init_image = init_image[:, :3, :, :]
             elif init_image.shape[1] == 1:
                 init_image = init_image.repeat(1, 3, 1, 1)
 
-        # 3. Set up optimization (exactly like original)
+        # 3. Set up for finite difference optimization
         cut_size = clip_model.visual.input_resolution
         make_cutouts = SimpleMakeCutouts(cut_size, cutn)
-        
-        # CLIP normalization (like original)
         normalize = transforms.Normalize(
             mean=(0.48145466, 0.4578275, 0.40821073),
             std=(0.26862954, 0.26130258, 0.27577711)
         )
         
-        # Create tensor from scratch to avoid any gradient context issues
-        print("[DEBUG] Creating tensor from scratch...")
+        # Working image tensor (no gradients needed for finite differences)
+        image_tensor = init_image.clone().detach().to(device)
         
-        # Method 1: Create completely fresh tensor
-        with torch.enable_grad():
-            # Get the shape and values, but create a completely new tensor
-            init_shape = init_image.shape
-            init_values = init_image.detach().cpu().numpy()
-            
-            # Create fresh tensor with gradients enabled from the start
-            image_tensor = torch.tensor(init_values, device=device, dtype=torch.float32, requires_grad=True)
-            image_tensor = torch.nn.Parameter(image_tensor)
-            
-            print(f"[DEBUG] Fresh tensor: requires_grad={image_tensor.requires_grad}, is_leaf={image_tensor.is_leaf}")
-            
-            # Test basic operation
-            test_op = image_tensor * 2.0
-            print(f"[DEBUG] Fresh tensor operation: requires_grad={test_op.requires_grad}")
-            
-            # If that doesn't work, try creating random tensor (should definitely work)
-            if not test_op.requires_grad:
-                print("[DEBUG] Fresh tensor failed, trying random tensor...")
-                random_tensor = torch.randn(init_shape, device=device, requires_grad=True)
-                random_tensor = torch.nn.Parameter(random_tensor)
-                
-                test_random = random_tensor * 2.0
-                print(f"[DEBUG] Random tensor operation: requires_grad={test_random.requires_grad}")
-                
-                if test_random.requires_grad:
-                    print("[DEBUG] Using random tensor as fallback")
-                    image_tensor = random_tensor
-        
-        optimizer = torch.optim.Adam([image_tensor], lr=0.05)
-        
-        # CLIP loss function with detailed debugging
-        def clip_loss(image_tensor, text_embed):
-            print(f"[DEBUG] Input image_tensor.requires_grad: {image_tensor.requires_grad}")
-            print(f"[DEBUG] Input image_tensor.grad_fn: {image_tensor.grad_fn}")
-            
-            cutouts = make_cutouts(image_tensor)
-            print(f"[DEBUG] After make_cutouts: requires_grad={cutouts.requires_grad}, grad_fn={cutouts.grad_fn}")
-            
-            cutouts = normalize(cutouts)
-            print(f"[DEBUG] After normalize: requires_grad={cutouts.requires_grad}, grad_fn={cutouts.grad_fn}")
-            
-            # Set CLIP to train mode temporarily
-            was_training = clip_model.training
-            clip_model.train()
-            
-            try:
-                image_features = clip_model.encode_image(cutouts).float()
-                print(f"[DEBUG] After CLIP encode: requires_grad={image_features.requires_grad}, grad_fn={image_features.grad_fn}")
-                
-                image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-                print(f"[DEBUG] After normalize features: requires_grad={image_features.requires_grad}, grad_fn={image_features.grad_fn}")
-                
-                similarity = (text_embed @ image_features.T).mean()
-                print(f"[DEBUG] After similarity: requires_grad={similarity.requires_grad}, grad_fn={similarity.grad_fn}")
-                
-                loss = -similarity
-                print(f"[DEBUG] Final loss: requires_grad={loss.requires_grad}, grad_fn={loss.grad_fn}")
-                
-                return loss
-            finally:
-                clip_model.train(was_training)
-        
-        # Debug PyTorch gradient settings
-        print(f"[DEBUG] PyTorch gradient debugging:")
-        print(f"[DEBUG] torch.is_grad_enabled(): {torch.is_grad_enabled()}")
-        print(f"[DEBUG] torch.backends.cudnn.enabled: {torch.backends.cudnn.enabled}")
-        print(f"[DEBUG] Current thread: {torch.get_num_threads()}")
-        
-        # Try the most basic gradient test possible
-        print("[DEBUG] Testing most basic gradient case...")
-        with torch.enable_grad():
-            torch.set_grad_enabled(True)
-            
-            # Create the simplest possible tensor with gradients
-            simple_tensor = torch.tensor([1.0], device=device, requires_grad=True)
-            print(f"[DEBUG] Simple tensor: {simple_tensor}, requires_grad: {simple_tensor.requires_grad}")
-            
-            # Most basic operation
-            simple_result = simple_tensor + 1.0
-            print(f"[DEBUG] Simple result: {simple_result}, requires_grad: {simple_result.requires_grad}")
-            
-            # Try backward pass
-            try:
-                simple_result.backward()
-                print(f"[DEBUG] Simple tensor grad after backward: {simple_tensor.grad}")
-            except Exception as e:
-                print(f"[DEBUG] Backward failed: {e}")
-        
-        # Test with our image tensor
-        test_loss = image_tensor.mean()
-        print(f"[DEBUG] Image tensor test loss requires_grad: {test_loss.requires_grad}")
-        
-        # 4. Optimization loop with gradient checking
-        for i in range(steps):
-            optimizer.zero_grad()
-            
-            print(f"[DEBUG] === Step {i} ===")
-            loss = clip_loss(image_tensor, text_features)
-            
-            # Check if loss has gradients
-            if not loss.requires_grad:
-                print(f"[Disco] Warning: Loss doesn't require grad at step {i}, skipping optimization")
-                break
-            
-            try:
-                loss.backward()
-                optimizer.step()
-            except RuntimeError as e:
-                if "does not require grad" in str(e):
-                    print(f"[Disco] Gradient error at step {i}: {e}")
-                    print("[Disco] Stopping optimization due to gradient issues")
-                    break
-                else:
-                    raise e
-            
-            # Clamp to valid range (like original)
+        # CLIP loss function (no gradients)
+        def clip_loss(image_tensor):
             with torch.no_grad():
+                cutouts = make_cutouts(image_tensor)
+                cutouts = normalize(cutouts)
+                image_features = clip_model.encode_image(cutouts).float()
+                image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+                similarity = (text_features @ image_features.T).mean()
+                return -similarity.item()
+        
+        # 4. Finite difference optimization
+        learning_rate = 0.05
+        eps = 1e-4
+        
+        print(f"[Disco] Starting finite difference optimization...")
+        
+        for i in range(steps):
+            current_loss = clip_loss(image_tensor)
+            
+            # Compute gradients using finite differences (sparse sampling for speed)
+            grad_approx = torch.zeros_like(image_tensor)
+            
+            # Sample every 8th pixel for speed
+            h, w = image_tensor.shape[2], image_tensor.shape[3]
+            step_h, step_w = max(1, h // 8), max(1, w // 8)
+            
+            for c in range(image_tensor.shape[1]):  # For each channel
+                for y in range(0, h, step_h):
+                    for x in range(0, w, step_w):
+                        # Perturb pixel
+                        image_tensor[0, c, y, x] += eps
+                        
+                        # Compute perturbed loss
+                        perturbed_loss = clip_loss(image_tensor)
+                        
+                        # Finite difference gradient
+                        grad_approx[0, c, y, x] = (perturbed_loss - current_loss) / eps
+                        
+                        # Restore pixel
+                        image_tensor[0, c, y, x] -= eps
+            
+            # Apply gradient update
+            with torch.no_grad():
+                image_tensor -= learning_rate * grad_approx
                 image_tensor.clamp_(0, 1)
             
             if i % 10 == 0:
-                print(f"[Disco] Step {i}, Loss: {loss.item():.4f}")
+                print(f"[Disco] Step {i}, Loss: {current_loss:.4f}")
                 
                 # Update progress
                 if async_task is not None:
                     progress = int((i + 1) / steps * 100)
-                    preview_image_np = (image_tensor.detach().permute(0, 2, 3, 1) * 255).clamp(0, 255).to(torch.uint8).cpu().numpy()[0]
+                    preview_image_np = (image_tensor.permute(0, 2, 3, 1) * 255).clamp(0, 255).to(torch.uint8).cpu().numpy()[0]
                     async_task.yields.append(['preview', (progress, f'Disco Step {i+1}/{steps}', preview_image_np)])
 
-        print("[Disco] CLIP optimization completed.")
+        print("[Disco] Finite difference optimization completed.")
         return latent
 
     except Exception as e:
