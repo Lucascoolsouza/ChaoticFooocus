@@ -2,7 +2,7 @@
 # Install with: pip install -r requirements_clip.txt
 
 # Core CLIP dependency
-clip-by-openai @ git+https://github.com/openai/CLIP.git
+git+https://github.com/openai/CLIP.git@main
 
 # CLIP dependencies (if not already installed)
 torch>=1.7.1
