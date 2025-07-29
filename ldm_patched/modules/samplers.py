@@ -530,7 +530,11 @@ KSAMPLER_NAMES = ["euler", "euler_ancestral","euler_chaotic","euler_triangle_wav
     "heun_pixel_art",
     "euler_disco",
     "heun_disco",
-    "psycho_euler",]
+    "psycho_euler",
+    "euler_wave_noise",
+    "euler_forgetful",
+    "euler_drunk_guidance",
+    "euler_chaos_steps",]
 
 class KSAMPLER(Sampler):
     def __init__(self, sampler_function, extra_options={}, inpaint_options={}):
@@ -589,6 +593,14 @@ def ksampler(sampler_name, extra_options={}, inpaint_options={}):
         sampler_function = getattr(k_diffusion_sampling, "sample_diverse_attention")
     elif sampler_name == "dpmpp_unipc_restart":
         sampler_function = getattr(k_diffusion_sampling, "sample_dpmpp_unipc_restart")
+    elif sampler_name == "euler_wave_noise":
+        sampler_function = getattr(k_diffusion_sampling, "sample_euler_wave_noise")
+    elif sampler_name == "euler_forgetful":
+        sampler_function = getattr(k_diffusion_sampling, "sample_euler_forgetful")
+    elif sampler_name == "euler_drunk_guidance":
+        sampler_function = getattr(k_diffusion_sampling, "sample_euler_drunk_guidance")
+    elif sampler_name == "euler_chaos_steps":
+        sampler_function = getattr(k_diffusion_sampling, "sample_euler_chaos_steps")
     else:
         sampler_function = getattr(k_diffusion_sampling, "sample_{}".format(sampler_name))
 
