@@ -1106,13 +1106,8 @@ with shared.gradio_root:
                                                    value=modules.config.default_sampler)
                         scheduler_name = gr.Dropdown(label='Scheduler', choices=flags.scheduler_list,
                                                      value=modules.config.default_scheduler)
-                            vae_name=modules.config.default_vae,
-    artistic_strength=0.0,
-)
-
-                        generate_image_grid = gr.Checkbox(label='Generate Image Grid for Each Batch',
-                                                          info='(Experimental) This may cause performance problems on some computers and certain internet conditions.',
-                                                          value=False)
+                            vae_name = gr.Dropdown(label='VAE', choices=[modules.flags.default_vae] + modules.config.vae_filenames,
+                                                     value=modules.config.default_vae, show_label=True)
 
                         generate_image_grid = gr.Checkbox(label='Generate Image Grid for Each Batch',
                                                           info='(Experimental) This may cause performance problems on some computers and certain internet conditions.',
@@ -1542,6 +1537,14 @@ def dump_default_english_config():
 
 
 # dump_default_english_config()
+
+refresh_everything(
+    refiner_model_name=modules.config.default_refiner_model_name,
+    base_model_name=modules.config.default_base_model_name,
+    loras=get_enabled_loras(modules.config.default_loras),
+    vae_name=modules.config.default_vae,
+    artistic_strength=0.0,
+)
 
 refresh_everything(
     refiner_model_name=modules.config.default_refiner_model_name,
