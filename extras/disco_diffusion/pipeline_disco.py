@@ -331,7 +331,7 @@ def run_clip_post_processing(
             working_image = (working_image - learning_rate * gradient_approx).clamp(0, 1)
             
             if i % 5 == 0:
-                print(f"[Disco] Post-processing step {i}, Loss: {current_loss:.4f}")
+                print(f"[Disco] Post-processing step {i}, Loss: {best_loss:.4f}")
             
             # Update progress
             if async_task is not None and i % 10 == 0:
