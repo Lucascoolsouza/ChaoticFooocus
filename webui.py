@@ -27,11 +27,8 @@ from modules.ui_gradio_extensions import reload_javascript
 from modules.auth import auth_enabled, check_auth
 from modules.util import is_json
 
-def get_task(*args):
-    args = list(args)
-    args.pop(0)
-
-    return worker.AsyncTask(args=args)
+def get_task(**kwargs):
+    return worker.AsyncTask(args=kwargs)
 
 def generate_clicked(task: worker.AsyncTask):
     import ldm_patched.modules.model_management as model_management
@@ -441,7 +438,7 @@ with shared.gradio_root:
                                                                    info='Choose which prompt to use for Upscale or Variation.',
                                                                    choices=flags.enhancement_uov_prompt_types,
                                                                    value=modules.config.default_enhance_uov_prompt_type,
-                                                                   visible=modules.config.default_enhance_uov_processing_order == flags.enhancement_uov_after)
+                                                                   visible=modules.config.default_enhance_uov_processing_order == flags.enhancement_uov_after, elem_id='enhance_uov_prompt_type')
 
                                 def update_enhance_uov_options(method):
                                     return {
@@ -551,7 +548,7 @@ with shared.gradio_root:
                                                                             info='Positive value will make white area in the mask larger, '
                                                                                  'negative value will make white area smaller. '
                                                                                  '(default is 0, always processed before any mask invert)')
-                                enhance_mask_invert = gr.Checkbox(label='Invert Mask', value=False)
+                                enhance_mask_invert = gr.Checkbox(label='Invert Mask', value=False, elem_id=f'enhance_mask_invert_{index}')
 
                             gr.HTML('<a href="https://github.com/lllyasviel/Fooocus/discussions/3281" target="_blank">\U0001F4D4 Documentation</a>')
 
@@ -691,7 +688,7 @@ with shared.gradio_root:
                                                     choices=copy.deepcopy(style_sorter.all_styles),
                                                     value=copy.deepcopy(modules.config.default_styles),
                                                     label='Selected Styles',
-                                                    elem_classes=['style_selections'])
+                                                    elem_classes=['style_selections'], elem_id='style_selections')
                 wildcard_files = gr.Textbox(
                 label='Wildcard Files',
                 lines=5,
@@ -904,31 +901,31 @@ with shared.gradio_root:
                 
                 with gr.Accordion(label='Drunk UNet (Psychedelic UNet Effects)', open=False):
                     drunk_enabled = gr.Checkbox(label='Enable Drunk UNet', value=False,
-                                               info='Enable various perturbations to the UNet for psychedelic effects')
+                                               info='Enable various perturbations to the UNet for psychedelic effects', elem_id='drunk_enabled')
                     drunk_attn_noise_strength = gr.Slider(label='Attention Noise Strength', minimum=0.0, maximum=1.0, step=0.01,
-                                                         value=0.0, visible=False,
+                                                         value=0.0, visible=False, elem_id='drunk_attn_noise_strength',
                                                          info='Strength of noise added to attention maps (0.0 = disabled)')
                     drunk_layer_dropout_prob = gr.Slider(label='Layer Dropout Probability', minimum=0.0, maximum=0.5, step=0.01,
-                                                        value=0.0, visible=False,
+                                                        value=0.0, visible=False, elem_id='drunk_layer_dropout_prob',
                                                         info='Probability of randomly dropping out UNet layers (0.0 = disabled)')
                     drunk_prompt_noise_strength = gr.Slider(label='Prompt Noise Strength', minimum=0.0, maximum=0.1, step=0.001,
-                                                           value=0.0, visible=False,
+                                                           value=0.0, visible=False, elem_id='drunk_prompt_noise_strength',
                                                            info='Strength of noise added to prompt embeddings (0.0 = disabled)')
                     drunk_cognitive_echo_strength = gr.Slider(label='Cognitive Echo Strength', minimum=0.0, maximum=0.5, step=0.01,
-                                                              value=0.0, visible=False,
+                                                              value=0.0, visible=False, elem_id='drunk_cognitive_echo_strength',
                                                               info='Strength of re-injecting previous layer output (0.0 = disabled)')
                     drunk_dynamic_guidance_preset = gr.Dropdown(label='Dynamic Guidance Preset', 
                                                                 choices=['Custom', 'None', 'Subtle Wave', 'Strong Wave', 'Random'],
-                                                                value='None', visible=False,
+                                                                value='None', visible=False, elem_id='drunk_dynamic_guidance_preset',
                                                                 info='Predefined settings for dynamic guidance scale')
                     drunk_dynamic_guidance_base = gr.Slider(label='Dynamic Guidance Base', minimum=1.0, maximum=20.0, step=0.1,
-                                                           value=7.0, visible=False,
+                                                           value=7.0, visible=False, elem_id='drunk_dynamic_guidance_base',
                                                            info='Base guidance scale for dynamic guidance')
                     drunk_dynamic_guidance_amplitude = gr.Slider(label='Dynamic Guidance Amplitude', minimum=0.0, maximum=10.0, step=0.1,
-                                                                value=2.0, visible=False,
+                                                                value=2.0, visible=False, elem_id='drunk_dynamic_guidance_amplitude',
                                                                 info='Amplitude of dynamic guidance variation')
                     drunk_dynamic_guidance_frequency = gr.Slider(label='Dynamic Guidance Frequency', minimum=0.0, maximum=1.0, step=0.01,
-                                                                value=0.1, visible=False,
+                                                                value=0.1, visible=False, elem_id='drunk_dynamic_guidance_frequency',
                                                                 info='Frequency of dynamic guidance variation')
                     drunk_status = gr.Textbox(label='Drunk UNet Status', interactive=False, 
                                              value='Drunk UNet: Disabled', visible=False)
@@ -1202,7 +1199,7 @@ with shared.gradio_root:
                         adaptive_cfg = gr.Slider(label='CFG Mimicking from TSNR', minimum=1.0, maximum=30.0, step=0.01,
                                                  value=modules.config.default_cfg_tsnr,
                                                  info='Enabling Fooocus\'s implementation of CFG mimicking for TSNR '
-                                                      '(effective when real CFG > mimicked CFG).')
+                                                      '(effective when real CFG > mimicked CFG).', elem_id='adaptive_cfg')
                         clip_skip = gr.Slider(label='CLIP Skip', minimum=1, maximum=flags.clip_skip_max, step=1,
                                                  value=modules.config.default_clip_skip,
                                                  info='Bypass CLIP layers to avoid overfitting (use 1 to not skip any layers, 2 is recommended).')
@@ -1514,12 +1511,7 @@ with shared.gradio_root:
         ctrls += [nag_enabled, nag_scale, nag_tau, nag_alpha, nag_negative_prompt, nag_end]
         
         # Drunk UNet controls
-        # Attempting to fix parameter misalignment by adding a dummy state.
-        # The backend appears to be reading Drunk UNet parameters from an incorrect offset.
-        # Specifically, 'drunk_enabled' is being read as 'freeu_b2' (1.02).
-        # Adding a dummy boolean state here to shift subsequent parameters by one,
-        # hoping to align 'drunk_enabled' with the backend's expected position.
-        ctrls += [gr.State(False), drunk_enabled, drunk_attn_noise_strength, drunk_layer_dropout_prob, drunk_prompt_noise_strength, drunk_cognitive_echo_strength, drunk_dynamic_guidance_preset, drunk_dynamic_guidance_base, drunk_dynamic_guidance_amplitude, drunk_dynamic_guidance_frequency]
+        ctrls += [drunk_enabled, drunk_attn_noise_strength, drunk_layer_dropout_prob, drunk_prompt_noise_strength, drunk_cognitive_echo_strength, drunk_dynamic_guidance_preset, drunk_dynamic_guidance_base, drunk_dynamic_guidance_amplitude, drunk_dynamic_guidance_frequency]
         
         # Disco Diffusion controls
         ctrls += [disco_enabled, disco_scale, disco_preset, disco_transforms, disco_seed,
@@ -1572,7 +1564,248 @@ with shared.gradio_root:
         generate_button.click(lambda: (gr.update(visible=True, interactive=True), gr.update(visible=True, interactive=True), gr.update(visible=False, interactive=False), [], True),
                               outputs=[stop_button, skip_button, generate_button, gallery, state_is_generating]) \
             .then(fn=refresh_seed, inputs=[seed_random, image_seed], outputs=image_seed) \
-            .then(fn=get_task, inputs=ctrls, outputs=currentTask) \
+            .then(
+                fn=get_task,
+                inputs=[
+                    currentTask, generate_image_grid, force_grid_checkbox,
+                    prompt, negative_prompt, style_selections,
+                    aspect_ratios_selection, image_number, output_format, image_seed,
+                    read_wildcards_in_order, sharpness, guidance_scale,
+                    base_model, refiner_model, refiner_switch,
+                    input_image_checkbox, current_tab,
+                    uov_method, uov_input_image, latent_upscale_method, latent_upscale_scheduler, latent_upscale_size,
+                    outpaint_selections, inpaint_input_image, inpaint_additional_prompt, inpaint_mask_image,
+                    disable_preview, disable_intermediate_results, disable_seed_increment, black_out_nsfw,
+                    adm_scaler_positive, adm_scaler_negative, adm_scaler_end, adaptive_cfg, clip_skip,
+                    sampler_name, scheduler_name, vae_name,
+                    overwrite_step, overwrite_switch, overwrite_width, overwrite_height, overwrite_vary_strength,
+                    overwrite_upscale_strength, upscale_loops, mixing_image_prompt_and_vary_upscale, mixing_image_prompt_and_inpaint,
+                    debugging_cn_preprocessor, skipping_cn_preprocessor, canny_low_threshold, canny_high_threshold,
+                    refiner_swap_method, controlnet_softness,
+                    freeu_enabled, freeu_b1, freeu_b2, freeu_s1, freeu_s2,
+                    debugging_inpaint_preprocessor, inpaint_disable_initial_latent, inpaint_engine,
+                    inpaint_strength, inpaint_respective_field, inpaint_advanced_masking_checkbox, invert_mask_checkbox, inpaint_erode_or_dilate,
+                    gr.State(False) if args_manager.args.disable_image_log else save_final_enhanced_image_only,
+                    gr.State(False) if args_manager.args.disable_metadata else save_metadata_to_images,
+                    gr.State(modules.flags.MetadataScheme.FOOOCUS.value) if args_manager.args.disable_metadata else metadata_scheme,
+                    detail_daemon_enabled, detail_daemon_amount, detail_daemon_start, detail_daemon_end,
+                    detail_daemon_bias, detail_daemon_base_multiplier, detail_daemon_start_offset, detail_daemon_end_offset,
+                    detail_daemon_exponent, detail_daemon_fade, detail_daemon_mode, detail_daemon_smooth,
+                    tpg_enabled, tpg_scale, tpg_applied_layers, tpg_shuffle_strength, tpg_adaptive_strength,
+                    nag_enabled, nag_scale, nag_tau, nag_alpha, nag_negative_prompt, nag_end,
+                    drunk_enabled, drunk_attn_noise_strength, drunk_layer_dropout_prob, drunk_prompt_noise_strength, drunk_cognitive_echo_strength, drunk_dynamic_guidance_preset, drunk_dynamic_guidance_base, drunk_dynamic_guidance_amplitude, drunk_dynamic_guidance_frequency,
+                    disco_enabled, disco_scale, disco_preset, disco_transforms, disco_seed,
+                    disco_clip_model, disco_animation_mode, disco_zoom_factor, disco_rotation_speed,
+                    disco_translation_x, disco_translation_y, disco_color_coherence,
+                    disco_saturation_boost, disco_contrast_boost, disco_symmetry_mode, disco_fractal_octaves,
+                    debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox,
+                    enhance_input_image, enhance_checkbox, enhance_uov_method, enhance_bg_removal_model,
+                    enhance_uov_processing_order, enhance_uov_prompt_type, enhance_seamless_tiling_method, enhance_seamless_tiling_overlap,
+                    disco_guidance_steps, disco_cutn, disco_tv_scale, disco_range_scale,
+                    artistic_strength, performance_selection
+                ] + lora_ctrls + ip_ctrls + enhance_ctrls,
+                outputs=currentTask,
+                _js='(currentTask, generate_image_grid, force_grid_checkbox, prompt, negative_prompt, style_selections, aspect_ratios_selection, image_number, output_format, image_seed, read_wildcards_in_order, sharpness, guidance_scale, base_model, refiner_model, refiner_switch, input_image_checkbox, current_tab, uov_method, uov_input_image, latent_upscale_method, latent_upscale_scheduler, latent_upscale_size, outpaint_selections, inpaint_input_image, inpaint_additional_prompt, inpaint_mask_image, disable_preview, disable_intermediate_results, disable_seed_increment, black_out_nsfw, adm_scaler_positive, adm_scaler_negative, adm_scaler_end, adaptive_cfg, clip_skip, sampler_name, scheduler_name, vae_name, overwrite_step, overwrite_switch, overwrite_width, overwrite_height, overwrite_vary_strength, overwrite_upscale_strength, upscale_loops, mixing_image_prompt_and_vary_upscale, mixing_image_prompt_and_inpaint, debugging_cn_preprocessor, skipping_cn_preprocessor, canny_low_threshold, canny_high_threshold, refiner_swap_method, controlnet_softness, freeu_enabled, freeu_b1, freeu_b2, freeu_s1, freeu_s2, debugging_inpaint_preprocessor, inpaint_disable_initial_latent, inpaint_engine, inpaint_strength, inpaint_respective_field, inpaint_advanced_masking_checkbox, invert_mask_checkbox, inpaint_erode_or_dilate, save_final_enhanced_image_only, save_metadata_to_images, metadata_scheme, detail_daemon_enabled, detail_daemon_amount, detail_daemon_start, detail_daemon_end, detail_daemon_bias, detail_daemon_base_multiplier, detail_daemon_start_offset, detail_daemon_end_offset, detail_daemon_exponent, detail_daemon_fade, detail_daemon_mode, detail_daemon_smooth, tpg_enabled, tpg_scale, tpg_applied_layers, tpg_shuffle_strength, tpg_adaptive_strength, nag_enabled, nag_scale, nag_tau, nag_alpha, nag_negative_prompt, nag_end, drunk_enabled, drunk_attn_noise_strength, drunk_layer_dropout_prob, drunk_prompt_noise_strength, drunk_cognitive_echo_strength, drunk_dynamic_guidance_preset, drunk_dynamic_guidance_base, drunk_dynamic_guidance_amplitude, drunk_dynamic_guidance_frequency, disco_enabled, disco_scale, disco_preset, disco_transforms, disco_seed, disco_clip_model, disco_animation_mode, disco_zoom_factor, disco_rotation_speed, disco_translation_x, disco_translation_y, disco_color_coherence, disco_saturation_boost, disco_contrast_boost, disco_symmetry_mode, disco_fractal_octaves, debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox, enhance_input_image, enhance_checkbox, enhance_uov_method, enhance_bg_removal_model, enhance_uov_processing_order, enhance_uov_prompt_type, enhance_seamless_tiling_method, enhance_seamless_tiling_overlap, disco_guidance_steps, disco_cutn, disco_tv_scale, disco_range_scale, artistic_strength, performance_selection, ...lora_ctrls, ...ip_ctrls, ...enhance_ctrls) => {
+                    const args = {
+                        currentTask: currentTask,
+                        generate_image_grid: generate_image_grid,
+                        force_grid_checkbox: force_grid_checkbox,
+                        prompt: prompt,
+                        negative_prompt: negative_prompt,
+                        style_selections: style_selections,
+                        aspect_ratios_selection: aspect_ratios_selection,
+                        image_number: image_number,
+                        output_format: output_format,
+                        image_seed: image_seed,
+                        read_wildcards_in_order: read_wildcards_in_order,
+                        sharpness: sharpness,
+                        guidance_scale: guidance_scale,
+                        base_model: base_model,
+                        refiner_model: refiner_model,
+                        refiner_switch: refiner_switch,
+                        input_image_checkbox: input_image_checkbox,
+                        current_tab: current_tab,
+                        uov_method: uov_method,
+                        uov_input_image: uov_input_image,
+                        latent_upscale_method: latent_upscale_method,
+                        latent_upscale_scheduler: latent_upscale_scheduler,
+                        latent_upscale_size: latent_upscale_size,
+                        outpaint_selections: outpaint_selections,
+                        inpaint_input_image: inpaint_input_image,
+                        inpaint_additional_prompt: inpaint_additional_prompt,
+                        inpaint_mask_image: inpaint_mask_image,
+                        disable_preview: disable_preview,
+                        disable_intermediate_results: disable_intermediate_results,
+                        disable_seed_increment: disable_seed_increment,
+                        black_out_nsfw: black_out_nsfw,
+                        adm_scaler_positive: adm_scaler_positive,
+                        adm_scaler_negative: adm_scaler_negative,
+                        adm_scaler_end: adm_scaler_end,
+                        adaptive_cfg: adaptive_cfg,
+                        clip_skip: clip_skip,
+                        sampler_name: sampler_name,
+                        scheduler_name: scheduler_name,
+                        vae_name: vae_name,
+                        overwrite_step: overwrite_step,
+                        overwrite_switch: overwrite_switch,
+                        overwrite_width: overwrite_width,
+                        overwrite_height: overwrite_height,
+                        overwrite_vary_strength: overwrite_vary_strength,
+                        overwrite_upscale_strength: overwrite_upscale_strength,
+                        upscale_loops: upscale_loops,
+                        mixing_image_prompt_and_vary_upscale: mixing_image_prompt_and_vary_upscale,
+                        mixing_image_prompt_and_inpaint: mixing_image_prompt_and_inpaint,
+                        debugging_cn_preprocessor: debugging_cn_preprocessor,
+                        skipping_cn_preprocessor: skipping_cn_preprocessor,
+                        canny_low_threshold: canny_low_threshold,
+                        canny_high_threshold: canny_high_threshold,
+                        refiner_swap_method: refiner_swap_method,
+                        controlnet_softness: controlnet_softness,
+                        freeu_enabled: freeu_enabled,
+                        freeu_b1: freeu_b1,
+                        freeu_b2: freeu_b2,
+                        freeu_s1: freeu_s1,
+                        freeu_s2: freeu_s2,
+                        debugging_inpaint_preprocessor: debugging_inpaint_preprocessor,
+                        inpaint_disable_initial_latent: inpaint_disable_initial_latent,
+                        inpaint_engine: inpaint_engine,
+                        inpaint_strength: inpaint_strength,
+                        inpaint_respective_field: inpaint_respective_field,
+                        inpaint_advanced_masking_checkbox: inpaint_advanced_masking_checkbox,
+                        invert_mask_checkbox: invert_mask_checkbox,
+                        inpaint_erode_or_dilate: inpaint_erode_or_dilate,
+                        save_final_enhanced_image_only: save_final_enhanced_image_only,
+                        save_metadata_to_images: save_metadata_to_images,
+                        metadata_scheme: metadata_scheme,
+                        detail_daemon_enabled: detail_daemon_enabled,
+                        detail_daemon_amount: detail_daemon_amount,
+                        detail_daemon_start: detail_daemon_start,
+                        detail_daemon_end: detail_daemon_end,
+                        detail_daemon_bias: detail_daemon_bias,
+                        detail_daemon_base_multiplier: detail_daemon_base_multiplier,
+                        detail_daemon_start_offset: detail_daemon_start_offset,
+                        detail_daemon_end_offset: detail_daemon_end_offset,
+                        detail_daemon_exponent: detail_daemon_exponent,
+                        detail_daemon_fade: detail_daemon_fade,
+                        detail_daemon_mode: detail_daemon_mode,
+                        detail_daemon_smooth: detail_daemon_smooth,
+                        tpg_enabled: tpg_enabled,
+                        tpg_scale: tpg_scale,
+                        tpg_applied_layers: tpg_applied_layers,
+                        tpg_shuffle_strength: tpg_shuffle_strength,
+                        tpg_adaptive_strength: tpg_adaptive_strength,
+                        nag_enabled: nag_enabled,
+                        nag_scale: nag_scale,
+                        nag_tau: nag_tau,
+                        nag_alpha: nag_alpha,
+                        nag_negative_prompt: nag_negative_prompt,
+                        nag_end: nag_end,
+                        drunk_enabled: drunk_enabled,
+                        drunk_attn_noise_strength: drunk_attn_noise_strength,
+                        drunk_layer_dropout_prob: drunk_layer_dropout_prob,
+                        drunk_prompt_noise_strength: drunk_prompt_noise_strength,
+                        drunk_cognitive_echo_strength: drunk_cognitive_echo_strength,
+                        drunk_dynamic_guidance_preset: drunk_dynamic_guidance_preset,
+                        drunk_dynamic_guidance_base: drunk_dynamic_guidance_base,
+                        drunk_dynamic_guidance_amplitude: drunk_dynamic_guidance_amplitude,
+                        drunk_dynamic_guidance_frequency: drunk_dynamic_guidance_frequency,
+                        disco_enabled: disco_enabled,
+                        disco_scale: disco_scale,
+                        disco_preset: disco_preset,
+                        disco_transforms: disco_transforms,
+                        disco_seed: disco_seed,
+                        disco_clip_model: disco_clip_model,
+                        disco_animation_mode: disco_animation_mode,
+                        disco_zoom_factor: disco_zoom_factor,
+                        disco_rotation_speed: disco_rotation_speed,
+                        disco_translation_x: disco_translation_x,
+                        disco_translation_y: disco_translation_y,
+                        disco_color_coherence: disco_color_coherence,
+                        disco_saturation_boost: disco_saturation_boost,
+                        disco_contrast_boost: disco_contrast_boost,
+                        disco_symmetry_mode: disco_symmetry_mode,
+                        disco_fractal_octaves: disco_fractal_octaves,
+                        debugging_dino: debugging_dino,
+                        dino_erode_or_dilate: dino_erode_or_dilate,
+                        debugging_enhance_masks_checkbox: debugging_enhance_masks_checkbox,
+                        enhance_input_image: enhance_input_image,
+                        enhance_checkbox: enhance_checkbox,
+                        enhance_uov_method: enhance_uov_method,
+                        enhance_bg_removal_model: enhance_bg_removal_model,
+                        enhance_uov_processing_order: enhance_uov_processing_order,
+                        enhance_uov_prompt_type: enhance_uov_prompt_type,
+                        enhance_seamless_tiling_method: enhance_seamless_tiling_method,
+                        enhance_seamless_tiling_overlap: enhance_seamless_tiling_overlap,
+                        disco_guidance_steps: disco_guidance_steps,
+                        disco_cutn: disco_cutn,
+                        disco_tv_scale: disco_tv_scale,
+                        disco_range_scale: disco_range_scale,
+                        artistic_strength: artistic_strength,
+                        performance_selection: performance_selection
+                    };
+
+                    // Dynamically add lora_ctrls
+                    for (let i = 0; i < lora_ctrls.length; i += 3) {
+                        const enabled = lora_ctrls[i];
+                        const model = lora_ctrls[i + 1];
+                        const weight = lora_ctrls[i + 2];
+                        args[`lora_enabled_${i / 3}`] = enabled;
+                        args[`lora_model_${i / 3}`] = model;
+                        args[`lora_weight_${i / 3}`] = weight;
+                    }
+
+                    // Dynamically add ip_ctrls
+                    for (let i = 0; i < ip_ctrls.length; i += 4) {
+                        const image = ip_ctrls[i];
+                        const stop = ip_ctrls[i + 1];
+                        const weight = ip_ctrls[i + 2];
+                        const type = ip_ctrls[i + 3];
+                        args[`ip_image_${i / 4}`] = image;
+                        args[`ip_stop_${i / 4}`] = stop;
+                        args[`ip_weight_${i / 4}`] = weight;
+                        args[`ip_type_${i / 4}`] = type;
+                    }
+
+                    // Dynamically add enhance_ctrls
+                    for (let i = 0; i < enhance_ctrls.length; i += 16) {
+                        const enabled = enhance_ctrls[i];
+                        const mask_dino_prompt_text = enhance_ctrls[i + 1];
+                        const prompt = enhance_ctrls[i + 2];
+                        const negative_prompt = enhance_ctrls[i + 3];
+                        const mask_model = enhance_ctrls[i + 4];
+                        const mask_cloth_category = enhance_ctrls[i + 5];
+                        const mask_sam_model = enhance_ctrls[i + 6];
+                        const mask_text_threshold = enhance_ctrls[i + 7];
+                        const mask_box_threshold = enhance_ctrls[i + 8];
+                        const mask_sam_max_detections = enhance_ctrls[i + 9];
+                        const inpaint_disable_initial_latent = enhance_ctrls[i + 10];
+                        const inpaint_engine = enhance_ctrls[i + 11];
+                        const inpaint_strength = enhance_ctrls[i + 12];
+                        const inpaint_respective_field = enhance_ctrls[i + 13];
+                        const inpaint_erode_or_dilate = enhance_ctrls[i + 14];
+                        const mask_invert = enhance_ctrls[i + 15];
+
+                        args[`enhance_enabled_${i / 16}`] = enabled;
+                        args[`enhance_mask_dino_prompt_text_${i / 16}`] = mask_dino_prompt_text;
+                        args[`enhance_prompt_${i / 16}`] = prompt;
+                        args[`enhance_negative_prompt_${i / 16}`] = negative_prompt;
+                        args[`enhance_mask_model_${i / 16}`] = mask_model;
+                        args[`enhance_mask_cloth_category_${i / 16}`] = mask_cloth_category;
+                        args[`enhance_mask_sam_model_${i / 16}`] = mask_sam_model;
+                        args[`enhance_mask_text_threshold_${i / 16}`] = mask_text_threshold;
+                        args[`enhance_mask_box_threshold_${i / 16}`] = mask_box_threshold;
+                        args[`enhance_mask_sam_max_detections_${i / 16}`] = mask_sam_max_detections;
+                        args[`enhance_inpaint_disable_initial_latent_${i / 16}`] = inpaint_disable_initial_latent;
+                        args[`enhance_inpaint_engine_${i / 16}`] = inpaint_engine;
+                        args[`enhance_inpaint_strength_${i / 16}`] = inpaint_strength;
+                        args[`enhance_inpaint_respective_field_${i / 16}`] = inpaint_respective_field;
+                        args[`enhance_inpaint_erode_or_dilate_${i / 16}`] = inpaint_erode_or_dilate;
+                        args[`enhance_mask_invert_${i / 16}`] = mask_invert;
+                    }
+
+                    return [args];
+                }
+            ) \
             .then(fn=generate_clicked, inputs=currentTask, outputs=[progress_html, progress_window, progress_gallery, gallery]) \
             .then(lambda: (gr.update(visible=True, interactive=True), gr.update(visible=False, interactive=False), gr.update(visible=False, interactive=False), False),
                   outputs=[generate_button, stop_button, skip_button, state_is_generating]) \

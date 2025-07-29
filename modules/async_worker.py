@@ -8,13 +8,13 @@ patch_all()
 
 
 class AsyncTask:
-    def __init__(self, args):
+    def __init__(self, **kwargs):
         from modules.flags import Performance, MetadataScheme, ip_list, disabled
         from modules.util import get_enabled_loras
         from modules.config import default_max_lora_number
         import args_manager
 
-        self.args = args.copy()
+        self.kwargs = kwargs
         self.yields = []
         self.results = []
         self.last_stop = False
@@ -22,281 +22,198 @@ class AsyncTask:
 
         self.performance_loras = []
 
-        if len(args) == 0:
-            return
+        self.generate_image_grid = kwargs.get('generate_image_grid', False)
+        self.force_grid_checkbox = kwargs.get('force_grid_checkbox', False)
+        self.prompt = kwargs.get('prompt', '')
+        self.negative_prompt = kwargs.get('negative_prompt', '')
+        self.style_selections = kwargs.get('style_selections', [])
 
-        args.reverse()
-        self.generate_image_grid = args.pop()
-        self.force_grid_checkbox = args.pop()
-        self.prompt = args.pop()
-        self.negative_prompt = args.pop()
-        self.style_selections = args.pop()
+        self.aspect_ratios_selection = kwargs.get('aspect_ratios_selection', '1024 × 1024')
+        self.image_number = kwargs.get('image_number', 1)
+        self.output_format = kwargs.get('output_format', 'png')
+        self.seed = int(kwargs.get('image_seed', 0))
+        self.read_wildcards_in_order = kwargs.get('read_wildcards_in_order', False)
+        self.sharpness = kwargs.get('sharpness', 2.0)
+        self.cfg_scale = kwargs.get('guidance_scale', 4.0)
+        self.base_model_name = kwargs.get('base_model', 'None')
+        self.refiner_model_name = kwargs.get('refiner_model', 'None')
+        self.refiner_switch = kwargs.get('refiner_switch', 0.8)
+        
+        self.loras = []
+        for i in range(default_max_lora_number):
+            enabled = kwargs.get(f'lora_enabled_{i}', False)
+            filename = kwargs.get(f'lora_model_{i}', 'None')
+            weight = kwargs.get(f'lora_weight_{i}', 1.0)
+            if enabled:
+                self.loras.append((enabled, filename, weight))
+        self.loras = get_enabled_loras(self.loras)
 
-        self.aspect_ratios_selection = args.pop()
-        self.image_number = args.pop()
-        self.output_format = args.pop()
-        self.seed = int(args.pop())
-        self.read_wildcards_in_order = args.pop()
-        self.sharpness = args.pop()
-        self.cfg_scale = args.pop()
-        self.base_model_name = args.pop()
-        self.refiner_model_name = args.pop()
-        self.refiner_switch = args.pop()
-        self.loras = get_enabled_loras([(bool(args.pop()), str(args.pop()), float(args.pop())) for _ in
-                                        range(default_max_lora_number)])
-        self.input_image_checkbox = args.pop()
-        self.current_tab = args.pop()
-        self.uov_method = args.pop()
-        self.uov_input_image = args.pop()
-        self.latent_upscale_method = args.pop()
-        self.latent_upscale_scheduler = args.pop()
-        self.latent_upscale_size = args.pop()
-        self.outpaint_selections = args.pop()
-        self.inpaint_input_image = args.pop()
-        self.inpaint_additional_prompt = args.pop()
-        self.inpaint_mask_image_upload = args.pop()
+        self.input_image_checkbox = kwargs.get('input_image_checkbox', False)
+        self.current_tab = kwargs.get('current_tab', 'uov')
+        self.uov_method = kwargs.get('uov_method', 'None')
+        self.uov_input_image = kwargs.get('uov_input_image', None)
+        self.latent_upscale_method = kwargs.get('latent_upscale_method', 'bilinear')
+        self.latent_upscale_scheduler = kwargs.get('latent_upscale_scheduler', 'normal')
+        self.latent_upscale_size = kwargs.get('latent_upscale_size', '2x')
+        self.outpaint_selections = kwargs.get('outpaint_selections', [])
+        self.inpaint_input_image = kwargs.get('inpaint_input_image', None)
+        self.inpaint_additional_prompt = kwargs.get('inpaint_additional_prompt', '')
+        self.inpaint_mask_image_upload = kwargs.get('inpaint_mask_image', None)
 
-        self.disable_preview = args.pop()
-        self.disable_intermediate_results = args.pop()
-        self.disable_seed_increment = args.pop()
-        self.black_out_nsfw = args.pop()
-        self.adm_scaler_positive = args.pop()
-        self.adm_scaler_negative = args.pop()
-        self.adm_scaler_end = args.pop()
-        self.adaptive_cfg = args.pop()
-        self.clip_skip = args.pop()
-        self.sampler_name = args.pop()
-        self.scheduler_name = args.pop()
-        self.vae_name = args.pop()
-        self.overwrite_step = args.pop()
-        self.overwrite_switch = args.pop()
-        self.overwrite_width = args.pop()
-        self.overwrite_height = args.pop()
-        self.overwrite_vary_strength = args.pop()
-        self.overwrite_upscale_strength = args.pop()
-        self.upscale_loops = args.pop()
-        self.mixing_image_prompt_and_vary_upscale = args.pop()
-        self.mixing_image_prompt_and_inpaint = args.pop()
-        self.debugging_cn_preprocessor = args.pop()
-        self.skipping_cn_preprocessor = args.pop()
-        self.canny_low_threshold = args.pop()
-        self.canny_high_threshold = args.pop()
-        self.refiner_swap_method = args.pop()
-        self.controlnet_softness = args.pop()
-        self.freeu_enabled = args.pop()
-        self.freeu_b1 = args.pop()
-        self.freeu_b2 = args.pop()
-        self.freeu_s1 = args.pop()
-        self.freeu_s2 = args.pop()
-        self.debugging_inpaint_preprocessor = args.pop()
-        self.inpaint_disable_initial_latent = args.pop()
-        self.inpaint_engine = args.pop()
-        self.inpaint_strength = args.pop()
-        self.inpaint_respective_field = args.pop()
-        self.inpaint_advanced_masking_checkbox = args.pop()
-        self.invert_mask_checkbox = args.pop()
-        self.inpaint_erode_or_dilate = args.pop()
+        self.disable_preview = kwargs.get('disable_preview', False)
+        self.disable_intermediate_results = kwargs.get('disable_intermediate_results', False)
+        self.disable_seed_increment = kwargs.get('disable_seed_increment', False)
+        self.black_out_nsfw = kwargs.get('black_out_nsfw', False)
+        self.adm_scaler_positive = kwargs.get('adm_scaler_positive', 1.5)
+        self.adm_scaler_negative = kwargs.get('adm_scaler_negative', 0.8)
+        self.adm_scaler_end = kwargs.get('adm_scaler_end', 0.3)
+        self.adaptive_cfg = kwargs.get('adaptive_cfg', 1.0)
+        self.clip_skip = kwargs.get('clip_skip', 2)
+        self.sampler_name = kwargs.get('sampler_name', 'dpmpp_2m_sde_gpu')
+        self.scheduler_name = kwargs.get('scheduler_name', 'karras')
+        self.vae_name = kwargs.get('vae_name', 'None')
+        self.overwrite_step = kwargs.get('overwrite_step', -1)
+        self.overwrite_switch = kwargs.get('overwrite_switch', -1)
+        self.overwrite_width = kwargs.get('overwrite_width', -1)
+        self.overwrite_height = kwargs.get('overwrite_height', -1)
+        self.overwrite_vary_strength = kwargs.get('overwrite_vary_strength', -1.0)
+        self.overwrite_upscale_strength = kwargs.get('overwrite_upscale_strength', -1.0)
+        self.upscale_loops = kwargs.get('upscale_loops', 1)
+        self.mixing_image_prompt_and_vary_upscale = kwargs.get('mixing_image_prompt_and_vary_upscale', False)
+        self.mixing_image_prompt_and_inpaint = kwargs.get('mixing_image_prompt_and_inpaint', False)
+        self.debugging_cn_preprocessor = kwargs.get('debugging_cn_preprocessor', False)
+        self.skipping_cn_preprocessor = kwargs.get('skipping_cn_preprocessor', False)
+        self.canny_low_threshold = kwargs.get('canny_low_threshold', 64)
+        self.canny_high_threshold = kwargs.get('canny_high_threshold', 128)
+        self.refiner_swap_method = kwargs.get('refiner_swap_method', 'joint')
+        self.controlnet_softness = kwargs.get('controlnet_softness', 0.25)
+        self.freeu_enabled = kwargs.get('freeu_enabled', False)
+        self.freeu_b1 = kwargs.get('freeu_b1', 1.01)
+        self.freeu_b2 = kwargs.get('freeu_b2', 1.02)
+        self.freeu_s1 = kwargs.get('freeu_s1', 0.99)
+        self.freeu_s2 = kwargs.get('freeu_s2', 0.95)
+        self.debugging_inpaint_preprocessor = kwargs.get('debugging_inpaint_preprocessor', False)
+        self.inpaint_disable_initial_latent = kwargs.get('inpaint_disable_initial_latent', False)
+        self.inpaint_engine = kwargs.get('inpaint_engine', 'None')
+        self.inpaint_strength = kwargs.get('inpaint_strength', 1.0)
+        self.inpaint_respective_field = kwargs.get('inpaint_respective_field', 0.618)
+        self.inpaint_advanced_masking_checkbox = kwargs.get('inpaint_advanced_masking_checkbox', False)
+        self.invert_mask_checkbox = kwargs.get('invert_mask_checkbox', False)
+        self.inpaint_erode_or_dilate = kwargs.get('inpaint_erode_or_dilate', 0)
         
         
-        self.save_final_enhanced_image_only = args.pop() if not args_manager.args.disable_image_log else False
-        self.save_metadata_to_images = args.pop() if not args_manager.args.disable_metadata else False
-        self.metadata_scheme = MetadataScheme(
-            args.pop()) if not args_manager.args.disable_metadata else MetadataScheme.FOOOCUS
+        self.save_final_enhanced_image_only = kwargs.get('save_final_enhanced_image_only', False)
+        self.save_metadata_to_images = kwargs.get('save_metadata_to_images', False)
+        self.metadata_scheme = MetadataScheme(kwargs.get('metadata_scheme', MetadataScheme.FOOOCUS.value))
 
-        # Detail daemon parameters (popped in reverse order from webui.py)
-        print(f"[DEBUG] Args remaining before detail daemon: {len(args)}")
+        # Detail daemon parameters
+        self.detail_daemon_enabled = kwargs.get('detail_daemon_enabled', False)
+        self.detail_daemon_amount = kwargs.get('detail_daemon_amount', 0.25)
+        self.detail_daemon_start = kwargs.get('detail_daemon_start', 0.2)
+        self.detail_daemon_end = kwargs.get('detail_daemon_end', 0.8)
+        self.detail_daemon_bias = kwargs.get('detail_daemon_bias', 0.71)
+        self.detail_daemon_base_multiplier = kwargs.get('detail_daemon_base_multiplier', 0.85)
+        self.detail_daemon_start_offset = kwargs.get('detail_daemon_start_offset', 0)
+        self.detail_daemon_end_offset = kwargs.get('detail_daemon_end_offset', -0.15)
+        self.detail_daemon_exponent = kwargs.get('detail_daemon_exponent', 1)
+        self.detail_daemon_fade = kwargs.get('detail_daemon_fade', 0)
+        self.detail_daemon_mode = kwargs.get('detail_daemon_mode', 'both')
+        self.detail_daemon_smooth = kwargs.get('detail_daemon_smooth', True)
         
-        # Pop all 12 detail daemon parameters
-        detail_params = []
-        try:
-            for i in range(12):
-                param = args.pop()
-                detail_params.append(param)
-                print(f"[DEBUG] Popped param {i}: {param} (type: {type(param)})")
-        except IndexError as e:
-            print(f"[DEBUG] Error popping parameter {i}: {e}")
-            print(f"[DEBUG] Args remaining: {len(args)}")
-            # Fill remaining with defaults
-            while len(detail_params) < 12:
-                detail_params.append(None)
+        # TPG parameters
+        self.tpg_enabled = kwargs.get('tpg_enabled', False)
+        self.tpg_scale = kwargs.get('tpg_scale', 0.5)
+        self.tpg_applied_layers = kwargs.get('tpg_applied_layers', ['mid', 'up'])
+        self.tpg_shuffle_strength = kwargs.get('tpg_shuffle_strength', 0.2)
+        self.tpg_adaptive_strength = kwargs.get('tpg_adaptive_strength', True)
         
-        # Assign in correct order matching webui ctrls order with defaults
-        self.detail_daemon_enabled = detail_params[0] if detail_params[0] is not None else False
-        self.detail_daemon_amount = detail_params[1] if detail_params[1] is not None else 0.25
-        self.detail_daemon_start = detail_params[2] if detail_params[2] is not None else 0.2
-        self.detail_daemon_end = detail_params[3] if detail_params[3] is not None else 0.8
-        self.detail_daemon_bias = detail_params[4] if detail_params[4] is not None else 0.71
-        self.detail_daemon_base_multiplier = detail_params[5] if detail_params[5] is not None else 0.85
-        self.detail_daemon_start_offset = detail_params[6] if detail_params[6] is not None else 0
-        self.detail_daemon_end_offset = detail_params[7] if detail_params[7] is not None else -0.15
-        self.detail_daemon_exponent = detail_params[8] if detail_params[8] is not None else 1
-        self.detail_daemon_fade = detail_params[9] if detail_params[9] is not None else 0
-        self.detail_daemon_mode = detail_params[10] if detail_params[10] is not None else 'both'
-        self.detail_daemon_smooth = detail_params[11] if detail_params[11] is not None else True
+        # NAG parameters
+        self.nag_enabled = kwargs.get('nag_enabled', False)
+        self.nag_scale = kwargs.get('nag_scale', 1.5)
+        self.nag_tau = kwargs.get('nag_tau', 5.0)
+        self.nag_alpha = kwargs.get('nag_alpha', 0.5)
+        self.nag_negative_prompt = kwargs.get('nag_negative_prompt', '')
+        self.nag_end = kwargs.get('nag_end', 1.0)
         
-        print(f"[DEBUG] Detail daemon params: enabled={self.detail_daemon_enabled}, amount={self.detail_daemon_amount}, mode={self.detail_daemon_mode}")
+        # Drunk UNet parameters
+        self.drunk_enabled = kwargs.get('drunk_enabled', False)
+        self.drunk_attn_noise_strength = kwargs.get('drunk_attn_noise_strength', 0.0)
+        self.drunk_layer_dropout_prob = kwargs.get('drunk_layer_dropout_prob', 0.0)
+        self.drunk_prompt_noise_strength = kwargs.get('drunk_prompt_noise_strength', 0.0)
+        self.drunk_cognitive_echo_strength = kwargs.get('drunk_cognitive_echo_strength', 0.0)
+        self.drunk_dynamic_guidance_preset = kwargs.get('drunk_dynamic_guidance_preset', 'None')
+        self.drunk_dynamic_guidance_base = kwargs.get('drunk_dynamic_guidance_base', 7.0)
+        self.drunk_dynamic_guidance_amplitude = kwargs.get('drunk_dynamic_guidance_amplitude', 2.0)
+        self.drunk_dynamic_guidance_frequency = kwargs.get('drunk_dynamic_guidance_frequency', 0.1)
+        
+        # Disco Diffusion parameters
+        self.disco_enabled = kwargs.get('disco_enabled', False)
+        self.disco_scale = kwargs.get('disco_scale', 0.8)
+        self.disco_preset = kwargs.get('disco_preset', 'psychedelic')
+        self.disco_transforms = kwargs.get('disco_transforms', ['spherical', 'color_shift'])
+        self.disco_seed = kwargs.get('disco_seed', None)
+        self.disco_clip_model = kwargs.get('disco_clip_model', 'RN50')
+        self.disco_animation_mode = kwargs.get('disco_animation_mode', 'none')
+        self.disco_zoom_factor = kwargs.get('disco_zoom_factor', 1.02)
+        self.disco_rotation_speed = kwargs.get('disco_rotation_speed', 0.1)
+        self.disco_translation_x = kwargs.get('disco_translation_x', 0.0)
+        self.disco_translation_y = kwargs.get('disco_translation_y', 0.0)
+        self.disco_color_coherence = kwargs.get('disco_color_coherence', 0.5)
+        self.disco_saturation_boost = kwargs.get('disco_saturation_boost', 1.2)
+        self.disco_contrast_boost = kwargs.get('disco_contrast_boost', 1.1)
+        self.disco_symmetry_mode = kwargs.get('disco_symmetry_mode', 'none')
+        self.disco_fractal_octaves = kwargs.get('disco_fractal_octaves', 3)
+        self.disco_guidance_steps = kwargs.get('disco_guidance_steps', 50)
+        self.disco_cutn = kwargs.get('disco_cutn', 16)
+        self.disco_tv_scale = kwargs.get('disco_tv_scale', 0)
+        self.disco_range_scale = kwargs.get('disco_range_scale', 150)
 
-        # TPG parameters (popped in reverse order from webui.py)
-        print(f"[DEBUG] Args remaining before TPG: {len(args)}")
+        self.artistic_strength = kwargs.get('artistic_strength', 0.0)
+        self.performance_selection = Performance(kwargs.get('performance_selection', 'Speed'))
+        self.steps = self.performance_selection.steps()
+        self.original_steps = self.steps
         
-        # Pop all 5 TPG parameters
-        tpg_params = []
-        try:
-            for i in range(5):
-                param = args.pop()
-                tpg_params.append(param)
-                print(f"[DEBUG] Popped TPG param {i}: {param} (type: {type(param)})")
-        except IndexError as e:
-            print(f"[DEBUG] Error popping TPG parameter {i}: {e}")
-            print(f"[DEBUG] Args remaining: {len(args)}")
-            # Fill remaining with defaults
-            while len(tpg_params) < 5:
-                tpg_params.append(None)
-        
-        # Assign in correct order matching webui ctrls order with defaults
-        self.tpg_enabled = tpg_params[0] if tpg_params[0] is not None else False
-        self.tpg_scale = tpg_params[1] if tpg_params[1] is not None else 3.0
-        self.tpg_applied_layers = tpg_params[2] if tpg_params[2] is not None else ['mid', 'up']
-        self.tpg_shuffle_strength = tpg_params[3] if tpg_params[3] is not None else 1.0
-        self.tpg_adaptive_strength = tpg_params[4] if tpg_params[4] is not None else True
-        
-        print(f"[DEBUG] TPG params: enabled={self.tpg_enabled}, scale={self.tpg_scale}, layers={self.tpg_applied_layers}")
-
-        # NAG parameters (popped in reverse order from webui.py)
-        print(f"[DEBUG] Args remaining before NAG: {len(args)}")
-        
-        # Pop all 6 NAG parameters
-        nag_params = []
-        try:
-            for i in range(6):
-                param = args.pop()
-                nag_params.append(param)
-                print(f"[DEBUG] Popped NAG param {i}: {param} (type: {type(param)})")
-        except IndexError as e:
-            print(f"[DEBUG] Error popping NAG parameter {i}: {e}")
-            print(f"[DEBUG] Args remaining: {len(args)}")
-            # Fill remaining with defaults
-            while len(nag_params) < 6:
-                nag_params.append(None)
-        
-        # Assign in correct order matching webui ctrls order with defaults
-        self.nag_enabled = nag_params[0] if nag_params[0] is not None else False
-        self.nag_scale = nag_params[1] if nag_params[1] is not None else 1.5
-        self.nag_tau = nag_params[2] if nag_params[2] is not None else 5.0
-        self.nag_alpha = nag_params[3] if nag_params[3] is not None else 0.5
-        self.nag_negative_prompt = nag_params[4] if nag_params[4] is not None else ""
-        self.nag_end = nag_params[5] if nag_params[5] is not None else 1.0
-        
-        print(f"[DEBUG] NAG params: enabled={self.nag_enabled}, scale={self.nag_scale}, tau={self.nag_tau}, alpha={self.nag_alpha}")
-
-        # Disco Diffusion parameters (popped in reverse order from webui.py)
-        print(f"[DEBUG] Args remaining before Disco: {len(args)}")
-        
-        # Pop all 16 Disco parameters (added CLIP model selection)
-        disco_params = []
-        try:
-            for i in range(16):
-                param = args.pop()
-                disco_params.append(param)
-                print(f"[DEBUG] Popped Disco param {i}: {param} (type: {type(param)})")
-        except IndexError as e:
-            print(f"[DEBUG] Error popping Disco parameter {i}: {e}")
-            print(f"[DEBUG] Args remaining: {len(args)}")
-            # Fill remaining with defaults
-            while len(disco_params) < 16:
-                disco_params.append(None)
-        
-        # Assign in correct order matching webui ctrls order with defaults
-        self.disco_enabled = disco_params[0] if disco_params[0] is not None else False
-        self.disco_scale = disco_params[1] if disco_params[1] is not None else 0.5
-        self.disco_preset = disco_params[2] if disco_params[2] is not None else 'custom'
-        self.disco_transforms = disco_params[3] if disco_params[3] is not None else ['translate', 'rotate', 'zoom']
-        self.disco_seed = disco_params[4] if disco_params[4] is not None else None
-        self.disco_clip_model = disco_params[5] if disco_params[5] is not None else 'RN50'
-        self.disco_animation_mode = disco_params[6] if disco_params[6] is not None else 'none'
-        self.disco_zoom_factor = disco_params[7] if disco_params[7] is not None else 1.02
-        self.disco_rotation_speed = disco_params[8] if disco_params[8] is not None else 0.1
-        self.disco_translation_x = disco_params[9] if disco_params[9] is not None else 0.0
-        self.disco_translation_y = disco_params[10] if disco_params[10] is not None else 0.0
-        self.disco_color_coherence = disco_params[11] if disco_params[11] is not None else 0.5
-        self.disco_saturation_boost = disco_params[12] if disco_params[12] is not None else 1.2
-        self.disco_contrast_boost = disco_params[13] if disco_params[13] is not None else 1.1
-        self.disco_symmetry_mode = disco_params[14] if disco_params[14] is not None else 'none'
-        self.disco_fractal_octaves = disco_params[15] if disco_params[15] is not None else 3
-        
-        print(f"[DEBUG] Disco params: enabled={self.disco_enabled}, scale={self.disco_scale}, preset={self.disco_preset}, clip_model={self.disco_clip_model}")
-
-        # Drunk UNet parameters (popped in reverse order from webui.py)
-        print(f"[DEBUG] Args remaining before Drunk UNet: {len(args)}")
-        
-        # Pop all 9 Drunk UNet parameters
-        drunk_params = []
-        try:
-            for i in range(9):
-                param = args.pop()
-                drunk_params.append(param)
-                print(f"[DEBUG] Popped Drunk UNet param {i}: {param} (type: {type(param)})")
-        except IndexError as e:
-            print(f"[DEBUG] Error popping Drunk UNet parameter {i}: {e}")
-            print(f"[DEBUG] Args remaining: {len(args)}")
-            # Fill remaining with defaults
-            while len(drunk_params) < 9:
-                drunk_params.append(None)
-        
-        # Assign in correct order matching webui ctrls order with defaults
-        self.drunk_enabled = drunk_params[0] if drunk_params[0] is not None else False
-        self.drunk_attn_noise_strength = drunk_params[1] if drunk_params[1] is not None else 0.0
-        self.drunk_layer_dropout_prob = drunk_params[2] if drunk_params[2] is not None else 0.0
-        self.drunk_prompt_noise_strength = drunk_params[3] if drunk_params[3] is not None else 0.0
-        self.drunk_cognitive_echo_strength = drunk_params[4] if drunk_params[4] is not None else 0.0
-        self.drunk_dynamic_guidance_preset = drunk_params[5] if drunk_params[5] is not None else 'None'
-        self.drunk_dynamic_guidance_base = drunk_params[6] if drunk_params[6] is not None else 7.0
-        self.drunk_dynamic_guidance_amplitude = drunk_params[7] if drunk_params[7] is not None else 2.0
-        self.drunk_dynamic_guidance_frequency = drunk_params[8] if drunk_params[8] is not None else 0.1
-        
-        print(f"[DEBUG] Drunk UNet params: enabled={self.drunk_enabled}, attn_noise={self.drunk_attn_noise_strength}, prompt_noise={self.drunk_prompt_noise_strength}, echo={self.drunk_cognitive_echo_strength}, dynamic_preset={self.drunk_dynamic_guidance_preset}")
-
-
-
         self.cn_tasks = {x: [] for x in ip_list}
-        for _ in range(modules.config.default_controlnet_image_count):
-            cn_img = args.pop()
-            cn_stop = args.pop()
-            cn_weight = args.pop()
-            cn_type = args.pop()
+        for i in range(default_max_lora_number): # Assuming default_max_lora_number is also the max for IP
+            cn_img = kwargs.get(f'ip_image_{i}', None)
+            cn_stop = kwargs.get(f'ip_stop_{i}', 0.0)
+            cn_weight = kwargs.get(f'ip_weight_{i}', 1.0)
+            cn_type = kwargs.get(f'ip_type_{i}', 'None') # Default to 'None' or a sensible default
             if cn_img is not None:
                 self.cn_tasks[cn_type].append([cn_img, cn_stop, cn_weight])
 
-        self.debugging_dino = args.pop()
-        self.dino_erode_or_dilate = args.pop()
-        self.debugging_enhance_masks_checkbox = args.pop()
+        self.debugging_dino = kwargs.get('debugging_dino', False)
+        self.dino_erode_or_dilate = kwargs.get('dino_erode_or_dilate', 0)
+        self.debugging_enhance_masks_checkbox = kwargs.get('debugging_enhance_masks_checkbox', False)
 
-        self.enhance_input_image = args.pop()
-        self.enhance_checkbox = args.pop()
-        self.enhance_uov_method = args.pop()
-        self.enhance_bg_removal_model = args.pop()
-        self.enhance_uov_processing_order = args.pop()
-        self.enhance_uov_prompt_type = args.pop()
-        self.seamless_tiling_method = args.pop()
-        self.seamless_tiling_overlap = args.pop()
+        self.enhance_input_image = kwargs.get('enhance_input_image', None)
+        self.enhance_checkbox = kwargs.get('enhance_checkbox', False)
+        self.enhance_uov_method = kwargs.get('enhance_uov_method', 'None')
+        self.enhance_bg_removal_model = kwargs.get('enhance_bg_removal_model', 'u2net')
+        self.enhance_uov_processing_order = kwargs.get('enhance_uov_processing_order', 'before')
+        self.enhance_uov_prompt_type = kwargs.get('enhance_uov_prompt_type', 'original')
+        self.seamless_tiling_method = kwargs.get('enhance_seamless_tiling_method', 'blend')
+        self.seamless_tiling_overlap = kwargs.get('enhance_seamless_tiling_overlap', 0.15)
+        
         self.enhance_ctrls = []
-        for _ in range(modules.config.default_enhance_tabs):
-            enhance_enabled = args.pop()
-            enhance_mask_dino_prompt_text = args.pop()
-            enhance_prompt = args.pop()
-            enhance_negative_prompt = args.pop()
-            enhance_mask_model = args.pop()
-            enhance_mask_cloth_category = args.pop()
-            enhance_mask_sam_model = args.pop()
-            enhance_mask_text_threshold = args.pop()
-            enhance_mask_box_threshold = args.pop()
-            enhance_mask_sam_max_detections = args.pop()
-            enhance_inpaint_disable_initial_latent = args.pop()
-            enhance_inpaint_engine = args.pop()
-            enhance_inpaint_strength = args.pop()
-            enhance_inpaint_respective_field = args.pop()
-            enhance_inpaint_erode_or_dilate = args.pop()
-            enhance_mask_invert = args.pop()
+        for i in range(modules.config.default_enhance_tabs):
+            enhance_enabled = kwargs.get(f'enhance_enabled_{i}', False)
+            enhance_mask_dino_prompt_text = kwargs.get(f'enhance_mask_dino_prompt_text_{i}', '')
+            enhance_prompt = kwargs.get(f'enhance_prompt_{i}', '')
+            enhance_negative_prompt = kwargs.get(f'enhance_negative_prompt_{i}', '')
+            enhance_mask_model = kwargs.get(f'enhance_mask_model_{i}', 'None')
+            enhance_mask_cloth_category = kwargs.get(f'enhance_mask_cloth_category_{i}', 'None')
+            enhance_mask_sam_model = kwargs.get(f'enhance_mask_sam_model_{i}', 'None')
+            enhance_mask_text_threshold = kwargs.get(f'enhance_mask_text_threshold_{i}', 0.25)
+            enhance_mask_box_threshold = kwargs.get(f'enhance_mask_box_threshold_{i}', 0.3)
+            enhance_mask_sam_max_detections = kwargs.get(f'enhance_mask_sam_max_detections_{i}', 0)
+            enhance_inpaint_disable_initial_latent = kwargs.get(f'enhance_inpaint_disable_initial_latent_{i}', False)
+            enhance_inpaint_engine = kwargs.get(f'enhance_inpaint_engine_{i}', 'None')
+            enhance_inpaint_strength = kwargs.get(f'enhance_inpaint_strength_{i}', 1.0)
+            enhance_inpaint_respective_field = kwargs.get(f'enhance_inpaint_respective_field_{i}', 0.618)
+            enhance_inpaint_erode_or_dilate = kwargs.get(f'enhance_inpaint_erode_or_dilate_{i}', 0)
+            enhance_mask_invert = kwargs.get(f'enhance_mask_invert_{i}', False)
+            
             if enhance_enabled:
                 self.enhance_ctrls.append([
                     enhance_mask_dino_prompt_text,
@@ -318,22 +235,6 @@ class AsyncTask:
         self.should_enhance = self.enhance_checkbox and (self.enhance_uov_method != disabled.casefold() or len(self.enhance_ctrls) > 0)
         self.images_to_enhance_count = 0
         self.enhance_stats = {}
-
-        # Disco parameters (4 parameters added to match webui.py ctrls order)
-        self.disco_guidance_steps = args.pop()
-        self.disco_cutn = args.pop()
-        self.disco_tv_scale = args.pop()
-        self.disco_range_scale = args.pop()
-        
-        # Confuse VAE parameters (must be after all disco parameters)
-        print(f"[DEBUG] Args remaining before Confuse VAE: {len(args)}")
-        self.artistic_strength = args.pop() if len(args) > 0 else 0.0
-        print(f"[DEBUG] Confuse VAE artistic_strength: {self.artistic_strength}")
-
-        # Performance selection (added at the end to match webui.py ctrls order)
-        self.performance_selection = Performance(args.pop())
-        self.steps = self.performance_selection.steps()
-        self.original_steps = self.steps
 
         
 
