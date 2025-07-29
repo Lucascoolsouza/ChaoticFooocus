@@ -230,8 +230,7 @@ class DRUNKUNetSampler:
                     print(f"[DRUNKUNet] Erro ao aplicar eco cognitivo no hook: {e}")
             return output
 
-        try:
-            # Registrar em camadas estratégicas, por exemplo, após blocos principais ou antes da saída
+        # Registrar em camadas estratégicas, por exemplo, após blocos principais ou antes da saída
             # Este é um exemplo genérico, ajuste conforme a arquitetura do UNet
         try:
             # Access the actual UNet model from the ModelPatcher
