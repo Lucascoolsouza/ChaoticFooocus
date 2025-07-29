@@ -149,8 +149,17 @@ def run_clip_guidance_loop(
             std=(0.26862954, 0.26130258, 0.27577711)
         )
         
-        # Create optimizable parameter (like original)
-        image_tensor = torch.nn.Parameter(init_image.clone().detach().to(device))
+        # Create optimizable parameter (ensure gradients work)
+        # The issue might be that init_image was created in no_grad context
+        image_tensor = torch.nn.Parameter(init_image.clone().detach().to(device).requires_grad_(True))
+        
+        # Double-check the parameter is set up correctly
+        print(f"[DEBUG] Created image_tensor: requires_grad={image_tensor.requires_grad}, is_leaf={image_tensor.is_leaf}")
+        
+        # Test if basic operations preserve gradients
+        test_op = image_tensor * 2.0
+        print(f"[DEBUG] Test operation (image_tensor * 2.0): requires_grad={test_op.requires_grad}")
+        
         optimizer = torch.optim.Adam([image_tensor], lr=0.05)
         
         # CLIP loss function with detailed debugging
@@ -185,10 +194,17 @@ def run_clip_guidance_loop(
             finally:
                 clip_model.train(was_training)
         
+        # Ensure we're in gradient-enabled context
+        torch.set_grad_enabled(True)
+        
         # Test: Simple gradient test first
         print("[DEBUG] Testing simple gradient flow...")
-        test_loss = image_tensor.mean()
-        print(f"[DEBUG] Simple test loss requires_grad: {test_loss.requires_grad}")
+        print(f"[DEBUG] torch.is_grad_enabled(): {torch.is_grad_enabled()}")
+        
+        with torch.enable_grad():
+            test_loss = image_tensor.mean()
+            print(f"[DEBUG] Simple test loss requires_grad: {test_loss.requires_grad}")
+            print(f"[DEBUG] Simple test loss grad_fn: {test_loss.grad_fn}")
         
         # 4. Optimization loop with gradient checking
         for i in range(steps):
