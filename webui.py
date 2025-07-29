@@ -1076,7 +1076,10 @@ with shared.gradio_root:
                             queue=False
                         )
                 
-                gr.HTML('<a href="https://github.com/lllyasviel/Fooocus/discussions/117" target="_blank">\U0001F4D4 Documentation</a>')
+                with gr.Accordion(label='Confuse VAE', open=False):
+                    artistic_strength = gr.Slider(label='Artistic Strength', minimum=0.0, maximum=1.0, step=0.01,
+                                                  value=0.0,
+                                                  info='Controls the level of artistic distortion in the VAE output.')
                 dev_mode = gr.Checkbox(label='Developer Debug Mode', value=modules.config.default_developer_debug_mode_checkbox, container=False)
 
                 with gr.Column(visible=modules.config.default_developer_debug_mode_checkbox) as dev_tools:
@@ -1103,8 +1106,15 @@ with shared.gradio_root:
                                                    value=modules.config.default_sampler)
                         scheduler_name = gr.Dropdown(label='Scheduler', choices=flags.scheduler_list,
                                                      value=modules.config.default_scheduler)
-                        vae_name = gr.Dropdown(label='VAE', choices=[modules.flags.default_vae] + modules.config.vae_filenames,
-                                                     value=modules.config.default_vae, show_label=True)
+                            refresh_everything(
+        refiner_model_name=refiner_model,
+        base_model_name=base_model,
+        loras=loras,
+        base_model_additional_loras=base_model_additional_loras,
+        use_synthetic_refiner=use_synthetic_refiner,
+        vae_name=vae_name,
+        artistic_strength=artistic_strength
+    )
 
                         generate_image_grid = gr.Checkbox(label='Generate Image Grid for Each Batch',
                                                           info='(Experimental) This may cause performance problems on some computers and certain internet conditions.',
@@ -1408,6 +1418,9 @@ with shared.gradio_root:
                   disco_clip_model, disco_animation_mode, disco_zoom_factor, disco_rotation_speed, 
                   disco_translation_x, disco_translation_y, disco_color_coherence,
                   disco_saturation_boost, disco_contrast_boost, disco_symmetry_mode, disco_fractal_octaves]
+
+        # Confuse VAE controls
+        ctrls += [artistic_strength]
 
         ctrls += ip_ctrls
         ctrls += [debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox,

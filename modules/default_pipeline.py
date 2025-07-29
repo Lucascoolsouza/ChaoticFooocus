@@ -63,7 +63,7 @@ def assert_model_integrity():
 
 @torch.no_grad()
 @torch.inference_mode()
-def refresh_base_model(name, vae_name=None):
+def refresh_base_model(name, vae_name=None, artistic_strength=0.0):
     global model_base
 
     filename = get_file_from_folder_list(name, modules.config.paths_checkpoints)
@@ -75,7 +75,7 @@ def refresh_base_model(name, vae_name=None):
     if model_base.filename == filename and model_base.vae_filename == vae_filename:
         return
 
-    model_base = core.load_model(filename, vae_filename)
+    model_base = core.load_model(filename, vae_filename, artistic_strength=artistic_strength)
     print(f'Base model loaded: {model_base.filename}')
     print(f'VAE loaded: {model_base.vae_filename}')
     return
@@ -236,7 +236,7 @@ def prepare_text_encoder(async_call=True):
 @torch.no_grad()
 @torch.inference_mode()
 def refresh_everything(refiner_model_name, base_model_name, loras,
-                       base_model_additional_loras=None, use_synthetic_refiner=False, vae_name=None):
+                       base_model_additional_loras=None, use_synthetic_refiner=False, vae_name=None, artistic_strength=0.0):
     global final_unet, final_clip, final_vae, final_refiner_unet, final_refiner_vae, final_expansion
 
     final_unet = None
@@ -247,11 +247,11 @@ def refresh_everything(refiner_model_name, base_model_name, loras,
 
     if use_synthetic_refiner and refiner_model_name == 'None':
         print('Synthetic Refiner Activated')
-        refresh_base_model(base_model_name, vae_name)
+        refresh_base_model(base_model_name, vae_name, artistic_strength=artistic_strength)
         synthesize_refiner_model()
     else:
         refresh_refiner_model(refiner_model_name)
-        refresh_base_model(base_model_name, vae_name)
+        refresh_base_model(base_model_name, vae_name, artistic_strength=artistic_strength)
 
     refresh_loras(loras, base_model_additional_loras=base_model_additional_loras)
     assert_model_integrity()
@@ -276,6 +276,7 @@ refresh_everything(
     base_model_name=modules.config.default_base_model_name,
     loras=get_enabled_loras(modules.config.default_loras),
     vae_name=modules.config.default_vae,
+    artistic_strength=0.0,
 )
 
 

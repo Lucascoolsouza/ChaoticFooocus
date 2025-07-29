@@ -229,6 +229,11 @@ class AsyncTask:
         
         print(f"[DEBUG] Disco params: enabled={self.disco_enabled}, scale={self.disco_scale}, preset={self.disco_preset}, clip_model={self.disco_clip_model}")
 
+        # Confuse VAE parameters
+        print(f"[DEBUG] Args remaining before Confuse VAE: {len(args)}")
+        self.artistic_strength = args.pop() if len(args) > 0 else 0.0
+        print(f"[DEBUG] Confuse VAE artistic_strength: {self.artistic_strength}")
+
         self.cn_tasks = {x: [] for x in ip_list}
         for _ in range(modules.config.default_controlnet_image_count):
             cn_img = args.pop()
@@ -871,7 +876,7 @@ def worker():
         pipeline.refresh_everything(refiner_model_name=async_task.refiner_model_name,
                                     base_model_name=async_task.base_model_name,
                                     loras=loras, base_model_additional_loras=base_model_additional_loras,
-                                    use_synthetic_refiner=use_synthetic_refiner, vae_name=async_task.vae_name)
+                                    use_synthetic_refiner=use_synthetic_refiner, vae_name=async_task.vae_name, artistic_strength=async_task.artistic_strength)
         pipeline.set_clip_skip(async_task.clip_skip)
         if advance_progress:
             current_progress += 1

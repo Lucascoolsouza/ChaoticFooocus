@@ -13,8 +13,8 @@ import ldm_patched.modules.samplers
 import ldm_patched.modules.latent_formats
 
 from ldm_patched.modules.sd import load_checkpoint_guess_config
-from ldm_patched.contrib.external import VAEDecode, EmptyLatentImage, VAEEncode, VAEEncodeTiled, VAEDecodeTiled, \
-    ControlNetApplyAdvanced
+from ldm_patched.contrib.external import VAEDecode, EmptyLatentImage, VAEEncode, VAEEncodeTiled, VAEDecodeTiled,     ControlNetApplyAdvanced
+from extras.confuse_vae import ConfuseVAE
 from ldm_patched.contrib.external_freelunch import FreeU_V2
 from ldm_patched.modules.sample import prepare_mask
 from modules.lora import match_lora
@@ -143,9 +143,9 @@ def apply_controlnet(positive, negative, control_net, image, strength, start_per
 
 @torch.no_grad()
 @torch.inference_mode()
-def load_model(ckpt_filename, vae_filename=None):
+def load_model(ckpt_filename, vae_filename=None, artistic_strength=0.0):
     unet, clip, vae, vae_filename, clip_vision = load_checkpoint_guess_config(ckpt_filename, embedding_directory=path_embeddings,
-                                                                vae_filename_param=vae_filename)
+                                                                vae_filename_param=vae_filename, artistic_strength=artistic_strength)
     return StableDiffusionModel(unet=unet, clip=clip, vae=vae, clip_vision=clip_vision, filename=ckpt_filename, vae_filename=vae_filename)
 
 
