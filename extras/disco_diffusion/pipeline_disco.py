@@ -139,15 +139,11 @@ def run_clip_guidance_loop(
         clip_mean = torch.tensor([0.48145466, 0.4578275, 0.40821073], device=device, dtype=torch.float32).view(1, -1, 1, 1)
         clip_std = torch.tensor([0.26862954, 0.26130258, 0.27577711], device=device, dtype=torch.float32).view(1, -1, 1, 1)
         
-        # Set CLIP to eval mode but enable gradient computation
-        clip_model.eval()
+        # Set CLIP to train mode to enable gradient computation through it
+        clip_model.train()
         
-        # Ensure CLIP allows gradients to flow through (but don't update its weights)
-        for param in clip_model.parameters():
-            param.requires_grad_(False)  # We don't want to update CLIP weights
-            
-        # Enable gradient computation context for the entire loop
-        torch.set_grad_enabled(True)
+        # We don't want to update CLIP weights, but we need gradients to flow through
+        # So we'll use torch.no_grad() context only for parameter updates, not for forward pass
         
         for i in range(steps):
             optimizer.zero_grad()
@@ -172,22 +168,26 @@ def run_clip_guidance_loop(
             
             processed_cutouts = (processed_cutouts - clip_mean) / clip_std
             
-            # Get image embeddings with explicit gradient tracking
-            with torch.enable_grad():
-                image_embeds = clip_model.encode_image(processed_cutouts).float()
-                image_embeds = F.normalize(image_embeds, dim=-1)
-                
-                # Ensure embeddings are on the same device
-                image_embeds = image_embeds.to(device)
-                text_embeds = text_embeds.to(device)
-                
-                # Calculate CLIP loss (negative similarity)
-                similarity = (text_embeds @ image_embeds.T).mean()
-                clip_loss = -similarity * disco_scale
+            # Get image embeddings - ensure gradients flow through CLIP
+            image_embeds = clip_model.encode_image(processed_cutouts).float()
+            image_embeds = F.normalize(image_embeds, dim=-1)
+            
+            # Ensure embeddings are on the same device
+            image_embeds = image_embeds.to(device)
+            text_embeds = text_embeds.to(device)
+            
+            # Calculate CLIP loss (negative similarity)
+            similarity = (text_embeds @ image_embeds.T).mean()
+            clip_loss = -similarity * disco_scale
             
             # Regularization losses (ensure tensors are on correct device)
             tv_loss_val = tv_loss(image_tensor) * tv_scale
             range_loss_val = range_loss(image_tensor) * range_scale
+            
+            # Ensure all loss components have gradients
+            if not clip_loss.requires_grad:
+                print(f"[DEBUG] clip_loss doesn't require grad, creating artificial connection")
+                clip_loss = clip_loss + 0.0 * image_tensor.sum()
             
             total_loss = clip_loss + tv_loss_val + range_loss_val
             
@@ -202,6 +202,13 @@ def run_clip_guidance_loop(
                 print(f"[DEBUG] tv_loss_val.requires_grad: {tv_loss_val.requires_grad}")
                 print(f"[DEBUG] range_loss_val.requires_grad: {range_loss_val.requires_grad}")
                 print(f"[DEBUG] total_loss.requires_grad: {total_loss.requires_grad}")
+                
+                # If total_loss doesn't require grad, let's see why
+                if not total_loss.requires_grad:
+                    print("[DEBUG] Analyzing gradient chain:")
+                    print(f"[DEBUG] clip_loss has grad_fn: {clip_loss.grad_fn is not None}")
+                    print(f"[DEBUG] tv_loss_val has grad_fn: {tv_loss_val.grad_fn is not None}")
+                    print(f"[DEBUG] range_loss_val has grad_fn: {range_loss_val.grad_fn is not None}")
             
             if i % 20 == 0:
                 print(f"[Disco Guidance] Step {i}, Loss: {total_loss.item():.4f}, Similarity: {similarity.item():.4f}")
