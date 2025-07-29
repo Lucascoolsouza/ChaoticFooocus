@@ -27,83 +27,11 @@ from modules.ui_gradio_extensions import reload_javascript
 from modules.auth import auth_enabled, check_auth
 from modules.util import is_json
 
-# Define a parameter mapping structure to make it easier to manage
-PARAMETER_MAPPING = {
-    'currentTask': 0,
-    'generate_image_grid': 1,
-    'force_grid_checkbox': 2,
-    'prompt': 3,
-    'negative_prompt': 4,
-    'style_selections': 5,
-    'aspect_ratios_selection': 6,
-    'image_number': 7,
-    'output_format': 8,
-    'image_seed': 9,
-    'read_wildcards_in_order': 10,
-    'sharpness': 11,
-    'guidance_scale': 12,
-    'base_model': 13,
-    'refiner_model': 14,
-    'refiner_switch': 15,
-    # Add more mappings as needed...
-}
-
-def get_task_with_named_args(**kwargs):
-    """
-    Create AsyncTask with named arguments instead of positional ones.
-    This makes it much easier to add/remove parameters without breaking everything.
-    """
-    # Filter out the currentTask from kwargs since we don't need it in the task args
-    task_args = {k: v for k, v in kwargs.items() if k != 'currentTask'}
-    return worker.AsyncTask(args=[], kwargs=task_args)
-
 def get_task(*args):
-    """
-    Legacy function for backward compatibility.
-    Converts positional args to named args based on the control order.
-    """
-    # Remove the first argument (currentTask)
     args = list(args)
-    if len(args) > 0:
-        args.pop(0)
-    
-    # Create a mapping of argument names to values
-    # This should match the order of controls passed to the generate button
-    arg_names = [
-        'generate_image_grid', 'force_grid_checkbox', 'prompt', 'negative_prompt', 
-        'style_selections', 'aspect_ratios_selection', 'image_number', 'output_format', 
-        'image_seed', 'read_wildcards_in_order', 'sharpness', 'guidance_scale',
-        'base_model', 'refiner_model', 'refiner_switch',
-        # LoRA controls (enable1, model1, weight1, enable2, model2, weight2, ...)
-        'lora_enabled_1', 'lora_model_1', 'lora_weight_1',
-        'lora_enabled_2', 'lora_model_2', 'lora_weight_2',
-        'lora_enabled_3', 'lora_model_3', 'lora_weight_3',
-        'lora_enabled_4', 'lora_model_4', 'lora_weight_4',
-        'lora_enabled_5', 'lora_model_5', 'lora_weight_5',
-        'input_image_checkbox', 'current_tab',
-        'uov_method', 'uov_input_image', 'latent_upscale_method', 'latent_upscale_scheduler', 'latent_upscale_size',
-        'outpaint_selections', 'inpaint_input_image', 'inpaint_additional_prompt', 'inpaint_mask_image',
-        'disable_preview', 'disable_intermediate_results', 'disable_seed_increment', 'black_out_nsfw',
-        'adm_scaler_positive', 'adm_scaler_negative', 'adm_scaler_end', 'adaptive_cfg', 'clip_skip',
-        'sampler_name', 'scheduler_name', 'vae_name',
-        'overwrite_step', 'overwrite_switch', 'overwrite_width', 'overwrite_height', 'overwrite_vary_strength',
-        'overwrite_upscale_strength', 'upscale_loops', 'mixing_image_prompt_and_vary_upscale', 'mixing_image_prompt_and_inpaint',
-        'debugging_cn_preprocessor', 'skipping_cn_preprocessor', 'canny_low_threshold', 'canny_high_threshold',
-        'refiner_swap_method', 'controlnet_softness',
-        'freeu_enabled', 'freeu_b1', 'freeu_b2', 'freeu_s1', 'freeu_s2',
-        'debugging_inpaint_preprocessor', 'inpaint_disable_initial_latent', 'inpaint_engine',
-        'inpaint_strength', 'inpaint_respective_field', 'inpaint_advanced_masking_checkbox', 
-        'invert_mask_checkbox', 'inpaint_erode_or_dilate',
-        # Add more parameter names as needed...
-    ]
-    
-    # Create kwargs dict from positional args
-    kwargs = {}
-    for i, arg_name in enumerate(arg_names):
-        if i < len(args):
-            kwargs[arg_name] = args[i]
-    
-    return worker.AsyncTask(args=[], kwargs=kwargs)
+    args.pop(0)
+
+    return worker.AsyncTask(args=args)
 
 def generate_clicked(task: worker.AsyncTask):
     import ldm_patched.modules.model_management as model_management
@@ -112,15 +40,8 @@ def generate_clicked(task: worker.AsyncTask):
         model_management.interrupt_processing = False
     # outputs=[progress_html, progress_window, progress_gallery, gallery]
 
-    # Handle both old args-based and new kwargs-based tasks
-    if hasattr(task, 'kwargs') and task.kwargs:
-        # New kwargs-based approach
-        if len(task.kwargs) == 0:
-            return
-    else:
-        # Legacy args-based approach
-        if len(task.args) == 0:
-            return
+    if len(task.args) == 0:
+        return
 
     execution_start_time = time.perf_counter()
     finished = False
@@ -192,87 +113,6 @@ def sort_enhance_images(images, task):
 
     return sorted_images
 
-def create_parameter_collector():
-    """
-    Creates a function that collects all parameters from the UI in a structured way.
-    This makes it much easier to add new parameters without breaking existing code.
-    """
-    def collect_parameters(**kwargs):
-        """
-        Collect all parameters from the UI into a structured dictionary.
-        This function receives all UI component values as keyword arguments.
-        """
-        # Organize parameters into logical groups
-        params = {
-            'generation': {
-                'prompt': kwargs.get('prompt', ''),
-                'negative_prompt': kwargs.get('negative_prompt', ''),
-                'style_selections': kwargs.get('style_selections', []),
-                'aspect_ratios_selection': kwargs.get('aspect_ratios_selection', ''),
-                'image_number': kwargs.get('image_number', 1),
-                'output_format': kwargs.get('output_format', 'png'),
-                'image_seed': kwargs.get('image_seed', 0),
-                'guidance_scale': kwargs.get('guidance_scale', 7.0),
-                'sharpness': kwargs.get('sharpness', 2.0),
-            },
-            'models': {
-                'base_model': kwargs.get('base_model', ''),
-                'refiner_model': kwargs.get('refiner_model', 'None'),
-                'refiner_switch': kwargs.get('refiner_switch', 0.5),
-                'vae_name': kwargs.get('vae_name', 'Default'),
-                'sampler_name': kwargs.get('sampler_name', 'dpmpp_2m_sde_gpu'),
-                'scheduler_name': kwargs.get('scheduler_name', 'karras'),
-            },
-            'loras': {},
-            'input_image': {
-                'input_image_checkbox': kwargs.get('input_image_checkbox', False),
-                'current_tab': kwargs.get('current_tab', 'uov'),
-                'uov_method': kwargs.get('uov_method', ''),
-                'uov_input_image': kwargs.get('uov_input_image', None),
-            },
-            'inpaint': {
-                'inpaint_input_image': kwargs.get('inpaint_input_image', None),
-                'inpaint_additional_prompt': kwargs.get('inpaint_additional_prompt', ''),
-                'inpaint_mask_image': kwargs.get('inpaint_mask_image', None),
-                'outpaint_selections': kwargs.get('outpaint_selections', []),
-            },
-            'advanced': {
-                'adm_scaler_positive': kwargs.get('adm_scaler_positive', 1.5),
-                'adm_scaler_negative': kwargs.get('adm_scaler_negative', 0.8),
-                'adm_scaler_end': kwargs.get('adm_scaler_end', 0.3),
-                'adaptive_cfg': kwargs.get('adaptive_cfg', 7.0),
-                'clip_skip': kwargs.get('clip_skip', 2),
-            },
-            'debug': {
-                'disable_preview': kwargs.get('disable_preview', False),
-                'disable_intermediate_results': kwargs.get('disable_intermediate_results', False),
-                'disable_seed_increment': kwargs.get('disable_seed_increment', False),
-                'black_out_nsfw': kwargs.get('black_out_nsfw', False),
-            },
-            'effects': {
-                'tpg_enabled': kwargs.get('tpg_enabled', False),
-                'tpg_scale': kwargs.get('tpg_scale', 0.5),
-                'nag_enabled': kwargs.get('nag_enabled', False),
-                'nag_scale': kwargs.get('nag_scale', 1.5),
-                'drunk_enabled': kwargs.get('drunk_enabled', False),
-                'disco_enabled': kwargs.get('disco_enabled', False),
-                'detail_daemon_enabled': kwargs.get('detail_daemon_enabled', False),
-            }
-        }
-        
-        # Collect LoRA parameters dynamically
-        lora_count = 5  # Adjust based on your config
-        for i in range(1, lora_count + 1):
-            params['loras'][f'lora_{i}'] = {
-                'enabled': kwargs.get(f'lora_enabled_{i}', False),
-                'model': kwargs.get(f'lora_model_{i}', 'None'),
-                'weight': kwargs.get(f'lora_weight_{i}', 1.0),
-            }
-        
-        return params
-    
-    return collect_parameters
-
 
 def inpaint_mode_change(mode, inpaint_engine_version):
     assert mode in modules.flags.inpaint_options
@@ -317,9 +157,6 @@ shared.gradio_root = gr.Blocks(title=title).queue()
 with shared.gradio_root:
     currentTask = gr.State(worker.AsyncTask(args=[]))
     inpaint_engine_state = gr.State('empty')
-    
-    # Create parameter collector
-    param_collector = create_parameter_collector()
     with gr.Row():
         with gr.Column(scale=2):
             with gr.Row():
@@ -1635,279 +1472,127 @@ with shared.gradio_root:
                                            inpaint_mask_sam_max_detections, dino_erode_or_dilate, debugging_dino],
                                    outputs=inpaint_mask_image, show_progress=True, queue=True)
 
-        # When creating the controls list for the generate button, use a more structured approach:
-    def create_controls_dict():
-        """Create a dictionary of all controls for easier management"""
-        controls = {
-            'generation': {
-                'prompt': prompt,
-                'negative_prompt': negative_prompt,
-                'style_selections': style_selections,
-                'aspect_ratios_selection': aspect_ratios_selection,
-                'image_number': image_number,
-                'output_format': output_format,
-                'image_seed': image_seed,
-                'read_wildcards_in_order': read_wildcards_in_order,
-                'sharpness': sharpness,
-                'guidance_scale': guidance_scale,
-            },
-            'models': {
-                'base_model': base_model,
-                'refiner_model': refiner_model,
-                'refiner_switch': refiner_switch,
-                'vae_name': vae_name,
-                'sampler_name': sampler_name,
-                'scheduler_name': scheduler_name,
-            },
-            'loras': {
-                'lora_enabled_1': lora_ctrls[0], 'lora_model_1': lora_ctrls[1], 'lora_weight_1': lora_ctrls[2],
-                'lora_enabled_2': lora_ctrls[3], 'lora_model_2': lora_ctrls[4], 'lora_weight_2': lora_ctrls[5],
-                'lora_enabled_3': lora_ctrls[6], 'lora_model_3': lora_ctrls[7], 'lora_weight_3': lora_ctrls[8],
-                'lora_enabled_4': lora_ctrls[9], 'lora_model_4': lora_ctrls[10], 'lora_weight_4': lora_ctrls[11],
-                'lora_enabled_5': lora_ctrls[12], 'lora_model_5': lora_ctrls[13], 'lora_weight_5': lora_ctrls[14],
-            },
-            'input_image': {
-                'input_image_checkbox': input_image_checkbox,
-                'current_tab': current_tab,
-                'uov_method': uov_method,
-                'uov_input_image': uov_input_image,
-                'latent_upscale_method': latent_upscale_method,
-                'latent_upscale_scheduler': latent_upscale_scheduler,
-                'latent_upscale_size': latent_upscale_size,
-            },
-            'inpaint': {
-                'outpaint_selections': outpaint_selections,
-                'inpaint_input_image': inpaint_input_image,
-                'inpaint_additional_prompt': inpaint_additional_prompt,
-                'inpaint_mask_image': inpaint_mask_image,
-                'inpaint_disable_initial_latent': inpaint_disable_initial_latent,
-                'inpaint_engine': inpaint_engine,
-                'inpaint_strength': inpaint_strength,
-                'inpaint_respective_field': inpaint_respective_field,
-                'inpaint_advanced_masking_checkbox': inpaint_advanced_masking_checkbox,
-                'invert_mask_checkbox': invert_mask_checkbox,
-                'inpaint_erode_or_dilate': inpaint_erode_or_dilate,
-            },
-            'advanced': {
-                'adm_scaler_positive': adm_scaler_positive,
-                'adm_scaler_negative': adm_scaler_negative,
-                'adm_scaler_end': adm_scaler_end,
-                'adaptive_cfg': adaptive_cfg,
-                'clip_skip': clip_skip,
-                'overwrite_step': overwrite_step,
-                'overwrite_switch': overwrite_switch,
-                'overwrite_width': overwrite_width,
-                'overwrite_height': overwrite_height,
-                'overwrite_vary_strength': overwrite_vary_strength,
-                'overwrite_upscale_strength': overwrite_upscale_strength,
-                'upscale_loops': upscale_loops,
-                'mixing_image_prompt_and_vary_upscale': mixing_image_prompt_and_vary_upscale,
-                'mixing_image_prompt_and_inpaint': mixing_image_prompt_and_inpaint,
-                'controlnet_softness': controlnet_softness,
-                'refiner_swap_method': refiner_swap_method,
-            },
-            'debug': {
-                'generate_image_grid': generate_image_grid,
-                'force_grid_checkbox': force_grid_checkbox,
-                'disable_preview': disable_preview,
-                'disable_intermediate_results': disable_intermediate_results,
-                'disable_seed_increment': disable_seed_increment,
-                'black_out_nsfw': black_out_nsfw,
-                'debugging_cn_preprocessor': debugging_cn_preprocessor,
-                'skipping_cn_preprocessor': skipping_cn_preprocessor,
-                'canny_low_threshold': canny_low_threshold,
-                'canny_high_threshold': canny_high_threshold,
-                'debugging_inpaint_preprocessor': debugging_inpaint_preprocessor,
-                'debugging_enhance_masks_checkbox': debugging_enhance_masks_checkbox,
-                'debugging_dino': debugging_dino,
-                'dino_erode_or_dilate': dino_erode_or_dilate,
-            },
-            'freeu': {
-                'freeu_enabled': freeu_enabled,
-                'freeu_b1': freeu_b1,
-                'freeu_b2': freeu_b2,
-                'freeu_s1': freeu_s1,
-                'freeu_s2': freeu_s2,
-            },
-            'tpg': {
-                'tpg_enabled': tpg_enabled,
-                'tpg_scale': tpg_scale,
-                'tpg_applied_layers': tpg_applied_layers,
-                'tpg_shuffle_strength': tpg_shuffle_strength,
-                'tpg_adaptive_strength': tpg_adaptive_strength,
-            },
-            'nag': {
-                'nag_enabled': nag_enabled,
-                'nag_scale': nag_scale,
-                'nag_tau': nag_tau,
-                'nag_alpha': nag_alpha,
-                'nag_negative_prompt': nag_negative_prompt,
-                'nag_end': nag_end,
-            },
-            'drunk_unet': {
-                'drunk_enabled': drunk_enabled,
-                'drunk_attn_noise_strength': drunk_attn_noise_strength,
-                'drunk_layer_dropout_prob': drunk_layer_dropout_prob,
-                'drunk_prompt_noise_strength': drunk_prompt_noise_strength,
-                'drunk_cognitive_echo_strength': drunk_cognitive_echo_strength,
-                'drunk_dynamic_guidance_preset': drunk_dynamic_guidance_preset,
-                'drunk_dynamic_guidance_base': drunk_dynamic_guidance_base,
-                'drunk_dynamic_guidance_amplitude': drunk_dynamic_guidance_amplitude,
-                'drunk_dynamic_guidance_frequency': drunk_dynamic_guidance_frequency,
-            },
-            'disco_diffusion': {
-                'disco_enabled': disco_enabled,
-                'disco_scale': disco_scale,
-                'disco_preset': disco_preset,
-                'disco_transforms': disco_transforms,
-                'disco_seed': disco_seed,
-                'disco_clip_model': disco_clip_model,
-                'disco_animation_mode': disco_animation_mode,
-                'disco_zoom_factor': disco_zoom_factor,
-                'disco_rotation_speed': disco_rotation_speed,
-                'disco_translation_x': disco_translation_x,
-                'disco_translation_y': disco_translation_y,
-                'disco_color_coherence': disco_color_coherence,
-                'disco_saturation_boost': disco_saturation_boost,
-                'disco_contrast_boost': disco_contrast_boost,
-                'disco_symmetry_mode': disco_symmetry_mode,
-                'disco_fractal_octaves': disco_fractal_octaves,
-                'disco_guidance_steps': disco_guidance_steps,
-                'disco_cutn': disco_cutn,
-                'disco_tv_scale': disco_tv_scale,
-                'disco_range_scale': disco_range_scale,
-            },
-            'detail_daemon': {
-                'detail_daemon_enabled': detail_daemon_enabled,
-                'detail_daemon_amount': detail_daemon_amount,
-                'detail_daemon_start': detail_daemon_start,
-                'detail_daemon_end': detail_daemon_end,
-                'detail_daemon_bias': detail_daemon_bias,
-                'detail_daemon_base_multiplier': detail_daemon_base_multiplier,
-                'detail_daemon_start_offset': detail_daemon_start_offset,
-                'detail_daemon_end_offset': detail_daemon_end_offset,
-                'detail_daemon_exponent': detail_daemon_exponent,
-                'detail_daemon_fade': detail_daemon_fade,
-                'detail_daemon_mode': detail_daemon_mode,
-                'detail_daemon_smooth': detail_daemon_smooth,
-            },
-            'enhance': {
-                'enhance_input_image': enhance_input_image,
-                'enhance_checkbox': enhance_checkbox,
-                'enhance_uov_method': enhance_uov_method,
-                'enhance_bg_removal_model': enhance_bg_removal_model,
-                'enhance_uov_processing_order': enhance_uov_processing_order,
-                'enhance_uov_prompt_type': enhance_uov_prompt_type,
-                'enhance_seamless_tiling_method': enhance_seamless_tiling_method,
-                'enhance_seamless_tiling_overlap': enhance_seamless_tiling_overlap,
-            },
-            'enhance_ctrls': {
-                # These are dynamically added, so we need to ensure they are correctly mapped
-                # For now, we'll just pass the list directly and rely on the backend to handle it
-                # This might need further refinement if individual enhance_ctrls need named access
-                'enhance_ctrls': enhance_ctrls,
-            },
-            'ip_ctrls': {
-                # Similar to enhance_ctrls, these are lists.
-                'ip_ctrls': ip_ctrls,
-            },
-            'misc': {
-                'currentTask': currentTask, # Keep currentTask here for now, though it's filtered out later
-                'performance_selection': performance_selection,
-                'save_final_enhanced_image_only': save_final_enhanced_image_only if not args_manager.args.disable_image_log else gr.State(False),
-                'save_metadata_to_images': save_metadata_to_images if not args_manager.args.disable_metadata else gr.State(False),
-                'metadata_scheme': metadata_scheme if not args_manager.args.disable_metadata else gr.State(modules.flags.MetadataScheme.FOOOCUS.value),
-                'artistic_strength': artistic_strength,
-                'generate_image_grid': generate_image_grid, # Duplicated, but needed for the old get_task
-                'force_grid_checkbox': force_grid_checkbox, # Duplicated, but needed for the old get_task
-            }
-        }
-        return controls
-    
-    # Flatten the controls dictionary for the generate button
-    def flatten_controls(controls_dict):
-        """Flatten nested controls dictionary into a list of Gradio components"""
-        flat_list = []
-        for group_name, group_controls in controls_dict.items():
-            if isinstance(group_controls, dict):
-                for key, value in group_controls.items():
-                    # For lists of controls (like lora_ctrls, enhance_ctrls, ip_ctrls), extend the list
-                    if key in ['lora_ctrls', 'enhance_ctrls', 'ip_ctrls'] and isinstance(value, list):
-                        flat_list.extend(value)
-                    else:
-                        flat_list.append(value)
-            else:
-                flat_list.append(group_controls)
-        return flat_list
-    
-    # Create a more flexible way to handle parameters
-    def create_task_from_ui(**kwargs):
-        """Create task with all UI parameters organized"""
-        # Use the parameter collector to organize parameters
-        organized_params = param_collector(**kwargs)
-        return worker.AsyncTask(args=[], kwargs=organized_params)
-    
-    # Example of how the generate button would work with the new system:
-    controls_dict = create_controls_dict()
-    all_controls_list = flatten_controls(controls_dict)
-    
-    # Create a dictionary of all controls for the inputs to the create_task_from_ui function
-    # This is necessary because Gradio's .click() expects a dictionary for kwargs
-    all_controls_kwargs = {}
-    for group_name, group_controls in controls_dict.items():
-        if isinstance(group_controls, dict):
-            for key, value in group_controls.items():
-                if key in ['lora_ctrls', 'enhance_ctrls', 'ip_ctrls'] and isinstance(value, list):
-                    # For lists of controls, we need to pass them individually if the backend expects them that way
-                    # For now, we'll assume the backend expects them as a single list under a key
-                    # This might need adjustment based on how `param_collector` is designed to receive them
-                    all_controls_kwargs[key] = value
-                else:
-                    all_controls_kwargs[key] = value
+        ctrls = [currentTask, generate_image_grid, force_grid_checkbox]
+        ctrls += [
+            prompt, negative_prompt, style_selections,
+            aspect_ratios_selection, image_number, output_format, image_seed,
+            read_wildcards_in_order, sharpness, guidance_scale
+        ]
+
+        ctrls += [base_model, refiner_model, refiner_switch] + lora_ctrls
+        ctrls += [input_image_checkbox, current_tab]
+        ctrls += [uov_method, uov_input_image, latent_upscale_method, latent_upscale_scheduler, latent_upscale_size]
+        ctrls += [outpaint_selections, inpaint_input_image, inpaint_additional_prompt, inpaint_mask_image]
+        ctrls += [disable_preview, disable_intermediate_results, disable_seed_increment, black_out_nsfw]
+        ctrls += [adm_scaler_positive, adm_scaler_negative, adm_scaler_end, adaptive_cfg, clip_skip]
+        ctrls += [sampler_name, scheduler_name, vae_name]
+        ctrls += [overwrite_step, overwrite_switch, overwrite_width, overwrite_height, overwrite_vary_strength]
+        ctrls += [overwrite_upscale_strength, upscale_loops, mixing_image_prompt_and_vary_upscale, mixing_image_prompt_and_inpaint]
+        ctrls += [debugging_cn_preprocessor, skipping_cn_preprocessor, canny_low_threshold, canny_high_threshold]
+        ctrls += [refiner_swap_method, controlnet_softness]
+        ctrls += freeu_ctrls
+        ctrls += inpaint_ctrls
+        
+        
+
+        if not args_manager.args.disable_image_log:
+            ctrls += [save_final_enhanced_image_only]
+
+        if not args_manager.args.disable_metadata:
+            ctrls += [save_metadata_to_images, metadata_scheme]
         else:
-            all_controls_kwargs[group_name] = group_controls
+            ctrls += [gr.State(False), gr.State(modules.flags.MetadataScheme.FOOOCUS.value)]
+            
+        ctrls += [detail_daemon_enabled, detail_daemon_amount, detail_daemon_start, detail_daemon_end, 
+                  detail_daemon_bias, detail_daemon_base_multiplier, detail_daemon_start_offset, detail_daemon_end_offset, 
+                  detail_daemon_exponent, detail_daemon_fade, detail_daemon_mode, detail_daemon_smooth]
+        
+        # TPG controls
+        ctrls += [tpg_enabled, tpg_scale, tpg_applied_layers, tpg_shuffle_strength, tpg_adaptive_strength]
+        
+        # NAG controls
+        ctrls += [nag_enabled, nag_scale, nag_tau, nag_alpha, nag_negative_prompt, nag_end]
+        
+        # Drunk UNet controls
+        # Attempting to fix parameter misalignment by adding a dummy state.
+        # The backend appears to be reading Drunk UNet parameters from an incorrect offset.
+        # Specifically, 'drunk_enabled' is being read as 'freeu_b2' (1.02).
+        # Adding a dummy boolean state here to shift subsequent parameters by one,
+        # hoping to align 'drunk_enabled' with the backend's expected position.
+        ctrls += [gr.State(False), drunk_enabled, drunk_attn_noise_strength, drunk_layer_dropout_prob, drunk_prompt_noise_strength, drunk_cognitive_echo_strength, drunk_dynamic_guidance_preset, drunk_dynamic_guidance_base, drunk_dynamic_guidance_amplitude, drunk_dynamic_guidance_frequency]
+        
+        # Disco Diffusion controls
+        ctrls += [disco_enabled, disco_scale, disco_preset, disco_transforms, disco_seed,
+                  disco_clip_model, disco_animation_mode, disco_zoom_factor, disco_rotation_speed, 
+                  disco_translation_x, disco_translation_y, disco_color_coherence,
+                  disco_saturation_boost, disco_contrast_boost, disco_symmetry_mode, disco_fractal_octaves]
 
-    generate_button.click(
-        fn=lambda: (gr.update(visible=True, interactive=True), gr.update(visible=True, interactive=True), gr.update(visible=False, interactive=False), [], True),
-        outputs=[stop_button, skip_button, generate_button, gallery, state_is_generating]
-    ).then(
-        fn=refresh_seed,
-        inputs=[seed_random, image_seed],
-        outputs=image_seed
-    ).then(
-        fn=create_task_from_ui,
-        inputs=all_controls_kwargs,
-        outputs=currentTask
-    ).then(
-        fn=generate_clicked,
-        inputs=currentTask,
-        outputs=[progress_html, progress_window, progress_gallery, gallery]
-    ).then(
-        fn=lambda: (gr.update(visible=True, interactive=True), gr.update(visible=False, interactive=False), gr.update(visible=False, interactive=False), False),
-        outputs=[generate_button, stop_button, skip_button, state_is_generating]
-    ).then(
-        fn=update_history_link,
-        outputs=history_link
-    ).then(
-        fn=lambda: None, _js='playNotification'
-    ).then(
-        fn=lambda: None, _js='refresh_grid_delayed'
-    )
+        ctrls += ip_ctrls
+        ctrls += [debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox,
+                  enhance_input_image, enhance_checkbox, enhance_uov_method, enhance_bg_removal_model, 
+                  enhance_uov_processing_order, enhance_uov_prompt_type, enhance_seamless_tiling_method, enhance_seamless_tiling_overlap]
+        ctrls += enhance_ctrls
+        ctrls += [disco_guidance_steps, disco_cutn, disco_tv_scale, disco_range_scale]
+        
+        # Confuse VAE controls (must be after all disco parameters)
+        ctrls += [artistic_strength]
+        ctrls += [performance_selection]
 
-    reset_button.click(lambda: [worker.AsyncTask(kwargs={}), False, gr.update(visible=True, interactive=True)] +
+        def parse_meta(raw_prompt_txt, is_generating):
+            loaded_json = None
+            if is_json(raw_prompt_txt):
+                loaded_json = json.loads(raw_prompt_txt)
+
+            if loaded_json is None:
+                if is_generating:
+                    return gr.update(), gr.update(), gr.update()
+                else:
+                    return gr.update(), gr.update(visible=True), gr.update(visible=False)
+
+            return json.dumps(loaded_json), gr.update(visible=False), gr.update(visible=True)
+
+        prompt.input(parse_meta, inputs=[prompt, state_is_generating], outputs=[prompt, generate_button, load_parameter_button], queue=False, show_progress=False)
+
+        load_parameter_button.click(modules.meta_parser.load_parameter_button_click, inputs=[prompt, state_is_generating, inpaint_mode], outputs=load_data_outputs, queue=False, show_progress=False)
+
+        def trigger_metadata_import(file, state_is_generating):
+            parameters, metadata_scheme = modules.meta_parser.read_info_from_image(file)
+            if parameters is None:
+                print('Could not find metadata in the image!')
+                parsed_parameters = {}
+            else:
+                metadata_parser = modules.meta_parser.get_metadata_parser(metadata_scheme)
+                parsed_parameters = metadata_parser.to_json(parameters)
+
+            return modules.meta_parser.load_parameter_button_click(parsed_parameters, state_is_generating, inpaint_mode)
+
+        metadata_import_button.click(trigger_metadata_import, inputs=[metadata_input_image, state_is_generating], outputs=load_data_outputs, queue=False, show_progress=True) \
+            .then(style_sorter.sort_styles, inputs=style_selections, outputs=style_selections, queue=False, show_progress=False)
+
+        generate_button.click(lambda: (gr.update(visible=True, interactive=True), gr.update(visible=True, interactive=True), gr.update(visible=False, interactive=False), [], True),
+                              outputs=[stop_button, skip_button, generate_button, gallery, state_is_generating]) \
+            .then(fn=refresh_seed, inputs=[seed_random, image_seed], outputs=image_seed) \
+            .then(fn=get_task, inputs=ctrls, outputs=currentTask) \
+            .then(fn=generate_clicked, inputs=currentTask, outputs=[progress_html, progress_window, progress_gallery, gallery]) \
+            .then(lambda: (gr.update(visible=True, interactive=True), gr.update(visible=False, interactive=False), gr.update(visible=False, interactive=False), False),
+                  outputs=[generate_button, stop_button, skip_button, state_is_generating]) \
+            .then(fn=update_history_link, outputs=history_link) \
+            .then(fn=lambda: None, _js='playNotification').then(fn=lambda: None, _js='refresh_grid_delayed')
+
+        reset_button.click(lambda: [worker.AsyncTask(args=[]), False, gr.update(visible=True, interactive=True)] +
                                    [gr.update(visible=False)] * 6 +
                                    [gr.update(visible=True, value=[])],
-            outputs=[currentTask, state_is_generating, generate_button,
+                           outputs=[currentTask, state_is_generating, generate_button,
                                     reset_button, stop_button, skip_button,
                                     progress_html, progress_window, progress_gallery, gallery],
                            queue=False)
 
-    for notification_file in ['notification.ogg', 'notification.mp3']:
+        for notification_file in ['notification.ogg', 'notification.mp3']:
             if os.path.exists(notification_file):
                 gr.Audio(interactive=False, value=notification_file, elem_id='audio_notification', visible=False)
                 break
 
-    def trigger_describe(modes, img, apply_styles):
+        def trigger_describe(modes, img, apply_styles):
             describe_prompts = []
             styles = set()
 
@@ -1938,12 +1623,12 @@ with shared.gradio_root:
 
             return describe_prompt, styles
 
-    describe_btn.click(trigger_describe, inputs=[describe_methods, describe_input_image, describe_apply_styles],
+        describe_btn.click(trigger_describe, inputs=[describe_methods, describe_input_image, describe_apply_styles],
                            outputs=[prompt, style_selections], show_progress=True, queue=True) \
             .then(fn=style_sorter.sort_styles, inputs=style_selections, outputs=style_selections, queue=False, show_progress=False) \
             .then(lambda: None, _js='()=>{refresh_style_localization();}')
 
-    if args_manager.args.enable_auto_describe_image:
+        if args_manager.args.enable_auto_describe_image:
             def trigger_auto_describe(mode, img, prompt, apply_styles):
                 # keep prompt if not empty
                 if prompt == '':
