@@ -37,7 +37,7 @@ def generate_clicked(task: worker.AsyncTask):
         model_management.interrupt_processing = False
     # outputs=[progress_html, progress_window, progress_gallery, gallery]
 
-    if len(task.args) == 0:
+    if len(task.kwargs) == 0:
         return
 
     execution_start_time = time.perf_counter()
