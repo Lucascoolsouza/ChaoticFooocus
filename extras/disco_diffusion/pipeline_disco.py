@@ -99,6 +99,18 @@ def run_clip_guidance_loop(
     """
     print("[Disco] Starting CLIP guidance (simple method)...")
     
+    # CRITICAL: We're being called from within @torch.no_grad() and @torch.inference_mode()
+    # We need to temporarily exit these contexts to enable gradients
+    print("[Disco] Temporarily enabling gradients (exiting no_grad context)...")
+    
+    # Exit inference mode and enable gradients
+    with torch.enable_grad():
+        torch.set_grad_enabled(True)
+        
+        return _run_clip_guidance_with_gradients(latent, vae, clip_model, clip_preprocess, text_prompt, async_task, steps, disco_scale, cutn, tv_scale, range_scale)
+
+def _run_clip_guidance_with_gradients(latent, vae, clip_model, clip_preprocess, text_prompt, async_task, steps, disco_scale, cutn, tv_scale, range_scale):
+    """Internal function that runs with gradients enabled"""
     try:
         # Get device from latent
         latent_tensor = latent['samples']
@@ -215,17 +227,35 @@ def run_clip_guidance_loop(
             finally:
                 clip_model.train(was_training)
         
-        # Ensure we're in gradient-enabled context
-        torch.set_grad_enabled(True)
-        
-        # Test: Simple gradient test first
-        print("[DEBUG] Testing simple gradient flow...")
+        # Debug PyTorch gradient settings
+        print(f"[DEBUG] PyTorch gradient debugging:")
         print(f"[DEBUG] torch.is_grad_enabled(): {torch.is_grad_enabled()}")
+        print(f"[DEBUG] torch.backends.cudnn.enabled: {torch.backends.cudnn.enabled}")
+        print(f"[DEBUG] Current thread: {torch.get_num_threads()}")
         
+        # Try the most basic gradient test possible
+        print("[DEBUG] Testing most basic gradient case...")
         with torch.enable_grad():
-            test_loss = image_tensor.mean()
-            print(f"[DEBUG] Simple test loss requires_grad: {test_loss.requires_grad}")
-            print(f"[DEBUG] Simple test loss grad_fn: {test_loss.grad_fn}")
+            torch.set_grad_enabled(True)
+            
+            # Create the simplest possible tensor with gradients
+            simple_tensor = torch.tensor([1.0], device=device, requires_grad=True)
+            print(f"[DEBUG] Simple tensor: {simple_tensor}, requires_grad: {simple_tensor.requires_grad}")
+            
+            # Most basic operation
+            simple_result = simple_tensor + 1.0
+            print(f"[DEBUG] Simple result: {simple_result}, requires_grad: {simple_result.requires_grad}")
+            
+            # Try backward pass
+            try:
+                simple_result.backward()
+                print(f"[DEBUG] Simple tensor grad after backward: {simple_tensor.grad}")
+            except Exception as e:
+                print(f"[DEBUG] Backward failed: {e}")
+        
+        # Test with our image tensor
+        test_loss = image_tensor.mean()
+        print(f"[DEBUG] Image tensor test loss requires_grad: {test_loss.requires_grad}")
         
         # 4. Optimization loop with gradient checking
         for i in range(steps):
