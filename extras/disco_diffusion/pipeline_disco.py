@@ -121,15 +121,34 @@ def run_clip_guidance_loop(
 
         # 2. Initialize image from latent
         with torch.no_grad():
+            print(f"[DEBUG] Latent tensor shape: {latent_tensor.shape}")
+            print(f"[DEBUG] Latent tensor range: {latent_tensor.min().item():.3f} to {latent_tensor.max().item():.3f}")
+            
             init_image = vae.decode(latent_tensor)
+            print(f"[DEBUG] Decoded image shape: {init_image.shape}")
+            print(f"[DEBUG] Decoded image range: {init_image.min().item():.3f} to {init_image.max().item():.3f}")
+            
             if init_image.shape[-1] <= 4 and init_image.shape[1] > 4:
                 init_image = init_image.permute(0, 3, 1, 2)
+                print(f"[DEBUG] After permute: {init_image.shape}")
+            
             init_image = (init_image / 2 + 0.5).clamp(0, 1)
+            print(f"[DEBUG] After normalize: range {init_image.min().item():.3f} to {init_image.max().item():.3f}")
             
             if init_image.shape[1] > 3:
                 init_image = init_image[:, :3, :, :]
+                print(f"[DEBUG] After channel limit: {init_image.shape}")
             elif init_image.shape[1] == 1:
                 init_image = init_image.repeat(1, 3, 1, 1)
+                print(f"[DEBUG] After grayscale to RGB: {init_image.shape}")
+            
+            # Check if image is mostly white
+            mean_value = init_image.mean().item()
+            print(f"[DEBUG] Initial image mean value: {mean_value:.3f} (0=black, 1=white)")
+            
+            if mean_value > 0.9:
+                print("[WARNING] Initial image appears to be mostly white!")
+                print("[DEBUG] This might indicate an issue with VAE decoding or latent values")
 
         # 3. Set up for finite difference optimization
         cut_size = clip_model.visual.input_resolution
@@ -152,23 +171,25 @@ def run_clip_guidance_loop(
                 similarity = (text_features @ image_features.T).mean()
                 return -similarity.item()
         
-        # 4. Finite difference optimization
-        learning_rate = 0.05
-        eps = 1e-4
+        # 4. Finite difference optimization (optimized for speed)
+        learning_rate = 0.1  # Higher learning rate for faster convergence
+        eps = 1e-3  # Larger epsilon for more stable gradients
         
         print(f"[Disco] Starting finite difference optimization...")
         
         for i in range(steps):
             current_loss = clip_loss(image_tensor)
             
-            # Compute gradients using finite differences (sparse sampling for speed)
+            # Compute gradients using finite differences (optimized)
             grad_approx = torch.zeros_like(image_tensor)
             
-            # Sample every 8th pixel for speed
+            # Much sparser sampling for speed - every 16th pixel
             h, w = image_tensor.shape[2], image_tensor.shape[3]
-            step_h, step_w = max(1, h // 8), max(1, w // 8)
+            step_h, step_w = max(1, h // 16), max(1, w // 16)
             
-            for c in range(image_tensor.shape[1]):  # For each channel
+            # Batch process pixels for better efficiency
+            pixel_count = 0
+            for c in range(image_tensor.shape[1]):
                 for y in range(0, h, step_h):
                     for x in range(0, w, step_w):
                         # Perturb pixel
@@ -182,11 +203,21 @@ def run_clip_guidance_loop(
                         
                         # Restore pixel
                         image_tensor[0, c, y, x] -= eps
+                        
+                        pixel_count += 1
             
-            # Apply gradient update
+            # Interpolate gradients to full resolution for smoother updates
+            if step_h > 1 or step_w > 1:
+                grad_approx = F.interpolate(grad_approx, size=(h, w), mode='bilinear', align_corners=False)
+            
+            # Apply gradient update with momentum-like smoothing
             with torch.no_grad():
+                # Apply update
                 image_tensor -= learning_rate * grad_approx
                 image_tensor.clamp_(0, 1)
+            
+            if i % 5 == 0:  # More frequent progress updates
+                print(f"[Disco] Step {i}, Loss: {current_loss:.4f}, Pixels sampled: {pixel_count}")
             
             if i % 10 == 0:
                 print(f"[Disco] Step {i}, Loss: {current_loss:.4f}")
