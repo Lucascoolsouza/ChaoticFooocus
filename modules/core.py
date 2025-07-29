@@ -14,7 +14,7 @@ import ldm_patched.modules.latent_formats
 
 from ldm_patched.modules.sd import load_checkpoint_guess_config
 from ldm_patched.contrib.external import VAEDecode, EmptyLatentImage, VAEEncode, VAEEncodeTiled, VAEDecodeTiled,     ControlNetApplyAdvanced
-from extras.confuse_vae import ConfuseVAE
+
 from ldm_patched.contrib.external_freelunch import FreeU_V2
 from ldm_patched.modules.sample import prepare_mask
 from modules.lora import match_lora
