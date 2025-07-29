@@ -24,4 +24,4 @@ groundingdino-py==0.4.0
 segment_anything==1.0
 xformers==0.0.26.post1
 supervision==0.6.0
-git+https://github.com/openai/CLIP.git@main
+git+https://github.com/openai/CLIP.git
