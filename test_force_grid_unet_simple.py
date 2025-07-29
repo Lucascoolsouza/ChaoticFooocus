@@ -88,7 +88,7 @@ def test_unet_approach_vs_postprocessing():
             content = f.read()
         
         unet_indicators = [
-            ("unet_model.forward", "UNet forward pass patching"),
+            ("ModelPatcher", "ModelPatcher handling"),
             ("original_forward", "Original forward method storage"),
             ("def grid_forward", "Grid-enhanced forward method"),
             ("Apply grid transformation to the UNet output", "UNet output transformation"),
