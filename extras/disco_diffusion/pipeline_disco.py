@@ -92,12 +92,15 @@ disco_settings = DiscoSettings()
 
 def run_clip_guidance_loop(
     latent, vae, clip_model, clip_preprocess, text_prompt, async_task,
-    steps=30, disco_scale=5.0, cutn=12, tv_scale=0.0, range_scale=0.0
+    steps=30, disco_scale=5.0, cutn=12, tv_scale=0.0, range_scale=0.0,
+    n_candidates=8, blend_factor=0.5
 ):
     """
-    CLIP guidance using finite differences (gradient-free optimization)
+    CLIP guidance on the latent space using a gradient-free search method.
+    This approach perturbs the latent space, decodes candidates, and selects the best one
+    based on CLIP score, avoiding direct gradient calculations.
     """
-    print("[Disco] Starting CLIP guidance (finite difference method)...")
+    print("[Disco] Starting CLIP guidance (gradient-free latent search)...")
     try:
         # Get device from latent
         latent_tensor = latent['samples']
@@ -109,48 +112,20 @@ def run_clip_guidance_loop(
         clip_model.eval()
         
         # 1. Prepare text embeddings
-        try:
-            text_tokens = clip.tokenize([text_prompt], truncate=True).to(device)
-        except:
-            words = text_prompt.split()[:50]
-            text_tokens = clip.tokenize([" ".join(words)], truncate=True).to(device)
-            
         with torch.no_grad():
+            try:
+                text_tokens = clip.tokenize([text_prompt], truncate=True).to(device)
+            except:
+                words = text_prompt.split()[:50]
+                text_tokens = clip.tokenize([" ".join(words)], truncate=True).to(device)
+                
             text_features = clip_model.encode_text(text_tokens).float()
             text_features = text_features / text_features.norm(dim=-1, keepdim=True)
 
-        # 2. Initialize image from latent
-        with torch.no_grad():
-            print(f"[DEBUG] Latent tensor shape: {latent_tensor.shape}")
-            print(f"[DEBUG] Latent tensor range: {latent_tensor.min().item():.3f} to {latent_tensor.max().item():.3f}")
-            
-            init_image = vae.decode(latent_tensor)
-            print(f"[DEBUG] Decoded image shape: {init_image.shape}")
-            print(f"[DEBUG] Decoded image range: {init_image.min().item():.3f} to {init_image.max().item():.3f}")
-            
-            if init_image.shape[-1] <= 4 and init_image.shape[1] > 4:
-                init_image = init_image.permute(0, 3, 1, 2)
-                print(f"[DEBUG] After permute: {init_image.shape}")
-            
-            init_image = (init_image / 2 + 0.5).clamp(0, 1)
-            print(f"[DEBUG] After normalize: range {init_image.min().item():.3f} to {init_image.max().item():.3f}")
-            
-            if init_image.shape[1] > 3:
-                init_image = init_image[:, :3, :, :]
-                print(f"[DEBUG] After channel limit: {init_image.shape}")
-            elif init_image.shape[1] == 1:
-                init_image = init_image.repeat(1, 3, 1, 1)
-                print(f"[DEBUG] After grayscale to RGB: {init_image.shape}")
-            
-            # Check if image is mostly white
-            mean_value = init_image.mean().item()
-            print(f"[DEBUG] Initial image mean value: {mean_value:.3f} (0=black, 1=white)")
-            
-            if mean_value > 0.9:
-                print("[WARNING] Initial image appears to be mostly white!")
-                print("[DEBUG] This might indicate an issue with VAE decoding or latent values")
-
-        # 3. Set up for finite difference optimization
+        # 2. Set up for latent space optimization
+        # Map disco_scale to noise strength for perturbation
+        noise_strength = disco_scale / 100.0
+        
         cut_size = clip_model.visual.input_resolution
         make_cutouts = SimpleMakeCutouts(cut_size, cutn)
         normalize = transforms.Normalize(
@@ -158,96 +133,60 @@ def run_clip_guidance_loop(
             std=(0.26862954, 0.26130258, 0.27577711)
         )
         
-        # Downscale image for faster optimization (less aggressive for better quality)
-        original_size = (init_image.shape[2], init_image.shape[3])
-        # Scale down to 40% of original size for better detail retention
-        downscale_factor = 0.4
-        small_size = (int(original_size[0] * downscale_factor), int(original_size[1] * downscale_factor))
-        
-        print(f"[Disco] Downscaling from {original_size} to {small_size} for speed")
-        image_tensor = F.interpolate(init_image, size=small_size, mode='bilinear', align_corners=False)
-        image_tensor = image_tensor.clone().detach().to(device)
-        
-        # If the latent was all zeros (empty latent), add some noise to the image for better optimization
-        if latent_tensor.abs().max().item() < 1e-6:  # Latent is essentially all zeros
-            print("[Disco] Detected empty latent, adding noise for better optimization...")
-            noise_strength = 0.15  # Stronger initial noise for more dramatic changes
-            noise = torch.randn_like(image_tensor) * noise_strength
-            image_tensor = (image_tensor + noise).clamp(0, 1)
-            print(f"[DEBUG] After adding noise: mean {image_tensor.mean().item():.3f}, range {image_tensor.min().item():.3f} to {image_tensor.max().item():.3f}")
-        
-        # CLIP loss function (no gradients)
-        def clip_loss(image_tensor):
-            with torch.no_grad():
-                cutouts = make_cutouts(image_tensor)
-                cutouts = normalize(cutouts)
-                image_features = clip_model.encode_image(cutouts).float()
-                image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-                similarity = (text_features @ image_features.T).mean()
-                return -similarity.item()
-        
-        # 4. Finite difference optimization (heavily optimized for speed)
-        learning_rate = 0.2  # Much higher learning rate for faster convergence
-        eps = 2e-3  # Larger epsilon for more stable gradients
-        
-        print(f"[Disco] Starting finite difference optimization...")
-        
-        # Finite difference optimization (gradient-like guidance)
-        learning_rate = 1.1
-        eps = 0.01
-        
-        print(f"[Disco] Starting finite difference optimization...")
+        current_latent = latent_tensor.clone()
+
+        print(f"[Disco] Starting latent search: {steps} steps, {n_candidates} candidates, noise strength {noise_strength:.3f}")
 
         for i in range(steps):
-            # Compute approximate gradient using multiple directional samples
-            gradient_approx = torch.zeros_like(image_tensor)
-            
-            # Compute approximate gradient using a single random direction
-            # Create random direction
-            direction = torch.randn_like(image_tensor)
-            direction = direction / direction.norm() * eps  # Normalize to fixed step size
-            
-            # Test positive direction
-            test_image_pos = (image_tensor + direction).clamp(0, 1)
-            loss_pos = clip_loss(test_image_pos)
-            
-            # Test negative direction  
-            test_image_neg = (image_tensor - direction).clamp(0, 1)
-            loss_neg = clip_loss(test_image_neg)
-            
-            # Compute gradient in this direction
-            grad_in_direction = (loss_pos - loss_neg) / (2 * eps)
-            
-            # The gradient approximation is simply in this direction
-            gradient_approx = direction * grad_in_direction
-            
-            # Apply gradient update
-            image_tensor = (image_tensor - learning_rate * gradient_approx).clamp(0, 1)
-            
-            # Calculate loss after update for printing
-            current_loss = clip_loss(image_tensor)
+            with torch.no_grad():
+                # a. Create a batch of candidate latents by adding noise
+                candidate_latents = current_latent.repeat(n_candidates, 1, 1, 1)
+                noise = torch.randn_like(candidate_latents) * noise_strength
+                candidate_latents += noise
 
-            print(f"[Disco] Step {i}, Loss: {current_loss:.4f}")
+                # b. Decode candidate latents into images
+                decoded_images = vae.decode(candidate_latents)
+                decoded_images = (decoded_images / 2 + 0.5).clamp(0, 1)
+
+                # c. Score decoded images with CLIP
+                cutouts_list = [make_cutouts(img.unsqueeze(0)) for img in decoded_images]
+                all_cutouts = torch.cat(cutouts_list, dim=0)
+                
+                normalized_cutouts = normalize(all_cutouts)
+                image_features = clip_model.encode_image(normalized_cutouts).float()
+                image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+                
+                # Reshape to calculate per-candidate scores
+                image_features = image_features.view(n_candidates, cutn, -1)
+                
+                # Calculate similarity scores
+                similarity = torch.einsum('cf,bcf->bc', text_features.squeeze(0), image_features)
+                scores = similarity.mean(dim=1)
+
+                # d. Select the best latent from candidates
+                best_idx = torch.argmax(scores)
+                best_latent = candidate_latents[best_idx]
+
+                # e. Blend the current latent with the best one to guide the search
+                current_latent = (1 - blend_factor) * current_latent + blend_factor * best_latent
             
-            # Update progress
+            print(f"[Disco] Step {i+1}/{steps}, Best Score: {scores.max().item():.4f}")
+            
+            # Update progress with a preview image
             if async_task is not None:
-                progress = int((i + 1) / steps * 100)
-                
-                # Upscale back to original size for preview
-                preview_upscaled = F.interpolate(image_tensor, size=original_size, mode='bilinear', align_corners=False)
-                preview_tensor = preview_upscaled.permute(0, 2, 3, 1) * 255
-                preview_clamped = preview_tensor.clamp(0, 255)
-                preview_uint8 = preview_clamped.to(torch.uint8)
-                preview_image_np = preview_uint8.cpu().numpy()[0]
-                
-                if i == 0:  # Debug first preview
-                    print(f"[DEBUG] Small image size: {image_tensor.shape}")
-                    print(f"[DEBUG] Preview upscaled size: {preview_upscaled.shape}")
-                    print(f"[DEBUG] Preview mean: {preview_tensor.mean().item():.1f}")
-                
-                async_task.yields.append(['preview', (progress, f'Disco Step {i+1}/{steps}', preview_image_np)])
+                if i % 2 == 0 or i == steps - 1: # Update preview every 2 steps
+                    progress = int((i + 1) / steps * 100)
+                    
+                    # Decode the current best latent for preview
+                    preview_image = vae.decode(current_latent)
+                    preview_image = (preview_image / 2 + 0.5).clamp(0, 1)
+                    preview_image_np = (preview_image.squeeze(0).permute(1, 2, 0) * 255).clamp(0, 255).to(torch.uint8).cpu().numpy()
+                    
+                    async_task.yields.append(['preview', (progress, f'Disco Step {i+1}/{steps}', preview_image_np)])
 
-        print("[Disco] Random search optimization completed.")
+        # Store the optimized latent back into the dictionary
+        latent['samples'] = current_latent
+        print("[Disco] Latent search optimization completed.")
         return latent
 
     except Exception as e:
