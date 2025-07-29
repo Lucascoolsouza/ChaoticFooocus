@@ -153,18 +153,48 @@ def run_clip_guidance_loop(
         image_tensor = torch.nn.Parameter(init_image.clone().detach().to(device))
         optimizer = torch.optim.Adam([image_tensor], lr=0.05)
         
-        # CLIP loss function (exactly like original)
+        # CLIP loss function with detailed debugging
         def clip_loss(image_tensor, text_embed):
+            print(f"[DEBUG] Input image_tensor.requires_grad: {image_tensor.requires_grad}")
+            print(f"[DEBUG] Input image_tensor.grad_fn: {image_tensor.grad_fn}")
+            
             cutouts = make_cutouts(image_tensor)
+            print(f"[DEBUG] After make_cutouts: requires_grad={cutouts.requires_grad}, grad_fn={cutouts.grad_fn}")
+            
             cutouts = normalize(cutouts)
-            image_features = clip_model.encode_image(cutouts).float()
-            image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-            similarity = (text_embed @ image_features.T).mean()
-            return -similarity
+            print(f"[DEBUG] After normalize: requires_grad={cutouts.requires_grad}, grad_fn={cutouts.grad_fn}")
+            
+            # Set CLIP to train mode temporarily
+            was_training = clip_model.training
+            clip_model.train()
+            
+            try:
+                image_features = clip_model.encode_image(cutouts).float()
+                print(f"[DEBUG] After CLIP encode: requires_grad={image_features.requires_grad}, grad_fn={image_features.grad_fn}")
+                
+                image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+                print(f"[DEBUG] After normalize features: requires_grad={image_features.requires_grad}, grad_fn={image_features.grad_fn}")
+                
+                similarity = (text_embed @ image_features.T).mean()
+                print(f"[DEBUG] After similarity: requires_grad={similarity.requires_grad}, grad_fn={similarity.grad_fn}")
+                
+                loss = -similarity
+                print(f"[DEBUG] Final loss: requires_grad={loss.requires_grad}, grad_fn={loss.grad_fn}")
+                
+                return loss
+            finally:
+                clip_model.train(was_training)
+        
+        # Test: Simple gradient test first
+        print("[DEBUG] Testing simple gradient flow...")
+        test_loss = image_tensor.mean()
+        print(f"[DEBUG] Simple test loss requires_grad: {test_loss.requires_grad}")
         
         # 4. Optimization loop with gradient checking
         for i in range(steps):
             optimizer.zero_grad()
+            
+            print(f"[DEBUG] === Step {i} ===")
             loss = clip_loss(image_tensor, text_features)
             
             # Check if loss has gradients
