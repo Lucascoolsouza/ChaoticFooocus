@@ -161,6 +161,14 @@ def run_clip_guidance_loop(
         # Working image tensor (no gradients needed for finite differences)
         image_tensor = init_image.clone().detach().to(device)
         
+        # If the latent was all zeros (empty latent), add some noise to the image for better optimization
+        if latent_tensor.abs().max().item() < 1e-6:  # Latent is essentially all zeros
+            print("[Disco] Detected empty latent, adding noise for better optimization...")
+            noise_strength = 0.1
+            noise = torch.randn_like(image_tensor) * noise_strength
+            image_tensor = (image_tensor + noise).clamp(0, 1)
+            print(f"[DEBUG] After adding noise: mean {image_tensor.mean().item():.3f}, range {image_tensor.min().item():.3f} to {image_tensor.max().item():.3f}")
+        
         # CLIP loss function (no gradients)
         def clip_loss(image_tensor):
             with torch.no_grad():
