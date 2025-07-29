@@ -74,7 +74,6 @@ def run_clip_guidance_loop(
     print("[Disco] Starting CLIP guidance pre-sampling loop...")
     
     try:
-        try:
         # Revert vae.eval() as it caused an AttributeError
         clip_model.train() # Temporarily set to train mode to ensure gradient tracking
 
