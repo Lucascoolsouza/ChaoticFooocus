@@ -229,15 +229,15 @@ def run_clip_guidance_loop(
                 preview_clamped = preview_tensor.clamp(0, 255)
                 preview_uint8 = preview_clamped.to(torch.uint8)
                 preview_image_np = preview_uint8.cpu().numpy()[0]
-                    
-                    if i == 0:  # Debug first preview
-                        print(f"[DEBUG] Small image size: {image_tensor.shape}")
-                        print(f"[DEBUG] Preview upscaled size: {preview_upscaled.shape}")
-                        print(f"[DEBUG] Preview mean: {preview_tensor.mean().item():.1f}")
-                    
-                    async_task.yields.append(['preview', (progress, f'Disco Step {i+1}/{steps}', preview_image_np)])
+                
+                if i == 0:  # Debug first preview
+                    print(f"[DEBUG] Small image size: {image_tensor.shape}")
+                    print(f"[DEBUG] Preview upscaled size: {preview_upscaled.shape}")
+                    print(f"[DEBUG] Preview mean: {preview_tensor.mean().item():.1f}")
+                
+                async_task.yields.append(['preview', (progress, f'Disco Step {i+1}/{steps}', preview_image_np)])
 
-        print("[Disco] Finite difference optimization completed.")
+        print("[Disco] Random search optimization completed.")
         return latent
 
     except Exception as e:
