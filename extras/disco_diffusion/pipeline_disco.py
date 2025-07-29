@@ -98,9 +98,9 @@ def run_clip_guidance_loop(
     """
     CLIP guidance on the latent space using a gradient-free search method.
     This approach perturbs the latent space, decodes candidates, and selects the best one
-    based on CLIP score, avoiding direct gradient calculations.
+    based on a composite score (CLIP, TV, Range), avoiding direct gradient calculations.
     """
-    print("[Disco] Starting CLIP guidance (gradient-free latent search)...")
+    print("[Disco] Starting CLIP guidance (gradient-free latent search with regularization)...")
     try:
         # Get device from latent
         latent_tensor = latent['samples']
@@ -123,8 +123,8 @@ def run_clip_guidance_loop(
             text_features = text_features / text_features.norm(dim=-1, keepdim=True)
 
         # 2. Set up for latent space optimization
-        # Map disco_scale to noise strength for perturbation
-        noise_strength = disco_scale / 100.0
+        # Use a more conservative noise strength to prevent chaos, as suggested.
+        noise_strength = disco_scale / 400.0
         
         cut_size = clip_model.visual.input_resolution
         make_cutouts = SimpleMakeCutouts(cut_size, cutn)
@@ -135,7 +135,9 @@ def run_clip_guidance_loop(
         
         current_latent = latent_tensor.clone()
 
-        print(f"[Disco] Starting latent search: {steps} steps, {n_candidates} candidates, noise strength {noise_strength:.3f}")
+        print(f"[Disco] Starting latent search: {steps} steps, {n_candidates} candidates, noise strength {noise_strength:.4f}")
+        if tv_scale > 0 or range_scale > 0:
+            print(f"[Disco] Regularization enabled: TV scale {tv_scale}, Range scale {range_scale}")
 
         for i in range(steps):
             with torch.no_grad():
@@ -148,40 +150,48 @@ def run_clip_guidance_loop(
                 decoded_images = vae.decode(candidate_latents)
                 decoded_images = (decoded_images / 2 + 0.5).clamp(0, 1)
 
-                # c. Score decoded images with CLIP
-                cutouts_list = [make_cutouts(img.unsqueeze(0)) for img in decoded_images]
+                # c. Apply a light denoiser (smoothing) before scoring to reduce noise influence
+                smoothed_images = F.avg_pool2d(decoded_images, kernel_size=3, stride=1, padding=1)
+
+                # d. Score decoded images with a composite score
+                cutouts_list = [make_cutouts(img.unsqueeze(0)) for img in smoothed_images]
                 all_cutouts = torch.cat(cutouts_list, dim=0)
                 
                 normalized_cutouts = normalize(all_cutouts)
                 image_features = clip_model.encode_image(normalized_cutouts).float()
                 image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-                
-                # Reshape to calculate per-candidate scores
                 image_features = image_features.view(n_candidates, cutn, -1)
                 
-                # Calculate similarity scores
-                similarity = torch.einsum('cf,bcf->bc', text_features.squeeze(0), image_features)
-                scores = similarity.mean(dim=1)
+                # Calculate CLIP similarity scores
+                clip_scores = torch.einsum('cf,bcf->bc', text_features.squeeze(0), image_features).mean(dim=1)
 
-                # d. Select the best latent from candidates
-                best_idx = torch.argmax(scores)
+                # Calculate regularization losses on the original (non-smoothed) images
+                tv_losses = tv_loss(decoded_images)
+                range_losses = range_loss(decoded_images)
+                
+                # Combine scores: Maximize CLIP score while minimizing regularization losses.
+                # The scales are high for gradient-based methods, so we scale them down to act as penalties.
+                tv_penalty = tv_losses * (tv_scale * 0.0001)
+                range_penalty = range_losses * (range_scale * 0.001)
+                total_scores = clip_scores - tv_penalty - range_penalty
+
+                # e. Select the best latent from candidates based on the composite score
+                best_idx = torch.argmax(total_scores)
                 best_latent = candidate_latents[best_idx]
 
-                # e. Blend the current latent with the best one to guide the search
+                # f. Blend the current latent with the best one to guide the search
                 current_latent = (1 - blend_factor) * current_latent + blend_factor * best_latent
             
-            print(f"[Disco] Step {i+1}/{steps}, Best Score: {scores.max().item():.4f}")
+            if i % 5 == 0 or i == steps - 1:
+                print(f"[Disco] Step {i+1}/{steps}, Best Score: {total_scores.max().item():.4f} (CLIP: {clip_scores[best_idx]:.4f}, TV: {tv_losses[best_idx]:.4f}, Range: {range_losses[best_idx]:.4f})")
             
             # Update progress with a preview image
             if async_task is not None:
-                if i % 2 == 0 or i == steps - 1: # Update preview every 2 steps
+                if i % 2 == 0 or i == steps - 1:
                     progress = int((i + 1) / steps * 100)
-                    
-                    # Decode the current best latent for preview
                     preview_image = vae.decode(current_latent)
                     preview_image = (preview_image / 2 + 0.5).clamp(0, 1)
                     preview_image_np = (preview_image.squeeze(0).permute(1, 2, 0) * 255).clamp(0, 255).to(torch.uint8).cpu().numpy()
-                    
                     async_task.yields.append(['preview', (progress, f'Disco Step {i+1}/{steps}', preview_image_np)])
 
         # Store the optimized latent back into the dictionary
