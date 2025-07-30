@@ -44,6 +44,7 @@ def test_force_grid_fixed():
         try:
             with open('modules/default_pipeline.py', 'r') as f:
                 pipeline_content = f.read()
+            print(f"Pipeline file size: {len(pipeline_content)} characters")
         except FileNotFoundError:
             print("❌ FAIL: default_pipeline.py not found")
             return False
@@ -62,6 +63,8 @@ def test_force_grid_fixed():
         for check in integration_checks:
             if check not in pipeline_content:
                 missing_integration.append(check)
+            else:
+                print(f"  ✅ Found: {check}")
         
         if missing_integration:
             print(f"❌ FAIL: Missing Force Grid integration:")
