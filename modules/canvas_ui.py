@@ -76,15 +76,29 @@ class CanvasInterface:
             <canvas id="fooocus-canvas" width="800" height="600"></canvas>
             
             <div class="canvas-controls" id="canvas-controls">
-                <button class="canvas-control-btn" onclick="window.fooocusCanvas?.fitToScreen()">
-                    📐 Fit Screen
-                </button>
-                <button class="canvas-control-btn" onclick="window.fooocusCanvas?.clear()">
-                    🗑️ Clear
-                </button>
-                <button class="canvas-control-btn" onclick="window.fooocusCanvas?.saveCanvas()">
-                    💾 Save
-                </button>
+                <div class="canvas-toolbar-group">
+                    <button class="canvas-tool-btn active" data-tool="select" onclick="window.fooocusCanvas?.setTool('select')" title="Select Tool">
+                        🔍
+                    </button>
+                    <button class="canvas-tool-btn" data-tool="frame" onclick="window.fooocusCanvas?.setTool('frame')" title="Frame Tool">
+                        🖼️
+                    </button>
+                    <button class="canvas-tool-btn" data-tool="outpaint" onclick="window.fooocusCanvas?.setTool('outpaint')" title="Outpaint Tool">
+                        🎨
+                    </button>
+                </div>
+                
+                <div class="canvas-toolbar-group">
+                    <button class="canvas-control-btn" onclick="window.fooocusCanvas?.fitToScreen()">
+                        📐 Fit Screen
+                    </button>
+                    <button class="canvas-control-btn" onclick="window.fooocusCanvas?.clear()">
+                        🗑️ Clear
+                    </button>
+                    <button class="canvas-control-btn" onclick="window.fooocusCanvas?.saveCanvas()">
+                        💾 Save
+                    </button>
+                </div>
             </div>
             
             <div class="canvas-zoom-controls">
@@ -119,6 +133,89 @@ class CanvasInterface:
                             promptInput.value = prompt;
                             promptInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
                         }}
+                        
+                        // Trigger generation
+                        const generateBtn = document.querySelector('#generate_button');
+                        if (generateBtn) {{
+                            generateBtn.click();
+                        }}
+                    }};
+                    
+                    // Connect outpainting to Gradio
+                    window.triggerOutpaint = function(sourceImage, outpaintRect, direction) {{
+                        console.log('Triggering outpaint:', sourceImage, outpaintRect, direction);
+                        
+                        // Set outpaint mode in the interface
+                        const outpaintTab = document.querySelector('#inpaint_tab');
+                        if (outpaintTab) {{
+                            outpaintTab.click();
+                        }}
+                        
+                        // Set outpaint direction
+                        const directionMap = {{
+                            'left': ['Left'],
+                            'right': ['Right'], 
+                            'top': ['Top'],
+                            'bottom': ['Bottom']
+                        }};
+                        
+                        const outpaintSelections = document.querySelector('input[type="checkbox"][value="' + direction.charAt(0).toUpperCase() + direction.slice(1) + '"]');
+                        if (outpaintSelections) {{
+                            outpaintSelections.checked = true;
+                            outpaintSelections.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        }}
+                        
+                        // Use the source image prompt
+                        const promptInput = document.querySelector('#positive_prompt textarea');
+                        if (promptInput && sourceImage.prompt) {{
+                            promptInput.value = sourceImage.prompt;
+                            promptInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        }}
+                        
+                        // Trigger generation
+                        const generateBtn = document.querySelector('#generate_button');
+                        if (generateBtn) {{
+                            generateBtn.click();
+                        }}
+                    }};
+                    
+                    // Connect inpainting to Gradio
+                    window.triggerInpaint = function(rect, imageIds) {{
+                        console.log('Triggering inpaint:', rect, imageIds);
+                        
+                        // Switch to inpaint tab
+                        const inpaintTab = document.querySelector('#inpaint_tab');
+                        if (inpaintTab) {{
+                            inpaintTab.click();
+                        }}
+                        
+                        // Trigger generation
+                        const generateBtn = document.querySelector('#generate_button');
+                        if (generateBtn) {{
+                            generateBtn.click();
+                        }}
+                    }};
+                    
+                    // Connect upscaling to Gradio
+                    window.triggerUpscale = function(rect, imageIds) {{
+                        console.log('Triggering upscale:', rect, imageIds);
+                        
+                        // Switch to upscale tab
+                        const uovTab = document.querySelector('#uov_tab');
+                        if (uovTab) {{
+                            uovTab.click();
+                        }}
+                        
+                        // Trigger generation
+                        const generateBtn = document.querySelector('#generate_button');
+                        if (generateBtn) {{
+                            generateBtn.click();
+                        }}
+                    }};
+                    
+                    // Connect general generation to Gradio
+                    window.triggerGeneration = function(rect) {{
+                        console.log('Triggering generation for area:', rect);
                         
                         // Trigger generation
                         const generateBtn = document.querySelector('#generate_button');

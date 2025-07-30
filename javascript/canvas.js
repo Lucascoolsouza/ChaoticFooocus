@@ -17,6 +17,13 @@ class FooocusCanvas {
         this.gridSpacing = 20;
         this.imageSize = { width: 256, height: 256 };
         
+        // Outpainting and framing tools
+        this.framingMode = false;
+        this.frameRect = null;
+        this.outpaintMode = false;
+        this.detectedEmptyAreas = [];
+        this.currentTool = 'select'; // 'select', 'frame', 'outpaint'
+        
         this.setupEventListeners();
         this.setupKeyboardShortcuts();
         this.resizeCanvas();
@@ -111,6 +118,18 @@ class FooocusCanvas {
             return;
         }
 
+        // Handle different tool modes
+        if (this.currentTool === 'frame') {
+            this.startFraming(canvasPos.x, canvasPos.y);
+            return;
+        }
+
+        if (this.currentTool === 'outpaint') {
+            this.detectOutpaintArea(canvasPos.x, canvasPos.y);
+            return;
+        }
+
+        // Default selection behavior
         if (clickedImage) {
             if (!e.ctrlKey) {
                 this.selectedImages.clear();
@@ -127,6 +146,15 @@ class FooocusCanvas {
     }
 
     onMouseMove(e) {
+        const canvasPos = this.screenToCanvas(e.clientX, e.clientY);
+
+        // Handle framing mode
+        if (this.framingMode && this.frameRect) {
+            this.updateFrame(canvasPos.x, canvasPos.y);
+            this.render();
+            return;
+        }
+
         if (!this.isDragging) return;
 
         if (this.isPanning || this.dragTarget === null) {
@@ -155,9 +183,15 @@ class FooocusCanvas {
     }
 
     onMouseUp(e) {
+        // Handle framing mode completion
+        if (this.framingMode && this.frameRect) {
+            this.completeFrame();
+            return;
+        }
+
         this.isDragging = false;
         this.dragTarget = null;
-        this.canvas.style.cursor = this.isPanning ? 'grab' : 'default';
+        this.canvas.style.cursor = this.isPanning ? 'grab' : this.getToolCursor();
     }
 
     onWheel(e) {
@@ -264,6 +298,14 @@ class FooocusCanvas {
             this.drawImage(img);
         }
         
+        // Draw active frame
+        if (this.framingMode && this.frameRect) {
+            this.drawFrame();
+        }
+        
+        // Draw detected empty areas
+        this.drawEmptyAreas();
+        
         this.ctx.restore();
         
         // Draw UI elements (zoom level, etc.)
@@ -293,8 +335,32 @@ class FooocusCanvas {
     }
 
     drawImage(img) {
-        // Draw the image
-        this.ctx.drawImage(img.element, img.x, img.y, img.width, img.height);
+        // Handle generation indicators
+        if (img.isGenerating) {
+            this.ctx.strokeStyle = '#007bff';
+            this.ctx.setLineDash([10, 5]);
+            this.ctx.lineWidth = 2 / this.zoom;
+            this.ctx.strokeRect(img.x, img.y, img.width, img.height);
+            
+            this.ctx.fillStyle = 'rgba(0, 123, 255, 0.1)';
+            this.ctx.fillRect(img.x, img.y, img.width, img.height);
+            
+            // Draw loading text
+            this.ctx.fillStyle = '#007bff';
+            this.ctx.font = `${16 / this.zoom}px Arial`;
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('⏳ Generating...', 
+                img.x + img.width / 2, 
+                img.y + img.height / 2);
+            
+            this.ctx.setLineDash([]);
+            return;
+        }
+        
+        // Draw the actual image
+        if (img.element) {
+            this.ctx.drawImage(img.element, img.x, img.y, img.width, img.height);
+        }
         
         // Draw selection border
         if (this.selectedImages.has(img.id)) {
@@ -312,6 +378,37 @@ class FooocusCanvas {
         }
     }
 
+    drawFrame() {
+        if (!this.frameRect) return;
+        
+        const rect = this.normalizeRect(this.frameRect);
+        
+        // Draw frame rectangle
+        this.ctx.strokeStyle = '#ff6b6b';
+        this.ctx.setLineDash([5, 5]);
+        this.ctx.lineWidth = 2 / this.zoom;
+        this.ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+        
+        // Draw frame background
+        this.ctx.fillStyle = 'rgba(255, 107, 107, 0.1)';
+        this.ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+        
+        this.ctx.setLineDash([]);
+    }
+
+    drawEmptyAreas() {
+        this.detectedEmptyAreas.forEach(area => {
+            this.ctx.strokeStyle = '#28a745';
+            this.ctx.setLineDash([3, 3]);
+            this.ctx.lineWidth = 1 / this.zoom;
+            this.ctx.strokeRect(area.x, area.y, area.width, area.height);
+            
+            this.ctx.fillStyle = 'rgba(40, 167, 69, 0.1)';
+            this.ctx.fillRect(area.x, area.y, area.width, area.height);
+        });
+        this.ctx.setLineDash([]);
+    }
+
     drawUI() {
         // Draw zoom level
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
@@ -320,12 +417,18 @@ class FooocusCanvas {
         this.ctx.font = '14px Arial';
         this.ctx.fillText(`Zoom: ${Math.round(this.zoom * 100)}%`, 15, 30);
         
+        // Draw current tool
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.fillRect(10, 50, 120, 30);
+        this.ctx.fillStyle = 'white';
+        this.ctx.fillText(`Tool: ${this.currentTool}`, 15, 70);
+        
         // Draw selection count
         if (this.selectedImages.size > 0) {
             this.ctx.fillStyle = 'rgba(0, 123, 255, 0.8)';
-            this.ctx.fillRect(10, 50, 120, 30);
+            this.ctx.fillRect(10, 90, 120, 30);
             this.ctx.fillStyle = 'white';
-            this.ctx.fillText(`Selected: ${this.selectedImages.size}`, 15, 70);
+            this.ctx.fillText(`Selected: ${this.selectedImages.size}`, 15, 110);
         }
     }
 
@@ -587,14 +690,591 @@ class FooocusCanvas {
         }
     }
 
+    // Framing functionality
+    setTool(tool) {
+        this.currentTool = tool;
+        this.canvas.style.cursor = this.getToolCursor();
+        
+        // Reset modes
+        this.framingMode = false;
+        this.frameRect = null;
+        this.detectedEmptyAreas = [];
+        
+        this.render();
+        this.updateToolButtons();
+    }
+
+    getToolCursor() {
+        switch(this.currentTool) {
+            case 'frame': return 'crosshair';
+            case 'outpaint': return 'cell';
+            default: return 'default';
+        }
+    }
+
+    updateToolButtons() {
+        // Update tool button states
+        document.querySelectorAll('.canvas-tool-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        
+        const activeBtn = document.querySelector(`[data-tool="${this.currentTool}"]`);
+        if (activeBtn) {
+            activeBtn.classList.add('active');
+        }
+    }
+
+    startFraming(x, y) {
+        this.framingMode = true;
+        this.frameRect = {
+            startX: x,
+            startY: y,
+            endX: x,
+            endY: y
+        };
+        this.render();
+    }
+
+    updateFrame(x, y) {
+        if (this.frameRect) {
+            this.frameRect.endX = x;
+            this.frameRect.endY = y;
+        }
+    }
+
+    completeFrame() {
+        if (!this.frameRect) return;
+
+        const rect = this.normalizeRect(this.frameRect);
+        
+        // Check if frame contains any images
+        const imagesInFrame = this.getImagesInRect(rect);
+        
+        if (imagesInFrame.length > 0) {
+            // Show frame options
+            this.showFrameOptions(rect, imagesInFrame);
+        } else {
+            // Empty area - suggest outpainting
+            this.suggestOutpaint(rect);
+        }
+
+        this.framingMode = false;
+        this.frameRect = null;
+        this.render();
+    }
+
+    normalizeRect(rect) {
+        return {
+            x: Math.min(rect.startX, rect.endX),
+            y: Math.min(rect.startY, rect.endY),
+            width: Math.abs(rect.endX - rect.startX),
+            height: Math.abs(rect.endY - rect.startY)
+        };
+    }
+
+    getImagesInRect(rect) {
+        const imagesInFrame = [];
+        this.images.forEach(img => {
+            if (this.rectIntersects(rect, {
+                x: img.x, y: img.y, 
+                width: img.width, height: img.height
+            })) {
+                imagesInFrame.push(img);
+            }
+        });
+        return imagesInFrame;
+    }
+
+    rectIntersects(rect1, rect2) {
+        return !(rect1.x + rect1.width < rect2.x || 
+                rect2.x + rect2.width < rect1.x || 
+                rect1.y + rect1.height < rect2.y || 
+                rect2.y + rect2.height < rect1.y);
+    }
+
+    showFrameOptions(rect, images) {
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        `;
+        
+        const content = document.createElement('div');
+        content.style.cssText = `
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 400px;
+        `;
+        
+        content.innerHTML = `
+            <h3>Frame Options</h3>
+            <p>Found ${images.length} image(s) in frame</p>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <button onclick="window.fooocusCanvas.cropToFrame(${JSON.stringify(rect)}, ${JSON.stringify(images.map(i => i.id))}); this.closest('.frame-modal').remove();">
+                    Crop Images
+                </button>
+                <button onclick="window.fooocusCanvas.inpaintFrame(${JSON.stringify(rect)}, ${JSON.stringify(images.map(i => i.id))}); this.closest('.frame-modal').remove();">
+                    Inpaint Area
+                </button>
+                <button onclick="window.fooocusCanvas.upscaleFrame(${JSON.stringify(rect)}, ${JSON.stringify(images.map(i => i.id))}); this.closest('.frame-modal').remove();">
+                    Upscale Area
+                </button>
+                <button onclick="this.closest('.frame-modal').remove();">Cancel</button>
+            </div>
+        `;
+        
+        modal.className = 'frame-modal';
+        modal.appendChild(content);
+        document.body.appendChild(modal);
+    }
+
+    suggestOutpaint(rect) {
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        `;
+        
+        const content = document.createElement('div');
+        content.style.cssText = `
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 400px;
+        `;
+        
+        content.innerHTML = `
+            <h3>Empty Area Detected</h3>
+            <p>This area appears to be empty. Would you like to:</p>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <button onclick="window.fooocusCanvas.outpaintArea(${JSON.stringify(rect)}); this.closest('.outpaint-modal').remove();">
+                    Generate Content
+                </button>
+                <button onclick="window.fooocusCanvas.extendNearbyImages(${JSON.stringify(rect)}); this.closest('.outpaint-modal').remove();">
+                    Extend Nearby Images
+                </button>
+                <button onclick="this.closest('.outpaint-modal').remove();">Cancel</button>
+            </div>
+        `;
+        
+        modal.className = 'outpaint-modal';
+        modal.appendChild(content);
+        document.body.appendChild(modal);
+    }
+
+    // Outpainting functionality
+    detectOutpaintArea(x, y) {
+        // Find the nearest image to the click point
+        let nearestImage = null;
+        let minDistance = Infinity;
+        
+        this.images.forEach(img => {
+            const centerX = img.x + img.width / 2;
+            const centerY = img.y + img.height / 2;
+            const distance = Math.sqrt((x - centerX) ** 2 + (y - centerY) ** 2);
+            
+            if (distance < minDistance) {
+                minDistance = distance;
+                nearestImage = img;
+            }
+        });
+        
+        if (nearestImage) {
+            this.showOutpaintOptions(nearestImage, x, y);
+        }
+    }
+
+    showOutpaintOptions(image, clickX, clickY) {
+        // Determine which side of the image was clicked
+        const imgCenterX = image.x + image.width / 2;
+        const imgCenterY = image.y + image.height / 2;
+        
+        const directions = [];
+        if (clickX < image.x) directions.push('left');
+        if (clickX > image.x + image.width) directions.push('right');
+        if (clickY < image.y) directions.push('top');
+        if (clickY > image.y + image.height) directions.push('bottom');
+        
+        if (directions.length === 0) {
+            // Click was inside image - show all directions
+            directions.push('left', 'right', 'top', 'bottom');
+        }
+        
+        const modal = document.createElement('div');
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        `;
+        
+        const content = document.createElement('div');
+        content.style.cssText = `
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 400px;
+        `;
+        
+        const directionButtons = directions.map(dir => 
+            `<button onclick="window.fooocusCanvas.performOutpaint(${image.id}, '${dir}'); this.closest('.outpaint-modal').remove();">
+                Outpaint ${dir.charAt(0).toUpperCase() + dir.slice(1)}
+            </button>`
+        ).join('');
+        
+        content.innerHTML = `
+            <h3>Outpaint Options</h3>
+            <p>Extend image in which direction?</p>
+            <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 15px;">
+                ${directionButtons}
+                <button onclick="this.closest('.outpaint-modal').remove();">Cancel</button>
+            </div>
+        `;
+        
+        modal.className = 'outpaint-modal';
+        modal.appendChild(content);
+        document.body.appendChild(modal);
+    }
+
+    performOutpaint(imageId, direction) {
+        const image = this.images.get(imageId);
+        if (!image) return;
+        
+        // Calculate outpaint area based on direction
+        let outpaintRect;
+        const expansion = 256; // pixels to expand
+        
+        switch(direction) {
+            case 'left':
+                outpaintRect = {
+                    x: image.x - expansion,
+                    y: image.y,
+                    width: expansion + 50, // overlap
+                    height: image.height
+                };
+                break;
+            case 'right':
+                outpaintRect = {
+                    x: image.x + image.width - 50, // overlap
+                    y: image.y,
+                    width: expansion + 50,
+                    height: image.height
+                };
+                break;
+            case 'top':
+                outpaintRect = {
+                    x: image.x,
+                    y: image.y - expansion,
+                    width: image.width,
+                    height: expansion + 50 // overlap
+                };
+                break;
+            case 'bottom':
+                outpaintRect = {
+                    x: image.x,
+                    y: image.y + image.height - 50, // overlap
+                    width: image.width,
+                    height: expansion + 50
+                };
+                break;
+        }
+        
+        // Trigger outpaint generation
+        if (window.triggerOutpaint) {
+            window.triggerOutpaint(image, outpaintRect, direction);
+        }
+        
+        // Show generation indicator
+        this.showGenerationIndicator(outpaintRect);
+    }
+
+    showGenerationIndicator(rect) {
+        // Add a visual indicator for the generation area
+        const indicator = {
+            id: 'generating-' + Date.now(),
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            isGenerating: true
+        };
+        
+        this.images.set(indicator.id, indicator);
+        this.render();
+        
+        // Remove indicator after timeout (will be replaced by actual image)
+        setTimeout(() => {
+            this.images.delete(indicator.id);
+            this.render();
+        }, 30000);
+    }
+
+    cropToFrame(rect, imageIds) {
+        // Implement cropping functionality
+        console.log('Cropping images to frame:', rect, imageIds);
+    }
+
+    inpaintFrame(rect, imageIds) {
+        // Trigger inpainting for the framed area
+        if (window.triggerInpaint) {
+            window.triggerInpaint(rect, imageIds);
+        }
+    }
+
+    upscaleFrame(rect, imageIds) {
+        // Trigger upscaling for the framed area
+        if (window.triggerUpscale) {
+            window.triggerUpscale(rect, imageIds);
+        }
+    }
+
+    outpaintArea(rect) {
+        // Generate content for empty area
+        if (window.triggerGeneration) {
+            window.triggerGeneration(rect);
+        }
+        this.showGenerationIndicator(rect);
+    }
+
+    extendNearbyImages(rect) {
+        // Find images near the rect and extend them
+        const nearbyImages = [];
+        this.images.forEach(img => {
+            const distance = this.getDistanceToRect(img, rect);
+            if (distance < 100) { // within 100 pixels
+                nearbyImages.push(img);
+            }
+        });
+        
+        if (nearbyImages.length > 0) {
+            // Trigger extension of nearby images
+            if (window.triggerImageExtension) {
+                window.triggerImageExtension(nearbyImages, rect);
+            }
+        }
+    }
+
+    getDistanceToRect(image, rect) {
+        const imgCenterX = image.x + image.width / 2;
+        const imgCenterY = image.y + image.height / 2;
+        const rectCenterX = rect.x + rect.width / 2;
+        const rectCenterY = rect.y + rect.height / 2;
+        
+        return Math.sqrt((imgCenterX - rectCenterX) ** 2 + (imgCenterY - rectCenterY) ** 2);
+    }
+
     undo() {
         // Simple undo implementation - could be enhanced with proper history
         console.log('Undo functionality - to be implemented');
     }
 
+    // Auto-detect empty areas for outpainting
+    detectEmptyAreas() {
+        this.detectedEmptyAreas = [];
+        
+        if (this.images.size === 0) return;
+        
+        // Find bounding box of all images
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        
+        this.images.forEach(img => {
+            if (img.isGenerating) return; // Skip generation indicators
+            
+            minX = Math.min(minX, img.x);
+            minY = Math.min(minY, img.y);
+            maxX = Math.max(maxX, img.x + img.width);
+            maxY = Math.max(maxY, img.y + img.height);
+        });
+        
+        // Expand the area to look for empty spaces
+        const expansion = 100;
+        const searchArea = {
+            x: minX - expansion,
+            y: minY - expansion,
+            width: (maxX - minX) + (expansion * 2),
+            height: (maxY - minY) + (expansion * 2)
+        };
+        
+        // Grid-based empty area detection
+        const gridSize = 64;
+        const cols = Math.ceil(searchArea.width / gridSize);
+        const rows = Math.ceil(searchArea.height / gridSize);
+        
+        for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < cols; col++) {
+                const cellX = searchArea.x + col * gridSize;
+                const cellY = searchArea.y + row * gridSize;
+                const cellRect = {
+                    x: cellX,
+                    y: cellY,
+                    width: gridSize,
+                    height: gridSize
+                };
+                
+                // Check if this cell overlaps with any image
+                let isEmpty = true;
+                this.images.forEach(img => {
+                    if (img.isGenerating) return;
+                    
+                    if (this.rectIntersects(cellRect, {
+                        x: img.x, y: img.y,
+                        width: img.width, height: img.height
+                    })) {
+                        isEmpty = false;
+                    }
+                });
+                
+                if (isEmpty) {
+                    // Check if this empty area is adjacent to any image
+                    let isAdjacent = false;
+                    this.images.forEach(img => {
+                        if (img.isGenerating) return;
+                        
+                        const distance = this.getDistanceToRect(img, cellRect);
+                        if (distance < gridSize * 1.5) {
+                            isAdjacent = true;
+                        }
+                    });
+                    
+                    if (isAdjacent) {
+                        this.detectedEmptyAreas.push(cellRect);
+                    }
+                }
+            }
+        }
+        
+        // Merge adjacent empty areas
+        this.mergeEmptyAreas();
+    }
+
+    mergeEmptyAreas() {
+        // Simple merging of adjacent empty areas
+        const merged = [];
+        const used = new Set();
+        
+        for (let i = 0; i < this.detectedEmptyAreas.length; i++) {
+            if (used.has(i)) continue;
+            
+            let area = { ...this.detectedEmptyAreas[i] };
+            used.add(i);
+            
+            // Try to merge with other areas
+            let changed = true;
+            while (changed) {
+                changed = false;
+                for (let j = 0; j < this.detectedEmptyAreas.length; j++) {
+                    if (used.has(j)) continue;
+                    
+                    const other = this.detectedEmptyAreas[j];
+                    
+                    // Check if areas are adjacent
+                    if (this.areAreasAdjacent(area, other)) {
+                        // Merge areas
+                        const newArea = this.mergeRects(area, other);
+                        area = newArea;
+                        used.add(j);
+                        changed = true;
+                    }
+                }
+            }
+            
+            merged.push(area);
+        }
+        
+        this.detectedEmptyAreas = merged.filter(area => 
+            area.width > 32 && area.height > 32 // Filter out tiny areas
+        );
+    }
+
+    areAreasAdjacent(rect1, rect2) {
+        // Check if rectangles are touching or overlapping
+        const gap = 10; // Allow small gaps
+        
+        return !(rect1.x > rect2.x + rect2.width + gap || 
+                rect2.x > rect1.x + rect1.width + gap || 
+                rect1.y > rect2.y + rect2.height + gap || 
+                rect2.y > rect1.y + rect1.height + gap);
+    }
+
+    mergeRects(rect1, rect2) {
+        const minX = Math.min(rect1.x, rect2.x);
+        const minY = Math.min(rect1.y, rect2.y);
+        const maxX = Math.max(rect1.x + rect1.width, rect2.x + rect2.width);
+        const maxY = Math.max(rect1.y + rect1.height, rect2.y + rect2.height);
+        
+        return {
+            x: minX,
+            y: minY,
+            width: maxX - minX,
+            height: maxY - minY
+        };
+    }
+
+    // Auto-detect empty areas when images change
+    addImage(imageData, prompt, metadata = {}) {
+        const img = new Image();
+        img.onload = () => {
+            const position = this.findNextPosition();
+            const canvasImage = {
+                id: this.nextImageId++,
+                element: img,
+                x: position.x,
+                y: position.y,
+                width: this.imageSize.width,
+                height: this.imageSize.height,
+                prompt: prompt,
+                metadata: metadata,
+                selected: false
+            };
+            
+            this.images.set(canvasImage.id, canvasImage);
+            
+            // Auto-detect empty areas after adding image
+            setTimeout(() => {
+                this.detectEmptyAreas();
+                this.render();
+            }, 100);
+            
+            // Notify parent about new image
+            this.onImageAdded?.(canvasImage);
+        };
+        
+        if (typeof imageData === 'string') {
+            img.src = imageData;
+        } else {
+            // Handle File or Blob
+            img.src = URL.createObjectURL(imageData);
+        }
+    }
+
     clear() {
         this.images.clear();
         this.selectedImages.clear();
+        this.detectedEmptyAreas = [];
+        this.frameRect = null;
         this.render();
     }
 }

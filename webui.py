@@ -270,6 +270,58 @@ canvas_css = """
     color: #007bff;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
+
+.canvas-toolbar-group {
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 8px;
+    backdrop-filter: blur(5px);
+    margin-bottom: 8px;
+}
+
+.canvas-tool-btn {
+    display: inline-block;
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s;
+    font-size: 16px;
+    color: #495057;
+    margin: 2px;
+}
+
+.canvas-tool-btn:hover {
+    background: #e9ecef;
+    color: #007bff;
+}
+
+.canvas-tool-btn.active {
+    background: #007bff;
+    color: white;
+}
+
+.frame-modal, .outpaint-modal {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.frame-modal button, .outpaint-modal button {
+    padding: 8px 16px;
+    margin: 4px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.frame-modal button:hover, .outpaint-modal button:hover {
+    background: #f8f9fa;
+    border-color: #007bff;
+}
 """
 
 shared.gradio_root = gr.Blocks(title=title, css=canvas_css).queue()
