@@ -6,6 +6,7 @@ from PIL import Image
 import modules.config
 import modules.async_worker as worker
 import modules.html
+from modules.canvas_html import get_canvas_html_with_dark_theme
 
 
 class CanvasInterface:
@@ -36,7 +37,7 @@ class CanvasInterface:
                 with gr.Column(scale=4):
                     # Canvas HTML component
                     canvas_html = gr.HTML(
-                        value=self.get_canvas_html(),
+                        value=get_canvas_html_with_dark_theme(),
                         elem_id="canvas-container",
                         elem_classes=["canvas-container"]
                     )

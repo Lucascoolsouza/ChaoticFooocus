@@ -8,7 +8,7 @@ def test_javascript_canvas():
     print("Testing Canvas JavaScript...")
     
     try:
-        with open("javascript/canvas.js", "r") as f:
+        with open("javascript/canvas.js", "r", encoding="utf-8") as f:
             js_content = f.read()
         
         # Check for key components
@@ -34,7 +34,7 @@ def test_css_canvas():
     print("Testing Canvas CSS...")
     
     try:
-        with open("css/canvas.css", "r") as f:
+        with open("css/canvas.css", "r", encoding="utf-8") as f:
             css_content = f.read()
         
         # Check for key styles
@@ -59,7 +59,7 @@ def test_canvas_ui_module():
     print("Testing Canvas UI Module...")
     
     try:
-        with open("modules/canvas_ui.py", "r") as f:
+        with open("modules/canvas_ui.py", "r", encoding="utf-8") as f:
             py_content = f.read()
         
         # Check for key components
@@ -85,7 +85,7 @@ def test_webui_integration():
     print("Testing WebUI Integration...")
     
     try:
-        with open("webui.py", "r") as f:
+        with open("webui.py", "r", encoding="utf-8") as f:
             webui_content = f.read()
         
         # Check for key integrations
