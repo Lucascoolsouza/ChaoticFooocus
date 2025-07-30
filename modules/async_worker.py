@@ -119,38 +119,40 @@ class AsyncTask:
         self.metadata_scheme = MetadataScheme(
             args.pop()) if not args_manager.args.disable_metadata else MetadataScheme.FOOOCUS
 
-        # Detail daemon parameters (popped in reverse order from webui.py)
-        print(f"[DEBUG] Args remaining before detail daemon: {len(args)}")
-        
-        # Pop all 12 detail daemon parameters
-        self._detail_params = []
-        try:
-            for i in range(12):
-                param = args.pop()
-                self._detail_params.append(param)
-                print(f"[DEBUG] Popped param {i}: {param} (type: {type(param)})")
-        except IndexError as e:
-            print(f"[DEBUG] Error popping parameter {i}: {e}")
-            print(f"[DEBUG] Args remaining: {len(args)}")
-            # Fill remaining with defaults
-            while len(self._detail_params) < 12:
-                self._detail_params.append(None)
-        
-        # Assign in correct order matching webui ctrls order with defaults
-        self.detail_daemon_enabled = self._detail_params[0] if self._detail_params[0] is not None else False
-        self.detail_daemon_amount = self._detail_params[1] if self._detail_params[1] is not None else 0.25
-        self.detail_daemon_start = self._detail_params[2] if self._detail_params[2] is not None else 0.2
-        self.detail_daemon_end = self._detail_params[3] if self._detail_params[3] is not None else 0.8
-        self.detail_daemon_bias = self._detail_params[4] if self._detail_params[4] is not None else 0.71
-        self.detail_daemon_base_multiplier = self._detail_params[5] if self._detail_params[5] is not None else 0.85
-        self.detail_daemon_start_offset = self._detail_params[6] if self._detail_params[6] is not None else 0
-        self.detail_daemon_end_offset = self._detail_params[7] if self._detail_params[7] is not None else -0.15
-        self.detail_daemon_exponent = self._detail_params[8] if self._detail_params[8] is not None else 1
-        self.detail_daemon_fade = self._detail_params[9] if self._detail_params[9] is not None else 0
-        self.detail_daemon_mode = self._detail_params[10] if self._detail_params[10] is not None else 'both'
-        self.detail_daemon_smooth = self._detail_params[11] if self._detail_params[11] is not None else True
-        
-        print(f"[DEBUG] Detail daemon params: enabled={self.detail_daemon_enabled}, amount={self.detail_daemon_amount}, mode={self.detail_daemon_mode}")
+        # Only process detail daemon parameters if we have args
+        if len(args) > 0:
+            # Detail daemon parameters (popped in reverse order from webui.py)
+            print(f"[DEBUG] Args remaining before detail daemon: {len(args)}")
+            
+            # Pop all 12 detail daemon parameters
+            self._detail_params = []
+            try:
+                for i in range(12):
+                    param = args.pop()
+                    self._detail_params.append(param)
+                    print(f"[DEBUG] Popped param {i}: {param} (type: {type(param)})")
+            except IndexError as e:
+                print(f"[DEBUG] Error popping parameter {i}: {e}")
+                print(f"[DEBUG] Args remaining: {len(args)}")
+                # Fill remaining with defaults
+                while len(self._detail_params) < 12:
+                    self._detail_params.append(None)
+            
+            # Assign in correct order matching webui ctrls order with defaults
+            self.detail_daemon_enabled = self._detail_params[0] if self._detail_params[0] is not None else False
+            self.detail_daemon_amount = self._detail_params[1] if self._detail_params[1] is not None else 0.25
+            self.detail_daemon_start = self._detail_params[2] if self._detail_params[2] is not None else 0.2
+            self.detail_daemon_end = self._detail_params[3] if self._detail_params[3] is not None else 0.8
+            self.detail_daemon_bias = self._detail_params[4] if self._detail_params[4] is not None else 0.71
+            self.detail_daemon_base_multiplier = self._detail_params[5] if self._detail_params[5] is not None else 0.85
+            self.detail_daemon_start_offset = self._detail_params[6] if self._detail_params[6] is not None else 0
+            self.detail_daemon_end_offset = self._detail_params[7] if self._detail_params[7] is not None else -0.15
+            self.detail_daemon_exponent = self._detail_params[8] if self._detail_params[8] is not None else 1
+            self.detail_daemon_fade = self._detail_params[9] if self._detail_params[9] is not None else 0
+            self.detail_daemon_mode = self._detail_params[10] if self._detail_params[10] is not None else 'both'
+            self.detail_daemon_smooth = self._detail_params[11] if self._detail_params[11] is not None else True
+            
+            print(f"[DEBUG] Detail daemon params: enabled={self.detail_daemon_enabled}, amount={self.detail_daemon_amount}, mode={self.detail_daemon_mode}")
 
         # TPG parameters (popped in reverse order from webui.py)
         print(f"[DEBUG] Args remaining before TPG: {len(args)}")
