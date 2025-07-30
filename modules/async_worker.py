@@ -1431,15 +1431,12 @@ def worker():
 
         # Activate DRUNKUNet if enabled
         if async_task.drunk_enabled:
-            print(f"[DRUNKUNet DEBUG] Activating DRUNKUNet with:")
-            print(f"[DRUNKUNet DEBUG]   attn_noise_strength: {async_task.drunk_attn_noise_strength}")
-            print(f"[DRUNKUNet DEBUG]   layer_dropout_prob: {async_task.drunk_layer_dropout_prob}")
-            print(f"[DRUNKUNet DEBUG]   prompt_noise_strength: {async_task.drunk_prompt_noise_strength}")
-            print(f"[DRUNKUNet DEBUG]   cognitive_echo_strength: {async_task.drunk_cognitive_echo_strength}")
-            print(f"[DRUNKUNet DEBUG]   dynamic_guidance_preset: {async_task.drunk_dynamic_guidance_preset}")
-            print(f"[DRUNKUNet DEBUG]   dynamic_guidance_base: {async_task.drunk_dynamic_guidance_base}")
-            print(f"[DRUNKUNet DEBUG]   dynamic_guidance_amplitude: {async_task.drunk_dynamic_guidance_amplitude}")
-            print(f"[DRUNKUNet DEBUG]   dynamic_guidance_frequency: {async_task.drunk_dynamic_guidance_frequency}")
+            print(f"[DRUNKUNet] Activating DRUNKUNet with parameters:")
+            print(f"  - Attn Noise Strength: {async_task.drunk_attn_noise_strength}")
+            print(f"  - Layer Dropout Prob: {async_task.drunk_layer_dropout_prob}")
+            print(f"  - Prompt Noise Strength: {async_task.drunk_prompt_noise_strength}")
+            print(f"  - Cognitive Echo Strength: {async_task.drunk_cognitive_echo_strength}")
+            print(f"  - Dynamic Guidance Preset: {async_task.drunk_dynamic_guidance_preset}")
 
             dynamic_guidance_params = None
             if async_task.drunk_dynamic_guidance_preset == 'Custom':
