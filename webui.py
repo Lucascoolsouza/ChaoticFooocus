@@ -34,12 +34,12 @@ def get_task(*args):
 
     return worker.AsyncTask(args=args)
 
-def generate_clicked(task: worker.AsyncTask, canvas_mode=False, canvas_html=None):
+def generate_clicked(task: worker.AsyncTask):
     import ldm_patched.modules.model_management as model_management
 
     with model_management.interrupt_processing_mutex:
         model_management.interrupt_processing = False
-    # outputs=[progress_html, progress_window, progress_gallery, gallery, canvas_html]
+    # outputs=[progress_html, progress_window, progress_gallery, gallery]
 
     if len(task.args) == 0:
         return
@@ -47,18 +47,7 @@ def generate_clicked(task: worker.AsyncTask, canvas_mode=False, canvas_html=None
     execution_start_time = time.perf_counter()
     finished = False
 
-    # Initial yield - show progress for both modes
-    if canvas_mode:
-        yield (gr.update(visible=True, value=modules.html.make_progress_html(1, 'Waiting for task to start ...')),
-               gr.update(visible=True, value=None),
-               gr.update(visible=False, value=None),
-               gr.update(visible=False),
-               gr.update())  # canvas_html unchanged
-    else:
-        yield (gr.update(visible=True, value=modules.html.make_progress_html(1, 'Waiting for task to start ...')),
-               gr.update(visible=True, value=None),
-               gr.update(visible=False, value=None),
-               gr.update(visible=False))
+    yield gr.update(visible=True, value=modules.html.make_progress_html(1, 'Waiting for task to start ...')),         gr.update(visible=True, value=None),         gr.update(visible=False, value=None),         gr.update(visible=False)
 
     worker.async_tasks.append(task)
 
@@ -75,51 +64,14 @@ def generate_clicked(task: worker.AsyncTask, canvas_mode=False, canvas_html=None
                         continue
 
                 percentage, title, image = product
-                if canvas_mode:
-                    yield (gr.update(visible=True, value=modules.html.make_progress_html(percentage, title)),
-                           gr.update(visible=True, value=image) if image is not None else gr.update(),
-                           gr.update(),
-                           gr.update(visible=False),
-                           gr.update())  # canvas_html unchanged
-                else:
-                    yield (gr.update(visible=True, value=modules.html.make_progress_html(percentage, title)),
-                           gr.update(visible=True, value=image) if image is not None else gr.update(),
-                           gr.update(),
-                           gr.update(visible=False))
-                           
+                yield gr.update(visible=True, value=modules.html.make_progress_html(percentage, title)),                     gr.update(visible=True, value=image) if image is not None else gr.update(),                     gr.update(),                     gr.update(visible=False)
             if flag == 'results':
-                if canvas_mode:
-                    yield (gr.update(visible=True),
-                           gr.update(visible=True),
-                           gr.update(visible=True, value=product),
-                           gr.update(visible=False),
-                           gr.update())  # canvas_html unchanged
-                else:
-                    yield (gr.update(visible=True),
-                           gr.update(visible=True),
-                           gr.update(visible=True, value=product),
-                           gr.update(visible=False))
-                           
+                yield gr.update(visible=True),                     gr.update(visible=True),                     gr.update(visible=True, value=product),                     gr.update(visible=False)
             if flag == 'finish':
                 if not args_manager.args.disable_enhance_output_sorting:
                     product = sort_enhance_images(product, task)
 
-                if canvas_mode:
-                    # Add images to canvas
-                    prompt = task.prompt if hasattr(task, 'prompt') else ""
-                    canvas_script = canvas_interface.handle_canvas_generation(product, prompt)
-                    
-                    yield (gr.update(visible=False),
-                           gr.update(visible=False),
-                           gr.update(visible=False),
-                           gr.update(visible=True, value=product),
-                           gr.update(value=canvas_script))  # Update canvas with new images
-                else:
-                    yield (gr.update(visible=False),
-                           gr.update(visible=False),
-                           gr.update(visible=False),
-                           gr.update(visible=True, value=product))
-                           
+                yield gr.update(visible=False),                     gr.update(visible=False),                     gr.update(visible=False),                     gr.update(visible=True, value=product)
                 finished = True
 
                 # delete Fooocus temp images, only keep gradio temp images
@@ -131,6 +83,7 @@ def generate_clicked(task: worker.AsyncTask, canvas_mode=False, canvas_html=None
     execution_time = time.perf_counter() - execution_start_time
     print(f'Total time: {execution_time:.2f} seconds')
     return
+
 
 
     
@@ -1745,21 +1698,13 @@ with shared.gradio_root:
         metadata_import_button.click(trigger_metadata_import, inputs=[metadata_input_image, state_is_generating], outputs=load_data_outputs, queue=False, show_progress=True) \
             .then(style_sorter.sort_styles, inputs=style_selections, outputs=style_selections, queue=False, show_progress=False)
 
-        def generate_with_mode(canvas_mode):
-            def generate_wrapper(currentTask):
-                if canvas_mode:
-                    return generate_clicked(currentTask, canvas_mode=True, canvas_html=canvas_html)
-                else:
-                    return generate_clicked(currentTask, canvas_mode=False)
-            return generate_wrapper
-
         generate_button.click(lambda: (gr.update(visible=True, interactive=True), gr.update(visible=True, interactive=True), gr.update(visible=False, interactive=False), [], True),
                               outputs=[stop_button, skip_button, generate_button, gallery, state_is_generating]) \
             .then(fn=refresh_seed, inputs=[seed_random, image_seed], outputs=image_seed) \
             .then(fn=get_task, inputs=ctrls, outputs=currentTask) \
-            .then(fn=lambda task, canvas_mode: generate_clicked(task, canvas_mode, canvas_html), 
-                  inputs=[currentTask, canvas_mode_state], 
-                  outputs=[progress_html, progress_window, progress_gallery, gallery, canvas_html]) \
+            .then(fn=generate_clicked, inputs=currentTask, outputs=[progress_html, progress_window, progress_gallery, gallery]) \
+            .then(lambda gallery_result, canvas_mode, prompt_text: canvas_interface.handle_canvas_generation(gallery_result, prompt_text) if canvas_mode else "",
+                  inputs=[gallery, canvas_mode_state, prompt], outputs=[canvas_html]) \
             .then(lambda: (gr.update(visible=True, interactive=True), gr.update(visible=False, interactive=False), gr.update(visible=False, interactive=False), False),
                   outputs=[generate_button, stop_button, skip_button, state_is_generating]) \
             .then(fn=update_history_link, outputs=history_link) \
