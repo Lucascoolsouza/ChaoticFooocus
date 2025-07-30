@@ -960,12 +960,6 @@ with shared.gradio_root:
                         if not enabled:
                             return "Drunk UNet: Disabled"
                         
-                        # Ensure numerical values are not None
-                        attn_noise = attn_noise if attn_noise is not None else 0.0
-                        dropout_prob = dropout_prob if dropout_prob is not None else 0.0
-                        prompt_noise = prompt_noise if prompt_noise is not None else 0.0
-                        echo_strength = echo_strength if echo_strength is not None else 0.0
-
                         status_parts = []
                         if attn_noise > 0: status_parts.append(f"Attn Noise: {attn_noise}")
                         if dropout_prob > 0: status_parts.append(f"Dropout: {dropout_prob}")
