@@ -437,8 +437,30 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 print(f"[DRUNKUNet] - Dynamic Guidance: {drunk_dynamic_guidance}")
                 print(f"[DRUNKUNet] - Applied Layers: {drunk_applied_layers}")
                 
-                # TODO: Implement actual DRUNKUNet functionality
-                # For now, just log that it's enabled to prevent the error
+                # Import and configure DRUNKUNet sampler
+                from extras.drunkunet.drunkieunet_pipelinesdxl import drunkunet_sampler
+                
+                # Configure the sampler with current parameters
+                drunkunet_sampler.attn_noise_strength = drunk_attn_noise
+                drunkunet_sampler.layer_dropout_prob = drunk_layer_dropout
+                drunkunet_sampler.prompt_noise_strength = drunk_prompt_noise
+                drunkunet_sampler.cognitive_echo_strength = drunk_cognitive_echo
+                drunkunet_sampler.drunk_applied_layers = drunk_applied_layers or ['mid', 'up']
+                
+                # Configure dynamic guidance if enabled
+                if drunk_dynamic_guidance:
+                    drunkunet_sampler.dynamic_guidance_params = {
+                        'base': cfg_scale,
+                        'amplitude': 2.0,
+                        'frequency': 0.1,
+                        'phase': 0
+                    }
+                else:
+                    drunkunet_sampler.dynamic_guidance_params = {}
+                
+                # Activate DRUNKUNet with the UNet model
+                drunkunet_sampler.activate(final_unet)
+                print(f"[DRUNKUNet] Successfully activated DRUNKUNet sampler")
                 
             except Exception as e:
                 print(f"[DRUNKUNet] Error enabling DRUNKUNet: {e}")
@@ -654,6 +676,17 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         
         return imgs
     finally:
+        # Cleanup DRUNKUNet if it was enabled
+        if drunk_enabled:
+            try:
+                from extras.drunkunet.drunkieunet_pipelinesdxl import drunkunet_sampler
+                drunkunet_sampler.deactivate()
+                print("[DRUNKUNet] Deactivated after generation.")
+            except Exception as e:
+                print(f"[DRUNKUNet] Error deactivating DRUNKUNet: {e}")
+                import traceback
+                traceback.print_exc()
+        
         if force_grid_checkbox and force_grid_unet_context is not None:
             try:
                 force_grid_unet_context.__exit__(None, None, None)
