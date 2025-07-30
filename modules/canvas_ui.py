@@ -98,6 +98,9 @@ class CanvasInterface:
                     <button class="canvas-control-btn" onclick="window.fooocusCanvas?.saveCanvas()">
                         💾 Save
                     </button>
+                    <button class="canvas-control-btn" onclick="document.getElementById('canvas-file-input').click()" title="Import images from files">
+                        📁 Import
+                    </button>
                 </div>
             </div>
             
@@ -111,7 +114,17 @@ class CanvasInterface:
                 <span id="canvas-zoom-level">Zoom: 100%</span>
                 <span id="canvas-image-count">Images: 0</span>
                 <span id="canvas-selected-count">Selected: 0</span>
+                <span style="margin-left: auto; font-size: 11px; opacity: 0.8;">
+                    💡 Drag & drop images or Ctrl+V to paste
+                </span>
             </div>
+            
+            <div class="canvas-paste-hint" id="canvas-paste-hint" style="display: none;">
+                Press Ctrl+V to paste images from clipboard
+            </div>
+            
+            <!-- Hidden file input for import button -->
+            <input type="file" id="canvas-file-input" multiple accept="image/*" style="display: none;">
         </div>
         
         <script>

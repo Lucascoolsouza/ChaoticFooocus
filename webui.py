@@ -161,21 +161,20 @@ canvas_css = """
     width: 100%;
     height: 100%;
     min-height: 600px;
-    background: #f8f9fa;
-    border: 1px solid #dee2e6;
+    background: #1a2332;
+    border: 1px solid #2d3748;
     border-radius: 8px;
     overflow: hidden;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.3);
 }
 
 #fooocus-canvas {
     display: block;
     cursor: default;
-    background: linear-gradient(45deg, #f8f9fa 25%, transparent 25%), 
-                linear-gradient(-45deg, #f8f9fa 25%, transparent 25%), 
-                linear-gradient(45deg, transparent 75%, #f8f9fa 75%), 
-                linear-gradient(-45deg, transparent 75%, #f8f9fa 75%);
+    background-color: #1a2332;
+    background-image: radial-gradient(circle, #4a5568 1px, transparent 1px);
     background-size: 20px 20px;
-    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    background-position: 0 0;
 }
 
 .mode-toggle-btn {
@@ -269,6 +268,35 @@ canvas_css = """
     background: white;
     color: #007bff;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Drag and drop styles */
+.canvas-container.drag-over {
+    background: rgba(0, 123, 255, 0.1);
+    border: 2px dashed #007bff !important;
+}
+
+.canvas-notification {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.canvas-paste-hint {
+    position: absolute;
+    bottom: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 12px;
+    z-index: 100;
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+#fooocus-canvas.drag-active {
+    cursor: copy !important;
 }
 
 .canvas-toolbar-group {
@@ -1790,49 +1818,49 @@ with shared.gradio_root:
 
         # Canvas control buttons
         fit_screen_btn.click(
-            lambda: canvas_interface.fit_to_screen(),
+            lambda: gr.update(value=canvas_interface.fit_to_screen()),
             outputs=[canvas_html],
             queue=False
         )
 
         clear_canvas_btn.click(
-            lambda: canvas_interface.clear_canvas(),
+            lambda: gr.update(value=canvas_interface.clear_canvas()),
             outputs=[canvas_html],
             queue=False
         )
 
         save_canvas_btn.click(
-            lambda: canvas_interface.save_canvas(),
+            lambda: gr.update(value=canvas_interface.save_canvas()),
             outputs=[canvas_html],
             queue=False
         )
 
         export_selected_btn.click(
-            lambda: canvas_interface.export_selected_images(),
+            lambda: gr.update(value=canvas_interface.export_selected_images()),
             outputs=[canvas_html],
             queue=False
         )
 
         regenerate_selected_btn.click(
-            lambda: canvas_interface.regenerate_selected_images(),
+            lambda: gr.update(value=canvas_interface.regenerate_selected_images()),
             outputs=[canvas_html],
             queue=False
         )
 
         delete_selected_btn.click(
-            lambda: canvas_interface.delete_selected_images(),
+            lambda: gr.update(value=canvas_interface.delete_selected_images()),
             outputs=[canvas_html],
             queue=False
         )
 
         select_all_btn.click(
-            lambda: canvas_interface.select_all_images(),
+            lambda: gr.update(value=canvas_interface.select_all_images()),
             outputs=[canvas_html],
             queue=False
         )
 
         deselect_all_btn.click(
-            lambda: canvas_interface.deselect_all_images(),
+            lambda: gr.update(value=canvas_interface.deselect_all_images()),
             outputs=[canvas_html],
             queue=False
         )

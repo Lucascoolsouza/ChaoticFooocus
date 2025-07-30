@@ -39,6 +39,15 @@ class FooocusCanvas {
         this.canvas.addEventListener('contextmenu', this.onContextMenu.bind(this));
         this.canvas.addEventListener('dblclick', this.onDoubleClick.bind(this));
         
+        // Drag and drop events
+        this.canvas.addEventListener('dragover', this.onDragOver.bind(this));
+        this.canvas.addEventListener('drop', this.onDrop.bind(this));
+        this.canvas.addEventListener('dragenter', this.onDragEnter.bind(this));
+        this.canvas.addEventListener('dragleave', this.onDragLeave.bind(this));
+        
+        // Paste events
+        document.addEventListener('paste', this.onPaste.bind(this));
+        
         // Window resize
         window.addEventListener('resize', this.resizeCanvas.bind(this));
     }
@@ -230,6 +239,102 @@ class FooocusCanvas {
         }
     }
 
+    onDragOver(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        
+        // Add visual feedback
+        this.canvas.style.backgroundColor = 'rgba(0, 123, 255, 0.1)';
+        this.canvas.style.border = '2px dashed #007bff';
+    }
+
+    onDragEnter(e) {
+        e.preventDefault();
+        this.dragCounter = (this.dragCounter || 0) + 1;
+    }
+
+    onDragLeave(e) {
+        e.preventDefault();
+        this.dragCounter = (this.dragCounter || 1) - 1;
+        
+        if (this.dragCounter === 0) {
+            // Remove visual feedback
+            this.canvas.style.backgroundColor = '';
+            this.canvas.style.border = '';
+        }
+    }
+
+    onDrop(e) {
+        e.preventDefault();
+        this.dragCounter = 0;
+        
+        // Remove visual feedback
+        this.canvas.style.backgroundColor = '';
+        this.canvas.style.border = '';
+        
+        const files = Array.from(e.dataTransfer.files);
+        const imageFiles = files.filter(file => file.type.startsWith('image/'));
+        
+        if (imageFiles.length > 0) {
+            imageFiles.forEach(file => {
+                this.addImageFromFile(file, e.clientX, e.clientY);
+            });
+        } else {
+            // Check for image URLs or HTML content
+            const html = e.dataTransfer.getData('text/html');
+            const text = e.dataTransfer.getData('text/plain');
+            
+            if (html) {
+                this.extractImagesFromHTML(html, e.clientX, e.clientY);
+            } else if (text && this.isImageURL(text)) {
+                this.addImageFromURL(text, e.clientX, e.clientY);
+            }
+        }
+    }
+
+    onPaste(e) {
+        // Only handle paste when canvas is focused or no input is focused
+        const activeElement = document.activeElement;
+        const isInputFocused = activeElement && (
+            activeElement.tagName === 'INPUT' || 
+            activeElement.tagName === 'TEXTAREA' || 
+            activeElement.contentEditable === 'true'
+        );
+        
+        if (isInputFocused) return;
+        
+        e.preventDefault();
+        
+        const items = Array.from(e.clipboardData.items);
+        const imageItems = items.filter(item => item.type.startsWith('image/'));
+        
+        if (imageItems.length > 0) {
+            imageItems.forEach(item => {
+                const file = item.getAsFile();
+                if (file) {
+                    // Paste at center of canvas
+                    const centerX = this.canvas.width / 2;
+                    const centerY = this.canvas.height / 2;
+                    this.addImageFromFile(file, centerX, centerY);
+                }
+            });
+        } else {
+            // Check for text content that might be an image URL
+            const text = e.clipboardData.getData('text/plain');
+            const html = e.clipboardData.getData('text/html');
+            
+            if (html) {
+                const centerX = this.canvas.width / 2;
+                const centerY = this.canvas.height / 2;
+                this.extractImagesFromHTML(html, centerX, centerY);
+            } else if (text && this.isImageURL(text)) {
+                const centerX = this.canvas.width / 2;
+                const centerY = this.canvas.height / 2;
+                this.addImageFromURL(text, centerX, centerY);
+            }
+        }
+    }
+
     getImageAt(x, y) {
         for (let [id, img] of this.images) {
             if (x >= img.x && x <= img.x + img.width &&
@@ -269,6 +374,209 @@ class FooocusCanvas {
             // Handle File or Blob
             img.src = URL.createObjectURL(imageData);
         }
+    }
+
+    addImageFromFile(file, screenX, screenY) {
+        const img = new Image();
+        img.onload = () => {
+            const canvasPos = this.screenToCanvas(screenX, screenY);
+            
+            // Calculate size maintaining aspect ratio
+            const maxSize = Math.max(this.imageSize.width, this.imageSize.height);
+            const aspectRatio = img.naturalWidth / img.naturalHeight;
+            let width, height;
+            
+            if (aspectRatio > 1) {
+                width = maxSize;
+                height = maxSize / aspectRatio;
+            } else {
+                width = maxSize * aspectRatio;
+                height = maxSize;
+            }
+            
+            const canvasImage = {
+                id: this.nextImageId++,
+                element: img,
+                x: canvasPos.x - width / 2,
+                y: canvasPos.y - height / 2,
+                width: width,
+                height: height,
+                prompt: `Imported: ${file.name}`,
+                metadata: {
+                    source: 'file',
+                    filename: file.name,
+                    size: file.size,
+                    type: file.type,
+                    imported: new Date().toISOString()
+                },
+                selected: false
+            };
+            
+            this.images.set(canvasImage.id, canvasImage);
+            this.render();
+            
+            // Show notification
+            this.showNotification(`Added image: ${file.name}`);
+            
+            // Notify parent about new image
+            this.onImageAdded?.(canvasImage);
+        };
+        
+        img.onerror = () => {
+            this.showNotification(`Failed to load image: ${file.name}`, 'error');
+        };
+        
+        img.src = URL.createObjectURL(file);
+    }
+
+    addImageFromURL(url, screenX, screenY) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous'; // Try to load with CORS
+        
+        img.onload = () => {
+            const canvasPos = this.screenToCanvas(screenX, screenY);
+            
+            // Calculate size maintaining aspect ratio
+            const maxSize = Math.max(this.imageSize.width, this.imageSize.height);
+            const aspectRatio = img.naturalWidth / img.naturalHeight;
+            let width, height;
+            
+            if (aspectRatio > 1) {
+                width = maxSize;
+                height = maxSize / aspectRatio;
+            } else {
+                width = maxSize * aspectRatio;
+                height = maxSize;
+            }
+            
+            const canvasImage = {
+                id: this.nextImageId++,
+                element: img,
+                x: canvasPos.x - width / 2,
+                y: canvasPos.y - height / 2,
+                width: width,
+                height: height,
+                prompt: `Imported from URL`,
+                metadata: {
+                    source: 'url',
+                    url: url,
+                    imported: new Date().toISOString()
+                },
+                selected: false
+            };
+            
+            this.images.set(canvasImage.id, canvasImage);
+            this.render();
+            
+            // Show notification
+            this.showNotification(`Added image from URL`);
+            
+            // Notify parent about new image
+            this.onImageAdded?.(canvasImage);
+        };
+        
+        img.onerror = () => {
+            this.showNotification(`Failed to load image from URL`, 'error');
+        };
+        
+        img.src = url;
+    }
+
+    extractImagesFromHTML(html, screenX, screenY) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(html, 'text/html');
+        const images = doc.querySelectorAll('img');
+        
+        images.forEach((imgElement, index) => {
+            const src = imgElement.src;
+            if (src && this.isImageURL(src)) {
+                // Offset multiple images slightly
+                const offsetX = index * 20;
+                const offsetY = index * 20;
+                this.addImageFromURL(src, screenX + offsetX, screenY + offsetY);
+            }
+        });
+        
+        if (images.length === 0) {
+            this.showNotification('No images found in the content', 'warning');
+        }
+    }
+
+    isImageURL(url) {
+        if (!url || typeof url !== 'string') return false;
+        
+        // Check for common image extensions
+        const imageExtensions = /\.(jpg|jpeg|png|gif|bmp|webp|svg)(\?.*)?$/i;
+        if (imageExtensions.test(url)) return true;
+        
+        // Check for data URLs
+        if (url.startsWith('data:image/')) return true;
+        
+        // Check for blob URLs
+        if (url.startsWith('blob:')) return true;
+        
+        return false;
+    }
+
+    showNotification(message, type = 'info') {
+        // Remove existing notification
+        const existingNotification = document.querySelector('.canvas-notification');
+        if (existingNotification) {
+            existingNotification.remove();
+        }
+        
+        const notification = document.createElement('div');
+        notification.className = 'canvas-notification';
+        notification.textContent = message;
+        
+        const colors = {
+            info: '#007bff',
+            success: '#28a745',
+            warning: '#ffc107',
+            error: '#dc3545'
+        };
+        
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: ${colors[type] || colors.info};
+            color: white;
+            padding: 12px 20px;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            z-index: 2000;
+            font-size: 14px;
+            max-width: 300px;
+            word-wrap: break-word;
+            animation: slideIn 0.3s ease-out;
+        `;
+        
+        // Add animation styles
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(100%); opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        document.body.appendChild(notification);
+        
+        // Auto-remove after 3 seconds
+        setTimeout(() => {
+            notification.style.animation = 'slideOut 0.3s ease-in';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 300);
+        }, 3000);
     }
 
     findNextPosition() {
@@ -1284,6 +1592,42 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('fooocus-canvas')) {
         window.fooocusCanvas = new FooocusCanvas('fooocus-canvas', 'canvas-controls');
         window.fooocusCanvas.loadCanvas();
+        
+        // Set up file input handler
+        const fileInput = document.getElementById('canvas-file-input');
+        if (fileInput) {
+            fileInput.addEventListener('change', (e) => {
+                const files = Array.from(e.target.files);
+                files.forEach((file, index) => {
+                    if (file.type.startsWith('image/')) {
+                        // Position files in a grid pattern
+                        const centerX = window.fooocusCanvas.canvas.width / 2;
+                        const centerY = window.fooocusCanvas.canvas.height / 2;
+                        const offsetX = (index % 3 - 1) * 100;
+                        const offsetY = Math.floor(index / 3) * 100;
+                        
+                        window.fooocusCanvas.addImageFromFile(file, centerX + offsetX, centerY + offsetY);
+                    }
+                });
+                // Reset file input
+                e.target.value = '';
+            });
+        }
+        
+        // Show paste hint when appropriate
+        let pasteHintTimeout;
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'v') {
+                const hint = document.getElementById('canvas-paste-hint');
+                if (hint) {
+                    hint.style.display = 'block';
+                    clearTimeout(pasteHintTimeout);
+                    pasteHintTimeout = setTimeout(() => {
+                        hint.style.display = 'none';
+                    }, 2000);
+                }
+            }
+        });
         
         // Auto-save every 30 seconds
         setInterval(() => {
