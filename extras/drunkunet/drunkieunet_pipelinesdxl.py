@@ -203,6 +203,10 @@ class DRUNKUNetSampler:
 
     def _register_dropout_hooks(self, unet):
         """Placeholder para hooks de dropout em camadas."""
+        print(f"[DRUNKUNet DEBUG] _register_dropout_hooks called with unet type: {type(unet)}")
+        print(f"[DRUNKUNet DEBUG] unet has 'model' attribute: {hasattr(unet, 'model')}")
+        if hasattr(unet, 'model'):
+            print(f"[DRUNKUNet DEBUG] unet.model type: {type(unet.model)}")
         # Esta é uma ideia mais complexa. Dropout normalmente é aplicado durante treinamento.
         # Para aplicar durante inferência, você poderia adicionar um hook que zera aleatoriamente
         # alguns elementos da entrada ou saída de uma camada com uma certa probabilidade.
@@ -229,7 +233,10 @@ class DRUNKUNetSampler:
         # Exemplo genérico:
         try:
             # Access the actual UNet model from the ModelPatcher
+            print(f"[DRUNKUNet DEBUG] About to access unet.model, unet type: {type(unet)}")
             actual_unet = unet.model if hasattr(unet, 'model') else unet
+            print(f"[DRUNKUNet DEBUG] actual_unet type: {type(actual_unet)}")
+            print(f"[DRUNKUNet DEBUG] actual_unet has named_modules: {hasattr(actual_unet, 'named_modules')}")
             for name, module in actual_unet.named_modules():
                  # Exemplo de filtro, ajuste conforme necessário
                  if any(layer_type in name for layer_type in self.drunk_applied_layers): # Usa o filtro de camadas
