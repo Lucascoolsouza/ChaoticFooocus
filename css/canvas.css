@@ -1,0 +1,347 @@
+/* Canvas-based UI styles for Fooocus */
+
+.canvas-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-height: 600px;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+#fooocus-canvas {
+    display: block;
+    cursor: default;
+    background: linear-gradient(45deg, #f8f9fa 25%, transparent 25%), 
+                linear-gradient(-45deg, #f8f9fa 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #f8f9fa 75%), 
+                linear-gradient(-45deg, transparent 75%, #f8f9fa 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+}
+
+.canvas-controls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 100;
+}
+
+.canvas-control-btn {
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+    backdrop-filter: blur(5px);
+}
+
+.canvas-control-btn:hover {
+    background: rgba(255, 255, 255, 1);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.canvas-mode-toggle {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 100;
+}
+
+.mode-toggle-btn {
+    padding: 10px 16px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.mode-toggle-btn:hover {
+    background: #0056b3;
+    transform: translateY(-1px);
+}
+
+.mode-toggle-btn.active {
+    background: #28a745;
+}
+
+.canvas-context-menu {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+}
+
+.canvas-context-menu div:last-child {
+    border-bottom: none !important;
+}
+
+.canvas-status-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 30px;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    display: flex;
+    align-items: center;
+    padding: 0 15px;
+    font-size: 12px;
+    gap: 20px;
+}
+
+.canvas-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 200;
+}
+
+.canvas-loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #007bff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Traditional gallery mode styles */
+.gallery-mode .canvas-container {
+    display: none;
+}
+
+.canvas-mode .main_view:not(.canvas-container) {
+    display: none;
+}
+
+.canvas-mode .final_gallery {
+    display: none;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .canvas-controls {
+        top: 5px;
+        right: 5px;
+        gap: 4px;
+    }
+    
+    .canvas-control-btn {
+        padding: 6px 10px;
+        font-size: 11px;
+    }
+    
+    .mode-toggle-btn {
+        padding: 8px 12px;
+        font-size: 14px;
+    }
+}
+
+/* Integration with existing Fooocus styles */
+.canvas-container .progress-bar {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 150;
+}
+
+/* Toolbar styles */
+.canvas-toolbar {
+    position: absolute;
+    top: 50px;
+    right: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    z-index: 100;
+}
+
+.canvas-toolbar-group {
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 8px;
+    backdrop-filter: blur(5px);
+}
+
+.canvas-toolbar-btn {
+    display: block;
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s;
+    font-size: 16px;
+    color: #495057;
+}
+
+.canvas-toolbar-btn:hover {
+    background: #e9ecef;
+    color: #007bff;
+}
+
+.canvas-toolbar-btn.active {
+    background: #007bff;
+    color: white;
+}
+
+/* Selection styles */
+.canvas-selection-info {
+    position: absolute;
+    bottom: 40px;
+    left: 15px;
+    background: rgba(0, 123, 255, 0.9);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    display: none;
+}
+
+.canvas-selection-info.visible {
+    display: block;
+}
+
+/* Zoom controls */
+.canvas-zoom-controls {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    display: flex;
+    gap: 5px;
+    z-index: 100;
+}
+
+.zoom-btn {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #dee2e6;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: bold;
+    color: #495057;
+    transition: all 0.2s;
+}
+
+.zoom-btn:hover {
+    background: white;
+    color: #007bff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Image generation indicator */
+.canvas-generation-indicator {
+    position: absolute;
+    border: 2px dashed #007bff;
+    background: rgba(0, 123, 255, 0.1);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #007bff;
+    font-size: 14px;
+    font-weight: 500;
+    pointer-events: none;
+    z-index: 50;
+}
+
+.canvas-generation-indicator::before {
+    content: "⏳ Generating...";
+}
+
+/* Prompt input overlay */
+.canvas-prompt-overlay {
+    position: absolute;
+    bottom: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 15px;
+    min-width: 400px;
+    max-width: 80%;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 300;
+    display: none;
+}
+
+.canvas-prompt-overlay.visible {
+    display: block;
+}
+
+.canvas-prompt-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 14px;
+    resize: vertical;
+    min-height: 60px;
+}
+
+.canvas-prompt-buttons {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    justify-content: flex-end;
+}
+
+.canvas-prompt-btn {
+    padding: 6px 12px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.canvas-prompt-btn.primary {
+    background: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
+.canvas-prompt-btn.primary:hover {
+    background: #0056b3;
+    border-color: #0056b3;
+}
+
+.canvas-prompt-btn:not(.primary) {
+    background: white;
+    color: #495057;
+}
+
+.canvas-prompt-btn:not(.primary):hover {
+    background: #f8f9fa;
+}
