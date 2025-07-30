@@ -119,7 +119,7 @@ class AsyncTask:
         self.metadata_scheme = MetadataScheme(
             args.pop()) if not args_manager.args.disable_metadata else MetadataScheme.FOOOCUS
 
-        # Only process detail daemon parameters if we have args
+        # Only process parameters if we have args
         if len(args) > 0:
             # Detail daemon parameters (popped in reverse order from webui.py)
             print(f"[DEBUG] Args remaining before detail daemon: {len(args)}")
@@ -154,29 +154,29 @@ class AsyncTask:
             
             print(f"[DEBUG] Detail daemon params: enabled={self.detail_daemon_enabled}, amount={self.detail_daemon_amount}, mode={self.detail_daemon_mode}")
 
-        # TPG parameters (popped in reverse order from webui.py)
-        print(f"[DEBUG] Args remaining before TPG: {len(args)}")
-        
-        # Pop all 5 TPG parameters
-        tpg_params = []
-        try:
-            for i in range(5):
-                param = args.pop()
-                tpg_params.append(param)
-                print(f"[DEBUG] Popped TPG param {i}: {param} (type: {type(param)})")
-        except IndexError as e:
-            print(f"[DEBUG] Error popping TPG parameter {i}: {e}")
-            print(f"[DEBUG] Args remaining: {len(args)}")
-            # Fill remaining with defaults
-            while len(tpg_params) < 5:
-                tpg_params.append(None)
-        
-        # Assign in correct order matching webui ctrls order with defaults
-        self.tpg_enabled = tpg_params[0] if tpg_params[0] is not None else False
-        self.tpg_scale = tpg_params[1] if tpg_params[1] is not None else 3.0
-        self.tpg_applied_layers = tpg_params[2] if tpg_params[2] is not None else ['mid', 'up']
-        self.tpg_shuffle_strength = tpg_params[3] if tpg_params[3] is not None else 1.0
-        self.tpg_adaptive_strength = tpg_params[4] if tpg_params[4] is not None else True
+            # TPG parameters (popped in reverse order from webui.py)
+            print(f"[DEBUG] Args remaining before TPG: {len(args)}")
+            
+            # Pop all 5 TPG parameters
+            tpg_params = []
+            try:
+                for i in range(5):
+                    param = args.pop()
+                    tpg_params.append(param)
+                    print(f"[DEBUG] Popped TPG param {i}: {param} (type: {type(param)})")
+            except IndexError as e:
+                print(f"[DEBUG] Error popping TPG parameter {i}: {e}")
+                print(f"[DEBUG] Args remaining: {len(args)}")
+                # Fill remaining with defaults
+                while len(tpg_params) < 5:
+                    tpg_params.append(None)
+            
+            # Assign in correct order matching webui ctrls order with defaults
+            self.tpg_enabled = tpg_params[0] if tpg_params[0] is not None else False
+            self.tpg_scale = tpg_params[1] if tpg_params[1] is not None else 3.0
+            self.tpg_applied_layers = tpg_params[2] if tpg_params[2] is not None else ['mid', 'up']
+            self.tpg_shuffle_strength = tpg_params[3] if tpg_params[3] is not None else 1.0
+            self.tpg_adaptive_strength = tpg_params[4] if tpg_params[4] is not None else True
         
         print(f"[DEBUG] TPG params: enabled={self.tpg_enabled}, scale={self.tpg_scale}, layers={self.tpg_applied_layers}")
 
