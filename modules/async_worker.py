@@ -19,8 +19,24 @@ class AsyncTask:
         self.results = []
         self.last_stop = False
         self.processing = False
-
         self.performance_loras = []
+        
+        # Initialize detail_params with default values to prevent UnboundLocalError
+        self.detail_daemon_enabled = False
+        self.detail_daemon_amount = 0.25
+        self.detail_daemon_start = 0.2
+        self.detail_daemon_end = 0.8
+        self.detail_daemon_bias = 0.71
+        self.detail_daemon_base_multiplier = 0.85
+        self.detail_daemon_start_offset = 0
+        self.detail_daemon_end_offset = -0.15
+        self.detail_daemon_exponent = 1
+        self.detail_daemon_fade = 0
+        self.detail_daemon_mode = 'both'
+        self.detail_daemon_smooth = True
+        
+        # Initialize detail_params list
+        detail_params = [False] * 12  # Initialize with 12 None values
 
         if len(args) == 0:
             return
