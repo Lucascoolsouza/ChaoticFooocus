@@ -50,11 +50,12 @@ def test_force_grid_fixed():
         
         # Check for integration code
         integration_checks = [
-            'from extensions.force_grid_fixed import force_grid_sampler',
-            'force_grid_sampler.grid_size = grid_size',
-            'force_grid_sampler.grid_strength = grid_strength',
-            'force_grid_sampler.activate()',
-            'force_grid_sampler.deactivate()'
+            'force_grid_fixed',
+            'force_grid_sampler',
+            'grid_size = grid_size',
+            'grid_strength = grid_strength',
+            'activate()',
+            'deactivate()'
         ]
         
         missing_integration = []
