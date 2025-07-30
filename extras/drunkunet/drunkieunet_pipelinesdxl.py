@@ -182,23 +182,43 @@ class DRUNKUNetSampler:
                     print(f"[DRUNKUNet] Erro ao aplicar ruído no hook de atenção: {e}")
             return output # Retorna a saída original se não for aplicável ou ocorrer erro
 
-        # Iterar pelas camadas do UNet e registrar hooks nas de Cross-Attention
-        # Você precisa identificar as camadas corretas. 
-        # 'tpg_applied_layers' pode ser usado para filtrar 'mid', 'up', etc.
-        # Este é um exemplo genérico. O nome exato pode variar ('attn2', 'CrossAttention', etc.)
+        # Iterate through UNet layers and register hooks on Cross-Attention layers
         try:
-            # Access the actual UNet model from the ModelPatcher
-            actual_unet = unet.model if hasattr(unet, 'model') else unet
+            # Handle both ModelPatcher and direct model access
+            if hasattr(unet, 'model'):  # This is a ModelPatcher
+                model = unet.model
+                # Get the actual model if it's wrapped in a ModelPatcher
+                if hasattr(model, 'model'):
+                    model = model.model
+                # Handle different model architectures
+                if hasattr(model, 'diffusion_model'):  # SDXL/SD1.5 style
+                    target_model = model.diffusion_model
+                else:
+                    target_model = model
+            else:
+                target_model = unet
+            
             hook_count = 0
-            for name, module in actual_unet.named_modules():
-                 # Exemplo de filtro, ajuste conforme a estrutura real do UNet
-                 if "attn2" in name: 
-                     handle = module.register_forward_hook(attn_noise_hook)
-                     self.hook_handles.append(handle)
-                     hook_count += 1
-            print(f"[DRUNKUNet] Registrados {hook_count} hooks de ruído de atenção.")
+            # Register hooks on attention layers
+            for name, module in target_model.named_modules():
+                # Look for attention layers (adjust these patterns based on your model architecture)
+                if any(x in name for x in ['attn2', 'transformer_blocks', 'attn']):
+                    try:
+                        handle = module.register_forward_hook(attn_noise_hook)
+                        self.hook_handles.append(handle)
+                        hook_count += 1
+                    except Exception as e:
+                        print(f"[DRUNKUNet] Erro ao registrar hook em {name}: {e}")
+                        continue
+            
+            if hook_count > 0:
+                print(f"[DRUNKUNet] Registered {hook_count} attention noise hooks.")
+            else:
+                print("[DRUNKUNet] Warning: No attention layers found for hooking")
+                
         except Exception as e:
-             print(f"[DRUNKUNet] Erro ao registrar hooks de atenção: {e}")
+            print(f"[DRUNKUNet] Error registering attention hooks: {e}")
+            raise  # Re-raise to ensure we know if this fails
 
 
     def _register_dropout_hooks(self, unet):
@@ -225,21 +245,45 @@ class DRUNKUNetSampler:
                      print(f"[DRUNKUNet] Erro ao aplicar dropout no hook: {e}")
              return output
 
-        # Registrar em camadas desejadas (ResNet blocks, Transformer blocks etc.)
-        # Exemplo genérico:
+        # Register hooks on desired layers (ResNet blocks, Transformer blocks, etc.)
         try:
-            # Access the actual UNet model from the ModelPatcher
-            actual_unet = unet.model if hasattr(unet, 'model') else unet
-            for name, module in actual_unet.named_modules():
-                 # Exemplo de filtro, ajuste conforme necessário
-                 if any(layer_type in name for layer_type in self.drunk_applied_layers): # Usa o filtro de camadas
-                     # Pode ser necessário ser mais específico sobre quais subcamadas receberão o hook
-                     if hasattr(module, 'out_channels') or 'transformer' in name.lower(): # Exemplo de condição
-                          handle = module.register_forward_hook(layer_dropout_hook)
-                          self.hook_handles.append(handle)
-            print(f"[DRUNKUNet] Registrados hooks de dropout (se houver camadas correspondentes).")
+            # Handle both ModelPatcher and direct model access
+            if hasattr(unet, 'model'):  # This is a ModelPatcher
+                model = unet.model
+                # Get the actual model if it's wrapped in a ModelPatcher
+                if hasattr(model, 'model'):
+                    model = model.model
+                # Handle different model architectures
+                if hasattr(model, 'diffusion_model'):  # SDXL/SD1.5 style
+                    target_model = model.diffusion_model
+                else:
+                    target_model = model
+            else:
+                target_model = unet
+            
+            hook_count = 0
+            # Register hooks on layers based on the specified layers to apply to
+            for name, module in target_model.named_modules():
+                try:
+                    # Check if this module is in one of the layers we want to apply dropout to
+                    if any(layer_type in name for layer_type in self.drunk_applied_layers):
+                        # Apply to layers that have out_channels or are transformer blocks
+                        if hasattr(module, 'out_channels') or 'transformer' in name.lower():
+                            handle = module.register_forward_hook(layer_dropout_hook)
+                            self.hook_handles.append(handle)
+                            hook_count += 1
+                except Exception as e:
+                    print(f"[DRUNKUNet] Error registering dropout hook on {name}: {e}")
+                    continue
+            
+            if hook_count > 0:
+                print(f"[DRUNKUNet] Registered {hook_count} layer dropout hooks.")
+            else:
+                print("[DRUNKUNet] Warning: No matching layers found for dropout hooks")
+                
         except Exception as e:
-             print(f"[DRUNKUNet] Erro ao registrar hooks de dropout: {e}")
+            print(f"[DRUNKUNet] Error registering dropout hooks: {e}")
+            raise
 
     def _register_cognitive_echo_hooks(self, unet):
         """Registra hooks para adicionar feedback visual (eco cognitivo) entre camadas."""
@@ -270,14 +314,28 @@ class DRUNKUNetSampler:
                     print(f"[DRUNKUNet] Erro ao aplicar eco cognitivo no hook: {e}")
             return output
 
-        # Registrar em camadas estratégicas, por exemplo, após blocos principais ou antes da saída
-            # Este é um exemplo genérico, ajuste conforme a arquitetura do UNet
+        # Register on strategic layers, for example after main blocks or before output
         try:
-            # Access the actual UNet model from the ModelPatcher
-            actual_unet = unet.model if hasattr(unet, 'model') else unet
-            for name, module in actual_unet.named_modules():
-                # Exemplo: aplicar em blocos de saída ou em camadas intermediárias importantes
-                if "output_blocks" in name or "mid_block" in name:
+            # Handle both ModelPatcher and direct model access
+            if hasattr(unet, 'model'):  # This is a ModelPatcher
+                model = unet.model
+                # Get the actual model if it's wrapped in a ModelPatcher
+                if hasattr(model, 'model'):
+                    model = model.model
+                # Handle different model architectures
+                if hasattr(model, 'diffusion_model'):  # SDXL/SD1.5 style
+                    target_model = model.diffusion_model
+                else:
+                    target_model = model
+            else:
+                target_model = unet
+                
+            hook_count = 0
+            # Register on output blocks or important intermediate layers
+            for name, module in target_model.named_modules():
+                try:
+                    # Example: apply to output blocks or important intermediate layers
+                    if any(x in name for x in ['output_blocks', 'mid_block', 'out']):
                     handle = module.register_forward_hook(cognitive_echo_hook)
                     self.hook_handles.append(handle)
             print(f"[DRUNKUNet] Registrados hooks de eco cognitivo (se houver camadas correspondentes).")
