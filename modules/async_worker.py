@@ -21,7 +21,7 @@ class AsyncTask:
         self.processing = False
         self.performance_loras = []
         
-        # Initialize detail_params with default values to prevent UnboundLocalError
+        # Initialize detail daemon parameters with default values
         self.detail_daemon_enabled = False
         self.detail_daemon_amount = 0.25
         self.detail_daemon_start = 0.2
@@ -35,8 +35,8 @@ class AsyncTask:
         self.detail_daemon_mode = 'both'
         self.detail_daemon_smooth = True
         
-        # Initialize detail_params list
-        detail_params = [False] * 12  # Initialize with 12 None values
+        # Initialize detail_params list with default values
+        self._detail_params = [False] * 12
 
         if len(args) == 0:
             return
@@ -123,32 +123,32 @@ class AsyncTask:
         print(f"[DEBUG] Args remaining before detail daemon: {len(args)}")
         
         # Pop all 12 detail daemon parameters
-        detail_params = []
+        self._detail_params = []
         try:
             for i in range(12):
                 param = args.pop()
-                detail_params.append(param)
+                self._detail_params.append(param)
                 print(f"[DEBUG] Popped param {i}: {param} (type: {type(param)})")
         except IndexError as e:
             print(f"[DEBUG] Error popping parameter {i}: {e}")
             print(f"[DEBUG] Args remaining: {len(args)}")
             # Fill remaining with defaults
-            while len(detail_params) < 12:
-                detail_params.append(None)
+            while len(self._detail_params) < 12:
+                self._detail_params.append(None)
         
         # Assign in correct order matching webui ctrls order with defaults
-        self.detail_daemon_enabled = detail_params[0] if detail_params[0] is not None else False
-        self.detail_daemon_amount = detail_params[1] if detail_params[1] is not None else 0.25
-        self.detail_daemon_start = detail_params[2] if detail_params[2] is not None else 0.2
-        self.detail_daemon_end = detail_params[3] if detail_params[3] is not None else 0.8
-        self.detail_daemon_bias = detail_params[4] if detail_params[4] is not None else 0.71
-        self.detail_daemon_base_multiplier = detail_params[5] if detail_params[5] is not None else 0.85
-        self.detail_daemon_start_offset = detail_params[6] if detail_params[6] is not None else 0
-        self.detail_daemon_end_offset = detail_params[7] if detail_params[7] is not None else -0.15
-        self.detail_daemon_exponent = detail_params[8] if detail_params[8] is not None else 1
-        self.detail_daemon_fade = detail_params[9] if detail_params[9] is not None else 0
-        self.detail_daemon_mode = detail_params[10] if detail_params[10] is not None else 'both'
-        self.detail_daemon_smooth = detail_params[11] if detail_params[11] is not None else True
+        self.detail_daemon_enabled = self._detail_params[0] if self._detail_params[0] is not None else False
+        self.detail_daemon_amount = self._detail_params[1] if self._detail_params[1] is not None else 0.25
+        self.detail_daemon_start = self._detail_params[2] if self._detail_params[2] is not None else 0.2
+        self.detail_daemon_end = self._detail_params[3] if self._detail_params[3] is not None else 0.8
+        self.detail_daemon_bias = self._detail_params[4] if self._detail_params[4] is not None else 0.71
+        self.detail_daemon_base_multiplier = self._detail_params[5] if self._detail_params[5] is not None else 0.85
+        self.detail_daemon_start_offset = self._detail_params[6] if self._detail_params[6] is not None else 0
+        self.detail_daemon_end_offset = self._detail_params[7] if self._detail_params[7] is not None else -0.15
+        self.detail_daemon_exponent = self._detail_params[8] if self._detail_params[8] is not None else 1
+        self.detail_daemon_fade = self._detail_params[9] if self._detail_params[9] is not None else 0
+        self.detail_daemon_mode = self._detail_params[10] if self._detail_params[10] is not None else 'both'
+        self.detail_daemon_smooth = self._detail_params[11] if self._detail_params[11] is not None else True
         
         print(f"[DEBUG] Detail daemon params: enabled={self.detail_daemon_enabled}, amount={self.detail_daemon_amount}, mode={self.detail_daemon_mode}")
 
@@ -177,6 +177,35 @@ class AsyncTask:
         self.tpg_adaptive_strength = tpg_params[4] if tpg_params[4] is not None else True
         
         print(f"[DEBUG] TPG params: enabled={self.tpg_enabled}, scale={self.tpg_scale}, layers={self.tpg_applied_layers}")
+
+        # DRUNKUNet parameters (popped in reverse order from webui.py)
+        print(f"[DEBUG] Args remaining before DRUNKUNet: {len(args)}")
+        
+        # Pop all 7 DRUNKUNet parameters
+        drunk_params = []
+        try:
+            for i in range(7):
+                param = args.pop()
+                drunk_params.append(param)
+                print(f"[DEBUG] Popped DRUNKUNet param {i}: {param} (type: {type(param)})")
+        except IndexError as e:
+            print(f"[DEBUG] Error popping DRUNKUNet parameter {i}: {e}")
+            print(f"[DEBUG] Args remaining: {len(args)}")
+            # Fill remaining with defaults
+            while len(drunk_params) < 7:
+                drunk_params.append(None)
+        
+        # Assign in correct order matching webui ctrls order with defaults
+        self.drunk_enabled = drunk_params[0] if drunk_params[0] is not None else False
+        self.drunk_attn_noise = drunk_params[1] if drunk_params[1] is not None else 0.0
+        self.drunk_layer_dropout = drunk_params[2] if drunk_params[2] is not None else 0.0
+        self.drunk_prompt_noise = drunk_params[3] if drunk_params[3] is not None else 0.0
+        self.drunk_cognitive_echo = drunk_params[4] if drunk_params[4] is not None else 0.0
+        self.drunk_dynamic_guidance = drunk_params[5] if drunk_params[5] is not None else False
+        self.drunk_applied_layers = drunk_params[6] if drunk_params[6] is not None else ['mid', 'up']
+        
+        print(f"[DEBUG] DRUNKUNet params: enabled={self.drunk_enabled}, attn_noise={self.drunk_attn_noise}, layer_dropout={self.drunk_layer_dropout}")
+        print(f"[DEBUG] DRUNKUNet params: prompt_noise={self.drunk_prompt_noise}, cognitive_echo={self.drunk_cognitive_echo}, dynamic_guidance={self.drunk_dynamic_guidance}")
 
         # NAG parameters (popped in reverse order from webui.py)
         print(f"[DEBUG] Args remaining before NAG: {len(args)}")
@@ -355,6 +384,7 @@ def worker():
     import extras.face_crop
     import fooocus_version
     from extras.TPG.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
+    from extras.drunkunet.drunkieunet_pipelinesdxl import StableDiffusionXLDRUNKUNetPipeline
 
     from extras.censor import default_censor
     from modules.sdxl_styles import apply_style, get_random_style, fooocus_expansion, apply_arrays, random_style_name
@@ -513,6 +543,14 @@ def worker():
             tpg_applied_layers=async_task.tpg_applied_layers,
             tpg_shuffle_strength=async_task.tpg_shuffle_strength,
             tpg_adaptive_strength=async_task.tpg_adaptive_strength,
+            
+            drunk_enabled=async_task.drunk_enabled,
+            drunk_attn_noise=async_task.drunk_attn_noise,
+            drunk_layer_dropout=async_task.drunk_layer_dropout,
+            drunk_prompt_noise=async_task.drunk_prompt_noise,
+            drunk_cognitive_echo=async_task.drunk_cognitive_echo,
+            drunk_dynamic_guidance=async_task.drunk_dynamic_guidance,
+            drunk_applied_layers=async_task.drunk_applied_layers,
             
             nag_enabled=async_task.nag_enabled,
             nag_scale=async_task.nag_scale,

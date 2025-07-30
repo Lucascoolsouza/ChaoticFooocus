@@ -829,6 +829,93 @@ with shared.gradio_root:
                                              outputs=tpg_status,
                                              queue=False, show_progress=False)
                 
+                with gr.Accordion(label='DRUNKUNet (Drunk UNet)', open=False):
+                    drunk_enabled = gr.Checkbox(label='Enable DRUNKUNet', value=False,
+                                               info='Enable DRUNKUNet for creative perturbations and effects')
+                    drunk_attn_noise = gr.Slider(label='Attention Noise', minimum=0.0, maximum=1.0, step=0.01,
+                                                value=0.0, visible=False,
+                                                info='Add noise to attention maps (higher = more chaos)')
+                    drunk_layer_dropout = gr.Slider(label='Layer Dropout', minimum=0.0, maximum=0.5, step=0.01,
+                                                   value=0.0, visible=False,
+                                                   info='Randomly dropout layers during inference')
+                    drunk_prompt_noise = gr.Slider(label='Prompt Noise', minimum=0.0, maximum=1.0, step=0.01,
+                                                  value=0.0, visible=False,
+                                                  info='Add noise to text embeddings')
+                    drunk_cognitive_echo = gr.Slider(label='Cognitive Echo', minimum=0.0, maximum=1.0, step=0.01,
+                                                    value=0.0, visible=False,
+                                                    info='Add visual feedback between layers')
+                    drunk_dynamic_guidance = gr.Checkbox(label='Dynamic Guidance', value=False, visible=False,
+                                                        info='Use dynamic guidance scale during sampling')
+                    drunk_applied_layers = gr.CheckboxGroup(label='Applied Layers', 
+                                                           choices=['mid', 'up'], 
+                                                           value=['mid', 'up'], visible=False,
+                                                           info='Which UNet layers to apply DRUNKUNet to')
+                    drunk_preset = gr.Dropdown(label='DRUNKUNet Preset', 
+                                              choices=['Custom', 'Light Chaos', 'Moderate Chaos', 'Heavy Chaos'],
+                                              value='Light Chaos', visible=False,
+                                              info='Predefined DRUNKUNet settings for different effect strengths')
+                    drunk_status = gr.Textbox(label='DRUNKUNet Status', interactive=False, 
+                                             value='DRUNKUNet: Disabled', visible=False)
+                    
+                    def update_drunk_visibility(enabled):
+                        return [gr.update(visible=enabled)] * 8
+                    
+                    def update_drunk_preset(preset):
+                        if preset == 'Custom':
+                            return gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+                        
+                        presets = {
+                            'Light Chaos': {'attn_noise': 0.1, 'layer_dropout': 0.05, 'prompt_noise': 0.05, 'cognitive_echo': 0.1, 'dynamic_guidance': False},
+                            'Moderate Chaos': {'attn_noise': 0.2, 'layer_dropout': 0.1, 'prompt_noise': 0.1, 'cognitive_echo': 0.2, 'dynamic_guidance': True},
+                            'Heavy Chaos': {'attn_noise': 0.4, 'layer_dropout': 0.2, 'prompt_noise': 0.2, 'cognitive_echo': 0.3, 'dynamic_guidance': True}
+                        }
+                        
+                        if preset in presets:
+                            p = presets[preset]
+                            return (gr.update(value=p['attn_noise']), 
+                                   gr.update(value=p['layer_dropout']),
+                                   gr.update(value=p['prompt_noise']),
+                                   gr.update(value=p['cognitive_echo']),
+                                   gr.update(value=p['dynamic_guidance']))
+                        
+                        return gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+                    
+                    def update_drunk_status(enabled, attn_noise, layer_dropout, prompt_noise, cognitive_echo, dynamic_guidance):
+                        if not enabled:
+                            return "DRUNKUNet: Disabled"
+                        
+                        effects = []
+                        if attn_noise > 0: effects.append(f"AttnNoise:{attn_noise}")
+                        if layer_dropout > 0: effects.append(f"Dropout:{layer_dropout}")
+                        if prompt_noise > 0: effects.append(f"PromptNoise:{prompt_noise}")
+                        if cognitive_echo > 0: effects.append(f"Echo:{cognitive_echo}")
+                        if dynamic_guidance: effects.append("DynGuidance")
+                        
+                        effects_str = " | ".join(effects) if effects else "No effects"
+                        return f"DRUNKUNet: Enabled | {effects_str}"
+                    
+                    drunk_enabled.change(update_drunk_visibility, 
+                                        inputs=drunk_enabled,
+                                        outputs=[drunk_attn_noise, drunk_layer_dropout, drunk_prompt_noise, 
+                                                drunk_cognitive_echo, drunk_dynamic_guidance, drunk_applied_layers,
+                                                drunk_preset, drunk_status],
+                                        queue=False, show_progress=False)
+                    
+                    drunk_preset.change(update_drunk_preset,
+                                       inputs=drunk_preset,
+                                       outputs=[drunk_attn_noise, drunk_layer_dropout, drunk_prompt_noise, 
+                                               drunk_cognitive_echo, drunk_dynamic_guidance],
+                                       queue=False, show_progress=False)
+                    
+                    # Update status when any DRUNKUNet parameter changes
+                    drunk_inputs = [drunk_enabled, drunk_attn_noise, drunk_layer_dropout, drunk_prompt_noise, 
+                                   drunk_cognitive_echo, drunk_dynamic_guidance]
+                    for input_component in drunk_inputs:
+                        input_component.change(update_drunk_status,
+                                             inputs=drunk_inputs,
+                                             outputs=drunk_status,
+                                             queue=False, show_progress=False)
+                
                 with gr.Accordion(label='Normalized Attention Guidance (NAG)', open=False):
                     nag_enabled = gr.Checkbox(label='Enable NAG', value=False,
                                              info='Enable Normalized Attention Guidance for improved attention control')
@@ -1406,6 +1493,10 @@ with shared.gradio_root:
         
         # TPG controls
         ctrls += [tpg_enabled, tpg_scale, tpg_applied_layers, tpg_shuffle_strength, tpg_adaptive_strength]
+        
+        # DRUNKUNet controls
+        ctrls += [drunk_enabled, drunk_attn_noise, drunk_layer_dropout, drunk_prompt_noise, 
+                  drunk_cognitive_echo, drunk_dynamic_guidance, drunk_applied_layers]
         
         # NAG controls
         ctrls += [nag_enabled, nag_scale, nag_tau, nag_alpha, nag_negative_prompt, nag_end]
