@@ -35,7 +35,7 @@ class AsyncTask:
         self.detail_daemon_mode = 'both'
         self.detail_daemon_smooth = True
         
-        # Initialize detail_params list with default values
+        # Initialize _detail_params list with default values
         self._detail_params = [False] * 12
 
         if len(args) == 0:
