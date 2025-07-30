@@ -118,9 +118,19 @@ class DRUNKUNetSampler:
             # Aplicar ruído no prompt (cond e uncond)
             if self.prompt_noise_strength > 0.0:
                 if isinstance(cond, torch.Tensor):
-                    cond = cond + torch.randn_like(cond) * self.prompt_noise_strength
+                    noise_cond = cond + torch.randn_like(cond) * self.prompt_noise_strength
+                    # Safety check for NaN/Inf values
+                    if not (torch.isnan(noise_cond).any() or torch.isinf(noise_cond).any()):
+                        cond = noise_cond
+                    else:
+                        print(f"[DRUNKUNet] Warning: NaN/Inf detected in prompt noise (cond), skipping")
                 if isinstance(uncond, torch.Tensor):
-                    uncond = uncond + torch.randn_like(uncond) * self.prompt_noise_strength
+                    noise_uncond = uncond + torch.randn_like(uncond) * self.prompt_noise_strength
+                    # Safety check for NaN/Inf values
+                    if not (torch.isnan(noise_uncond).any() or torch.isinf(noise_uncond).any()):
+                        uncond = noise_uncond
+                    else:
+                        print(f"[DRUNKUNet] Warning: NaN/Inf detected in prompt noise (uncond), skipping")
             
             # Chamar a função de amostragem original com o guidance scale (potencialmente) modificado
             # As perturbações internas (attn noise, dropout) são aplicadas pelos hooks
@@ -151,11 +161,21 @@ class DRUNKUNetSampler:
                     # Este é um exemplo genérico. Pode precisar de ajuste.
                     if isinstance(output, torch.Tensor):
                         noise = torch.randn_like(output, device=output.device) * self.attn_noise_strength
-                        return output + noise
+                        result = output + noise
+                        # Safety check for NaN/Inf values
+                        if torch.isnan(result).any() or torch.isinf(result).any():
+                            print(f"[DRUNKUNet] Warning: NaN/Inf detected in attention noise, skipping")
+                            return output
+                        return result
                     elif isinstance(output, tuple) and len(output) > 0 and isinstance(output[0], torch.Tensor):
                          # Se a saída for uma tupla, assumindo que o primeiro elemento é o attn_map relevante
                          noise = torch.randn_like(output[0], device=output[0].device) * self.attn_noise_strength
-                         modified_output = (output[0] + noise,) + output[1:]
+                         result_tensor = output[0] + noise
+                         # Safety check for NaN/Inf values
+                         if torch.isnan(result_tensor).any() or torch.isinf(result_tensor).any():
+                             print(f"[DRUNKUNet] Warning: NaN/Inf detected in attention noise, skipping")
+                             return output
+                         modified_output = (result_tensor,) + output[1:]
                          return modified_output
                     # Adicione mais condições se a estrutura for diferente
                 except Exception as e:
@@ -169,12 +189,14 @@ class DRUNKUNetSampler:
         try:
             # Access the actual UNet model from the ModelPatcher
             actual_unet = unet.model if hasattr(unet, 'model') else unet
+            hook_count = 0
             for name, module in actual_unet.named_modules():
                  # Exemplo de filtro, ajuste conforme a estrutura real do UNet
                  if "attn2" in name: 
                      handle = module.register_forward_hook(attn_noise_hook)
                      self.hook_handles.append(handle)
-            print(f"[DRUNKUNet] Registrados {len(self.hook_handles)} hooks de ruído de atenção.")
+                     hook_count += 1
+            print(f"[DRUNKUNet] Registrados {hook_count} hooks de ruído de atenção.")
         except Exception as e:
              print(f"[DRUNKUNet] Erro ao registrar hooks de atenção: {e}")
 
@@ -192,7 +214,12 @@ class DRUNKUNetSampler:
                      if isinstance(output, torch.Tensor) and random.random() < self.layer_dropout_prob:
                           # Aplica dropout manualmente
                           dropout_mask = torch.rand_like(output, device=output.device) > self.layer_dropout_prob
-                          return output * dropout_mask / (1 - self.layer_dropout_prob) # Escala para compensar
+                          result = output * dropout_mask / (1 - self.layer_dropout_prob) # Escala para compensar
+                          # Safety check for NaN/Inf values
+                          if torch.isnan(result).any() or torch.isinf(result).any():
+                              print(f"[DRUNKUNet] Warning: NaN/Inf detected in layer dropout, skipping")
+                              return output
+                          return result
                      # Pode ser aplicado a diferentes tipos de saída (tuplas etc.)
                  except Exception as e:
                      print(f"[DRUNKUNet] Erro ao aplicar dropout no hook: {e}")
@@ -201,7 +228,9 @@ class DRUNKUNetSampler:
         # Registrar em camadas desejadas (ResNet blocks, Transformer blocks etc.)
         # Exemplo genérico:
         try:
-            for name, module in unet.named_modules():
+            # Access the actual UNet model from the ModelPatcher
+            actual_unet = unet.model if hasattr(unet, 'model') else unet
+            for name, module in actual_unet.named_modules():
                  # Exemplo de filtro, ajuste conforme necessário
                  if any(layer_type in name for layer_type in self.drunk_applied_layers): # Usa o filtro de camadas
                      # Pode ser necessário ser mais específico sobre quais subcamadas receberão o hook
@@ -219,11 +248,22 @@ class DRUNKUNetSampler:
                 try:
                     if isinstance(output, torch.Tensor):
                         if self.global_residual_memory is not None and self.global_residual_memory.shape == output.shape:
-                            output = output + self.global_residual_memory * self.cognitive_echo_strength
+                            result = output + self.global_residual_memory * self.cognitive_echo_strength
+                            # Safety check for NaN/Inf values
+                            if torch.isnan(result).any() or torch.isinf(result).any():
+                                print(f"[DRUNKUNet] Warning: NaN/Inf detected in cognitive echo, skipping")
+                                self.global_residual_memory = output.detach().clone()
+                                return output
+                            output = result
                         self.global_residual_memory = output.detach().clone()
                     elif isinstance(output, tuple) and len(output) > 0 and isinstance(output[0], torch.Tensor):
                         if self.global_residual_memory is not None and self.global_residual_memory.shape == output[0].shape:
                             modified_output_tensor = output[0] + self.global_residual_memory * self.cognitive_echo_strength
+                            # Safety check for NaN/Inf values
+                            if torch.isnan(modified_output_tensor).any() or torch.isinf(modified_output_tensor).any():
+                                print(f"[DRUNKUNet] Warning: NaN/Inf detected in cognitive echo, skipping")
+                                self.global_residual_memory = output[0].detach().clone()
+                                return output
                             output = (modified_output_tensor,) + output[1:]
                         self.global_residual_memory = output[0].detach().clone()
                 except Exception as e:
