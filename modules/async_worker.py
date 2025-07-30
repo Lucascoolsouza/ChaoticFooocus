@@ -226,36 +226,6 @@ class AsyncTask:
         
         print(f"[DEBUG] Disco params: enabled={self.disco_enabled}, scale={self.disco_scale}, preset={self.disco_preset}, clip_model={self.disco_clip_model}")
 
-        # Drunk UNet parameters (popped in reverse order from webui.py)
-        print(f"[DEBUG] Args remaining before Drunk UNet: {len(args)}")
-        
-        # Pop all 9 Drunk UNet parameters
-        drunk_params = []
-        try:
-            for i in range(9):
-                param = args.pop()
-                drunk_params.append(param)
-                print(f"[DEBUG] Popped Drunk UNet param {i}: {param} (type: {type(param)})")
-        except IndexError as e:
-            print(f"[DEBUG] Error popping Drunk UNet parameter {i}: {e}")
-            print(f"[DEBUG] Args remaining: {len(args)}")
-            # Fill remaining with defaults
-            while len(drunk_params) < 9:
-                drunk_params.append(None)
-        
-        # Assign in correct order matching webui ctrls order with defaults
-        self.drunk_enabled = drunk_params[0] if drunk_params[0] is not None else False
-        self.drunk_attn_noise_strength = drunk_params[1] if drunk_params[1] is not None else 0.0
-        self.drunk_layer_dropout_prob = drunk_params[2] if drunk_params[2] is not None else 0.0
-        self.drunk_prompt_noise_strength = drunk_params[3] if drunk_params[3] is not None else 0.0
-        self.drunk_cognitive_echo_strength = drunk_params[4] if drunk_params[4] is not None else 0.0
-        self.drunk_dynamic_guidance_preset = drunk_params[5] if drunk_params[5] is not None else 'None'
-        self.drunk_dynamic_guidance_base = drunk_params[6] if drunk_params[6] is not None else 7.0
-        self.drunk_dynamic_guidance_amplitude = drunk_params[7] if drunk_params[7] is not None else 2.0
-        self.drunk_dynamic_guidance_frequency = drunk_params[8] if drunk_params[8] is not None else 0.1
-        
-        print(f"[DEBUG] Drunk UNet params: enabled={self.drunk_enabled}, attn_noise={self.drunk_attn_noise_strength}, prompt_noise={self.drunk_prompt_noise_strength}, echo={self.drunk_cognitive_echo_strength}, dynamic_preset={self.drunk_dynamic_guidance_preset}")
-
 
 
         self.cn_tasks = {x: [] for x in ip_list}
@@ -369,7 +339,6 @@ def worker():
     import extras.face_crop
     import fooocus_version
     from extras.TPG.pipeline_sdxl_tpg import StableDiffusionXLTPGPipeline
-    from extras.drunkunet.drunk_unet_pipelinesdxl import drunkunet_sampler
 
     from extras.censor import default_censor
     from modules.sdxl_styles import apply_style, get_random_style, fooocus_expansion, apply_arrays, random_style_name
@@ -1429,41 +1398,6 @@ def worker():
 
         apply_patch_settings(async_task)
 
-        # Activate DRUNKUNet if enabled
-        if async_task.drunk_enabled:
-            print(f"[DRUNKUNet] Activating DRUNKUNet with parameters:")
-            print(f"  - Attn Noise Strength: {async_task.drunk_attn_noise_strength}")
-            print(f"  - Layer Dropout Prob: {async_task.drunk_layer_dropout_prob}")
-            print(f"  - Prompt Noise Strength: {async_task.drunk_prompt_noise_strength}")
-            print(f"  - Cognitive Echo Strength: {async_task.drunk_cognitive_echo_strength}")
-            print(f"  - Dynamic Guidance Preset: {async_task.drunk_dynamic_guidance_preset}")
-
-            dynamic_guidance_params = None
-            if async_task.drunk_dynamic_guidance_preset == 'Custom':
-                dynamic_guidance_params = {
-                    'base': async_task.drunk_dynamic_guidance_base,
-                    'amplitude': async_task.drunk_dynamic_guidance_amplitude,
-                    'frequency': async_task.drunk_dynamic_guidance_frequency
-                }
-            elif async_task.drunk_dynamic_guidance_preset == 'Subtle Wave':
-                dynamic_guidance_params = {'base': 7.0, 'amplitude': 1.0, 'frequency': 0.05}
-            elif async_task.drunk_dynamic_guidance_preset == 'Strong Wave':
-                dynamic_guidance_params = {'base': 10.0, 'amplitude': 5.0, 'frequency': 0.1}
-            elif async_task.drunk_dynamic_guidance_preset == 'Random':
-                # Random values for dynamic guidance
-                dynamic_guidance_params = {
-                    'base': random.uniform(5.0, 15.0),
-                    'amplitude': random.uniform(1.0, 7.0),
-                    'frequency': random.uniform(0.01, 0.5)
-                }
-
-            drunkunet_sampler.attn_noise_strength = async_task.drunk_attn_noise_strength
-            drunkunet_sampler.layer_dropout_prob = async_task.drunk_layer_dropout_prob
-            drunkunet_sampler.prompt_noise_strength = async_task.drunk_prompt_noise_strength
-            drunkunet_sampler.cognitive_echo_strength = async_task.drunk_cognitive_echo_strength
-            drunkunet_sampler.dynamic_guidance_params = dynamic_guidance_params
-            drunkunet_sampler.activate(pipeline.final_unet)
-
         print(f'[Parameters] CFG = {async_task.cfg_scale}')
 
         initial_latent = None
@@ -1855,9 +1789,6 @@ def worker():
             finally:
                 if pid in modules.patch.patch_settings:
                     del modules.patch.patch_settings[pid]
-                # Deactivate DRUNKUNet if it was active
-                if drunkunet_sampler.is_active:
-                    drunkunet_sampler.deactivate()
     pass
 
 

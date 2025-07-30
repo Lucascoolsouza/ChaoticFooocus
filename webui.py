@@ -902,102 +902,6 @@ with shared.gradio_root:
                                              outputs=nag_status,
                                              queue=False, show_progress=False)
                 
-                with gr.Accordion(label='Drunk UNet (Psychedelic UNet Effects)', open=False):
-                    drunk_enabled = gr.Checkbox(label='Enable Drunk UNet', value=False,
-                                               info='Enable various perturbations to the UNet for psychedelic effects')
-                    drunk_attn_noise_strength = gr.Slider(label='Attention Noise Strength', minimum=0.0, maximum=1.0, step=0.01,
-                                                         value=0.0, visible=False,
-                                                         info='Strength of noise added to attention maps (0.0 = disabled)')
-                    drunk_layer_dropout_prob = gr.Slider(label='Layer Dropout Probability', minimum=0.0, maximum=0.5, step=0.01,
-                                                        value=0.0, visible=False,
-                                                        info='Probability of randomly dropping out UNet layers (0.0 = disabled)')
-                    drunk_prompt_noise_strength = gr.Slider(label='Prompt Noise Strength', minimum=0.0, maximum=0.1, step=0.001,
-                                                           value=0.0, visible=False,
-                                                           info='Strength of noise added to prompt embeddings (0.0 = disabled)')
-                    drunk_cognitive_echo_strength = gr.Slider(label='Cognitive Echo Strength', minimum=0.0, maximum=0.5, step=0.01,
-                                                              value=0.0, visible=False,
-                                                              info='Strength of re-injecting previous layer output (0.0 = disabled)')
-                    drunk_dynamic_guidance_preset = gr.Dropdown(label='Dynamic Guidance Preset', 
-                                                                choices=['Custom', 'None', 'Subtle Wave', 'Strong Wave', 'Random'],
-                                                                value='None', visible=False,
-                                                                info='Predefined settings for dynamic guidance scale')
-                    drunk_dynamic_guidance_base = gr.Slider(label='Dynamic Guidance Base', minimum=1.0, maximum=20.0, step=0.1,
-                                                           value=7.0, visible=False,
-                                                           info='Base guidance scale for dynamic guidance')
-                    drunk_dynamic_guidance_amplitude = gr.Slider(label='Dynamic Guidance Amplitude', minimum=0.0, maximum=10.0, step=0.1,
-                                                                value=2.0, visible=False,
-                                                                info='Amplitude of dynamic guidance variation')
-                    drunk_dynamic_guidance_frequency = gr.Slider(label='Dynamic Guidance Frequency', minimum=0.0, maximum=1.0, step=0.01,
-                                                                value=0.1, visible=False,
-                                                                info='Frequency of dynamic guidance variation')
-                    drunk_status = gr.Textbox(label='Drunk UNet Status', interactive=False, 
-                                             value='Drunk UNet: Disabled', visible=False)
-                    
-                    def update_drunk_visibility(enabled):
-                        return [gr.update(visible=enabled)] * 9
-                    
-                    def update_drunk_preset(preset):
-                        if preset == 'Custom':
-                            return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
-                        
-                        presets = {
-                            'None': {'base': 7.0, 'amplitude': 0.0, 'frequency': 0.0},
-                            'Subtle Wave': {'base': 7.0, 'amplitude': 1.0, 'frequency': 0.05},
-                            'Strong Wave': {'base': 10.0, 'amplitude': 5.0, 'frequency': 0.1},
-                            'Random': {'base': 7.0, 'amplitude': 3.0, 'frequency': 0.2} # These will be randomized in backend
-                        }
-                        
-                        if preset in presets:
-                            p = presets[preset]
-                            return (gr.update(value=p['base']), 
-                                   gr.update(value=p['amplitude']),
-                                   gr.update(value=p['frequency']),
-                                   gr.update(), gr.update(), gr.update(), gr.update()) # Reset other sliders
-                        
-                        return gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
-                    
-                    def update_drunk_status(enabled, attn_noise, dropout_prob, prompt_noise, echo_strength, dynamic_preset, dynamic_base, dynamic_amplitude, dynamic_frequency):
-                        if not enabled:
-                            return "Drunk UNet: Disabled"
-                        
-                        status_parts = []
-                        if attn_noise > 0: status_parts.append(f"Attn Noise: {attn_noise}")
-                        if dropout_prob > 0: status_parts.append(f"Dropout: {dropout_prob}")
-                        if prompt_noise > 0: status_parts.append(f"Prompt Noise: {prompt_noise}")
-                        if echo_strength > 0: status_parts.append(f"Echo: {echo_strength}")
-                        if dynamic_preset != 'None': status_parts.append(f"Dynamic Guidance: {dynamic_preset}")
-                        
-                        if not status_parts:
-                            return "Drunk UNet: Enabled (No effects active)"
-                        
-                        return "Drunk UNet: Enabled | " + " | ".join(status_parts)
-                    
-                    drunk_enabled.change(update_drunk_visibility, 
-                                        inputs=drunk_enabled,
-                                        outputs=[drunk_attn_noise_strength, drunk_layer_dropout_prob, drunk_prompt_noise_strength, 
-                                                drunk_cognitive_echo_strength, drunk_dynamic_guidance_preset, 
-                                                drunk_dynamic_guidance_base, drunk_dynamic_guidance_amplitude, 
-                                                drunk_dynamic_guidance_frequency, drunk_status],
-                                        queue=False, show_progress=False)
-                    
-                    drunk_dynamic_guidance_preset.change(update_drunk_preset,
-                                                        inputs=drunk_dynamic_guidance_preset,
-                                                        outputs=[drunk_dynamic_guidance_base, drunk_dynamic_guidance_amplitude, 
-                                                                 drunk_dynamic_guidance_frequency, drunk_attn_noise_strength, 
-                                                                 drunk_layer_dropout_prob, drunk_prompt_noise_strength, 
-                                                                 drunk_cognitive_echo_strength],
-                                                        queue=False, show_progress=False)
-                    
-                    drunk_inputs = [drunk_enabled, drunk_attn_noise_strength, drunk_layer_dropout_prob, 
-                                    drunk_prompt_noise_strength, drunk_cognitive_echo_strength, 
-                                    drunk_dynamic_guidance_preset, drunk_dynamic_guidance_base, 
-                                    drunk_dynamic_guidance_amplitude, drunk_dynamic_guidance_frequency]
-                    for input_component in drunk_inputs:
-                        input_component.change(update_drunk_status,
-                                             inputs=drunk_inputs,
-                                             outputs=drunk_status,
-                                             queue=False, show_progress=False)
-                
                 with gr.Accordion(label='Disco Diffusion (Psychedelic Effects)', open=False):
                     disco_enabled = gr.Checkbox(label='Enable Disco Diffusion', value=False,
                                                info='Enable psychedelic disco diffusion effects')
@@ -1386,8 +1290,7 @@ with shared.gradio_root:
                              base_model, refiner_model, refiner_switch, sampler_name, scheduler_name, vae_name,
                              seed_random, image_seed, inpaint_engine, inpaint_engine_state,
                              inpaint_mode] + enhance_inpaint_mode_ctrls + [generate_button,
-                             load_parameter_button] + freeu_ctrls + lora_ctrls + \
-                             [drunk_enabled, drunk_attn_noise_strength, drunk_layer_dropout_prob, drunk_prompt_noise_strength, drunk_cognitive_echo_strength, drunk_dynamic_guidance_preset, drunk_dynamic_guidance_base, drunk_dynamic_guidance_amplitude, drunk_dynamic_guidance_frequency]
+                             load_parameter_button] + freeu_ctrls + lora_ctrls
 
         if not args_manager.args.disable_preset_selection:
             def preset_selection_change(preset, is_generating, inpaint_mode):
@@ -1506,9 +1409,6 @@ with shared.gradio_root:
         
         # NAG controls
         ctrls += [nag_enabled, nag_scale, nag_tau, nag_alpha, nag_negative_prompt, nag_end]
-        
-        # Drunk UNet controls
-        ctrls += [drunk_enabled, drunk_attn_noise_strength, drunk_layer_dropout_prob, drunk_prompt_noise_strength, drunk_cognitive_echo_strength, drunk_dynamic_guidance_preset, drunk_dynamic_guidance_base, drunk_dynamic_guidance_amplitude, drunk_dynamic_guidance_frequency]
         
         # Disco Diffusion controls
         ctrls += [disco_enabled, disco_scale, disco_preset, disco_transforms, disco_seed,

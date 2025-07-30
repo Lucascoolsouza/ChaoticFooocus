@@ -811,62 +811,6 @@ default_disco_range_scale = get_config_item_or_set_default(
     expected_type=numbers.Number
 )
 
-# Drunk UNet defaults
-default_drunk_enabled = get_config_item_or_set_default(
-    key='default_drunk_enabled',
-    default_value=False,
-    validator=lambda x: isinstance(x, bool),
-    expected_type=bool
-)
-default_drunk_attn_noise_strength = get_config_item_or_set_default(
-    key='default_drunk_attn_noise_strength',
-    default_value=0.0,
-    validator=lambda x: isinstance(x, numbers.Number) and 0.0 <= x <= 1.0,
-    expected_type=numbers.Number
-)
-default_drunk_layer_dropout_prob = get_config_item_or_set_default(
-    key='default_drunk_layer_dropout_prob',
-    default_value=0.0,
-    validator=lambda x: isinstance(x, numbers.Number) and 0.0 <= x <= 0.5,
-    expected_type=numbers.Number
-)
-default_drunk_prompt_noise_strength = get_config_item_or_set_default(
-    key='default_drunk_prompt_noise_strength',
-    default_value=0.0,
-    validator=lambda x: isinstance(x, numbers.Number) and 0.0 <= x <= 0.1,
-    expected_type=numbers.Number
-)
-default_drunk_cognitive_echo_strength = get_config_item_or_set_default(
-    key='default_drunk_cognitive_echo_strength',
-    default_value=0.0,
-    validator=lambda x: isinstance(x, numbers.Number) and 0.0 <= x <= 0.5,
-    expected_type=numbers.Number
-)
-default_drunk_dynamic_guidance_preset = get_config_item_or_set_default(
-    key='default_drunk_dynamic_guidance_preset',
-    default_value='None',
-    validator=lambda x: x in ['Custom', 'None', 'Subtle Wave', 'Strong Wave', 'Random'],
-    expected_type=str
-)
-default_drunk_dynamic_guidance_base = get_config_item_or_set_default(
-    key='default_drunk_dynamic_guidance_base',
-    default_value=7.0,
-    validator=lambda x: isinstance(x, numbers.Number) and 1.0 <= x <= 20.0,
-    expected_type=numbers.Number
-)
-default_drunk_dynamic_guidance_amplitude = get_config_item_or_set_default(
-    key='default_drunk_dynamic_guidance_amplitude',
-    default_value=2.0,
-    validator=lambda x: isinstance(x, numbers.Number) and 0.0 <= x <= 10.0,
-    expected_type=numbers.Number
-)
-default_drunk_dynamic_guidance_frequency = get_config_item_or_set_default(
-    key='default_drunk_dynamic_guidance_frequency',
-    default_value=0.1,
-    validator=lambda x: isinstance(x, numbers.Number) and 0.0 <= x <= 1.0,
-    expected_type=numbers.Number
-)
-
 config_dict["default_loras"] = default_loras = default_loras[:default_max_lora_number] + [[True, 'None', 1.0] for _ in range(default_max_lora_number - len(default_loras))]
 
 # mapping config to meta parameter
