@@ -203,10 +203,6 @@ class DRUNKUNetSampler:
 
     def _register_dropout_hooks(self, unet):
         """Placeholder para hooks de dropout em camadas."""
-        print(f"[DRUNKUNet DEBUG] _register_dropout_hooks called with unet type: {type(unet)}")
-        print(f"[DRUNKUNet DEBUG] unet has 'model' attribute: {hasattr(unet, 'model')}")
-        if hasattr(unet, 'model'):
-            print(f"[DRUNKUNet DEBUG] unet.model type: {type(unet.model)}")
         # Esta é uma ideia mais complexa. Dropout normalmente é aplicado durante treinamento.
         # Para aplicar durante inferência, você poderia adicionar um hook que zera aleatoriamente
         # alguns elementos da entrada ou saída de uma camada com uma certa probabilidade.
