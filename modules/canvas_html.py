@@ -300,36 +300,58 @@ def get_canvas_html_with_dark_theme():
                 script.onload = function() {
                     console.log('Canvas script loaded, creating canvas instance...');
                     setTimeout(() => {
-                        if (document.getElementById('fooocus-canvas') && !window.fooocusCanvas) {
-                            window.fooocusCanvas = new FooocusCanvas('fooocus-canvas', 'canvas-controls');
-                            window.fooocusCanvas.loadCanvas();
-                            
-                            // Apply pending tool selection
-                            if (window.pendingCanvasTool) {
-                                window.fooocusCanvas.setTool(window.pendingCanvasTool);
-                                delete window.pendingCanvasTool;
-                            }
-                            
-                            console.log('Canvas initialized successfully!');
-                        }
+                        createCanvasInstance();
                     }, 100);
                 };
                 script.onerror = function() {
-                    console.error('Failed to load canvas script');
+                    console.error('Failed to load canvas script, creating fallback...');
+                    createFallbackCanvas();
                 };
                 document.head.appendChild(script);
             } else if (document.getElementById('fooocus-canvas') && !window.fooocusCanvas) {
                 console.log('Canvas class exists, creating instance...');
-                window.fooocusCanvas = new FooocusCanvas('fooocus-canvas', 'canvas-controls');
-                window.fooocusCanvas.loadCanvas();
-                
-                // Apply pending tool selection
-                if (window.pendingCanvasTool) {
-                    window.fooocusCanvas.setTool(window.pendingCanvasTool);
-                    delete window.pendingCanvasTool;
+                createCanvasInstance();
+            }
+        }
+        
+        function createCanvasInstance() {
+            if (document.getElementById('fooocus-canvas') && !window.fooocusCanvas) {
+                try {
+                    window.fooocusCanvas = new FooocusCanvas('fooocus-canvas', 'canvas-controls');
+                    
+                    // Apply pending tool selection
+                    if (window.pendingCanvasTool) {
+                        window.fooocusCanvas.setTool(window.pendingCanvasTool);
+                        delete window.pendingCanvasTool;
+                    }
+                    
+                    // Add any pending images
+                    if (window.pendingCanvasImages && window.pendingCanvasImages.length > 0) {
+                        console.log('Adding pending images:', window.pendingCanvasImages.length);
+                        window.pendingCanvasImages.forEach(img => {
+                            window.fooocusCanvas.addImage(img.path, img.prompt, img.metadata);
+                        });
+                        window.pendingCanvasImages = [];
+                    }
+                    
+                    // Set up file input handler
+                    const fileInput = document.getElementById('canvas-file-input');
+                    if (fileInput) {
+                        fileInput.addEventListener('change', function(e) {
+                            Array.from(e.target.files).forEach(file => {
+                                if (file.type.startsWith('image/')) {
+                                    window.fooocusCanvas.addImageFromFile(file, 400, 300);
+                                }
+                            });
+                            e.target.value = ''; // Reset input
+                        });
+                    }
+                    
+                    console.log('Canvas initialized successfully!');
+                } catch (error) {
+                    console.error('Failed to create canvas instance:', error);
+                    createFallbackCanvas();
                 }
-                
-                console.log('Canvas initialized successfully!');
             }
             
             // Set up status updates
@@ -341,11 +363,102 @@ def get_canvas_html_with_dark_theme():
                         const selectedEl = document.getElementById('canvas-selected-count');
                         
                         if (zoomEl) zoomEl.textContent = `Zoom: ${Math.round(window.fooocusCanvas.zoom * 100)}%`;
-                        if (imageEl) imageEl.textContent = `Images: ${window.fooocusCanvas.images.size}`;
-                        if (selectedEl) selectedEl.textContent = `Selected: ${window.fooocusCanvas.selectedImages.size}`;
+                        if (imageEl) imageEl.textContent = `Images: ${window.fooocusCanvas.images ? window.fooocusCanvas.images.size : 0}`;
+                        if (selectedEl) selectedEl.textContent = `Selected: ${window.fooocusCanvas.selectedImages ? window.fooocusCanvas.selectedImages.size : 0}`;
                     }
                 }, 1000);
             }
+        }
+        
+        function createFallbackCanvas() {
+            console.log('Creating fallback canvas implementation...');
+            
+            // Create a minimal canvas implementation
+            window.fooocusCanvas = {
+                images: new Map(),
+                selectedImages: new Set(),
+                zoom: 1,
+                panX: 0,
+                panY: 0,
+                
+                addImage: function(imagePath, prompt, metadata) {
+                    console.log('Fallback: Adding image', imagePath, prompt);
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.getElementById('fooocus-canvas');
+                        const ctx = canvas.getContext('2d');
+                        
+                        // Simple positioning
+                        const x = (this.images.size % 3) * 270 + 10;
+                        const y = Math.floor(this.images.size / 3) * 270 + 10;
+                        
+                        // Draw image
+                        ctx.drawImage(img, x, y, 256, 256);
+                        
+                        // Store image data
+                        this.images.set(this.images.size + 1, {
+                            id: this.images.size + 1,
+                            element: img,
+                            x: x,
+                            y: y,
+                            width: 256,
+                            height: 256,
+                            prompt: prompt,
+                            metadata: metadata
+                        });
+                        
+                        console.log('Fallback: Image added successfully');
+                    };
+                    img.onerror = () => {
+                        console.error('Fallback: Failed to load image:', imagePath);
+                    };
+                    img.src = imagePath;
+                },
+                
+                setTool: function(tool) {
+                    console.log('Fallback: Setting tool to', tool);
+                },
+                
+                fitToScreen: function() {
+                    console.log('Fallback: Fit to screen');
+                },
+                
+                clear: function() {
+                    console.log('Fallback: Clearing canvas');
+                    const canvas = document.getElementById('fooocus-canvas');
+                    const ctx = canvas.getContext('2d');
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    this.images.clear();
+                    this.selectedImages.clear();
+                },
+                
+                saveCanvas: function() {
+                    console.log('Fallback: Saving canvas');
+                },
+                
+                addImageFromFile: function(file, x, y) {
+                    console.log('Fallback: Adding image from file', file.name);
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        this.addImage(e.target.result, `Imported: ${file.name}`, {
+                            source: 'file',
+                            filename: file.name
+                        });
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+            
+            // Add any pending images
+            if (window.pendingCanvasImages && window.pendingCanvasImages.length > 0) {
+                console.log('Fallback: Adding pending images:', window.pendingCanvasImages.length);
+                window.pendingCanvasImages.forEach(img => {
+                    window.fooocusCanvas.addImage(img.path, img.prompt, img.metadata);
+                });
+                window.pendingCanvasImages = [];
+            }
+            
+            console.log('Fallback canvas created successfully!');
         }
         
         // Initialize immediately and on DOM ready

@@ -72,198 +72,8 @@ class CanvasInterface:
     
     def get_canvas_html(self):
         """Generate the HTML for the canvas interface"""
-        return f"""
-        <div class="canvas-container">
-            <canvas id="fooocus-canvas" width="800" height="600"></canvas>
-            
-            <div class="canvas-controls" id="canvas-controls">
-                <div class="canvas-toolbar-group">
-                    <button class="canvas-tool-btn active" data-tool="select" onclick="window.fooocusCanvas?.setTool('select')" title="Select Tool">
-                        🔍
-                    </button>
-                    <button class="canvas-tool-btn" data-tool="frame" onclick="window.fooocusCanvas?.setTool('frame')" title="Frame Tool">
-                        🖼️
-                    </button>
-                    <button class="canvas-tool-btn" data-tool="outpaint" onclick="window.fooocusCanvas?.setTool('outpaint')" title="Outpaint Tool">
-                        🎨
-                    </button>
-                </div>
-                
-                <div class="canvas-toolbar-group">
-                    <button class="canvas-control-btn" onclick="window.fooocusCanvas?.fitToScreen()">
-                        📐 Fit Screen
-                    </button>
-                    <button class="canvas-control-btn" onclick="window.fooocusCanvas?.clear()">
-                        🗑️ Clear
-                    </button>
-                    <button class="canvas-control-btn" onclick="window.fooocusCanvas?.saveCanvas()">
-                        💾 Save
-                    </button>
-                    <button class="canvas-control-btn" onclick="document.getElementById('canvas-file-input').click()" title="Import images from files">
-                        📁 Import
-                    </button>
-                </div>
-            </div>
-            
-            <div class="canvas-zoom-controls">
-                <button class="zoom-btn" onclick="window.fooocusCanvas?.zoom *= 1.2; window.fooocusCanvas?.render()">+</button>
-                <button class="zoom-btn" onclick="window.fooocusCanvas?.zoom *= 0.8; window.fooocusCanvas?.render()">−</button>
-                <button class="zoom-btn" onclick="window.fooocusCanvas?.fitToScreen()">⌂</button>
-            </div>
-            
-            <div class="canvas-status-bar">
-                <span id="canvas-zoom-level">Zoom: 100%</span>
-                <span id="canvas-image-count">Images: 0</span>
-                <span id="canvas-selected-count">Selected: 0</span>
-                <span style="margin-left: auto; font-size: 11px; opacity: 0.8;">
-                    💡 Drag & drop images or Ctrl+V to paste
-                </span>
-            </div>
-            
-            <div class="canvas-paste-hint" id="canvas-paste-hint" style="display: none;">
-                Press Ctrl+V to paste images from clipboard
-            </div>
-            
-            <!-- Hidden file input for import button -->
-            <input type="file" id="canvas-file-input" multiple accept="image/*" style="display: none;">
-        </div>
-        
-        <script>
-            // Initialize canvas integration
-            if (typeof window.initCanvasIntegration === 'undefined') {{
-                window.initCanvasIntegration = function() {{
-                    // Connect canvas to generation system
-                    window.addImageToCanvas = function(imageData, prompt, metadata) {{
-                        if (window.fooocusCanvas) {{
-                            window.fooocusCanvas.addImage(imageData, prompt, metadata);
-                        }}
-                    }};
-                    
-                    // Connect regeneration to Gradio
-                    window.regenerateWithPrompt = function(prompt, metadata) {{
-                        // Find the prompt input and set it
-                        const promptInput = document.querySelector('#positive_prompt textarea');
-                        if (promptInput) {{
-                            promptInput.value = prompt;
-                            promptInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                        }}
-                        
-                        // Trigger generation
-                        const generateBtn = document.querySelector('#generate_button');
-                        if (generateBtn) {{
-                            generateBtn.click();
-                        }}
-                    }};
-                    
-                    // Connect outpainting to Gradio
-                    window.triggerOutpaint = function(sourceImage, outpaintRect, direction) {{
-                        console.log('Triggering outpaint:', sourceImage, outpaintRect, direction);
-                        
-                        // Set outpaint mode in the interface
-                        const outpaintTab = document.querySelector('#inpaint_tab');
-                        if (outpaintTab) {{
-                            outpaintTab.click();
-                        }}
-                        
-                        // Set outpaint direction
-                        const directionMap = {{
-                            'left': ['Left'],
-                            'right': ['Right'], 
-                            'top': ['Top'],
-                            'bottom': ['Bottom']
-                        }};
-                        
-                        const outpaintSelections = document.querySelector('input[type="checkbox"][value="' + direction.charAt(0).toUpperCase() + direction.slice(1) + '"]');
-                        if (outpaintSelections) {{
-                            outpaintSelections.checked = true;
-                            outpaintSelections.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                        }}
-                        
-                        // Use the source image prompt
-                        const promptInput = document.querySelector('#positive_prompt textarea');
-                        if (promptInput && sourceImage.prompt) {{
-                            promptInput.value = sourceImage.prompt;
-                            promptInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                        }}
-                        
-                        // Trigger generation
-                        const generateBtn = document.querySelector('#generate_button');
-                        if (generateBtn) {{
-                            generateBtn.click();
-                        }}
-                    }};
-                    
-                    // Connect inpainting to Gradio
-                    window.triggerInpaint = function(rect, imageIds) {{
-                        console.log('Triggering inpaint:', rect, imageIds);
-                        
-                        // Switch to inpaint tab
-                        const inpaintTab = document.querySelector('#inpaint_tab');
-                        if (inpaintTab) {{
-                            inpaintTab.click();
-                        }}
-                        
-                        // Trigger generation
-                        const generateBtn = document.querySelector('#generate_button');
-                        if (generateBtn) {{
-                            generateBtn.click();
-                        }}
-                    }};
-                    
-                    // Connect upscaling to Gradio
-                    window.triggerUpscale = function(rect, imageIds) {{
-                        console.log('Triggering upscale:', rect, imageIds);
-                        
-                        // Switch to upscale tab
-                        const uovTab = document.querySelector('#uov_tab');
-                        if (uovTab) {{
-                            uovTab.click();
-                        }}
-                        
-                        // Trigger generation
-                        const generateBtn = document.querySelector('#generate_button');
-                        if (generateBtn) {{
-                            generateBtn.click();
-                        }}
-                    }};
-                    
-                    // Connect general generation to Gradio
-                    window.triggerGeneration = function(rect) {{
-                        console.log('Triggering generation for area:', rect);
-                        
-                        // Trigger generation
-                        const generateBtn = document.querySelector('#generate_button');
-                        if (generateBtn) {{
-                            generateBtn.click();
-                        }}
-                    }};
-                    
-                    // Update status bar
-                    window.updateCanvasStatus = function() {{
-                        if (window.fooocusCanvas) {{
-                            const zoomLevel = document.getElementById('canvas-zoom-level');
-                            const imageCount = document.getElementById('canvas-image-count');
-                            const selectedCount = document.getElementById('canvas-selected-count');
-                            
-                            if (zoomLevel) zoomLevel.textContent = `Zoom: ${{Math.round(window.fooocusCanvas.zoom * 100)}}%`;
-                            if (imageCount) imageCount.textContent = `Images: ${{window.fooocusCanvas.images.size}}`;
-                            if (selectedCount) selectedCount.textContent = `Selected: ${{window.fooocusCanvas.selectedImages.size}}`;
-                        }}
-                    }};
-                    
-                    // Set up periodic status updates
-                    setInterval(window.updateCanvasStatus, 1000);
-                }};
-                
-                // Initialize when DOM is ready
-                if (document.readyState === 'loading') {{
-                    document.addEventListener('DOMContentLoaded', window.initCanvasIntegration);
-                }} else {{
-                    window.initCanvasIntegration();
-                }}
-            }}
-        </script>
-        """
+        # Use the working HTML from canvas_html.py
+        return get_canvas_html_with_dark_theme()
     
     def toggle_canvas_mode(self, current_mode):
         """Toggle between canvas and gallery modes"""
@@ -279,7 +89,7 @@ class CanvasInterface:
     def add_image_to_canvas(self, image_path, prompt, metadata=None):
         """Add a generated image to the canvas"""
         if not self.canvas_mode:
-            return
+            return ""
             
         image_id = self.next_image_id
         self.next_image_id += 1
@@ -293,10 +103,20 @@ class CanvasInterface:
         }
         
         # Return JavaScript to add image to canvas
+        escaped_prompt = prompt.replace("'", "\\'").replace('"', '\\"') if prompt else ""
         return f"""
         <script>
-            if (window.addImageToCanvas) {{
-                window.addImageToCanvas('{image_path}', '{prompt}', {json.dumps(metadata or {})});
+            console.log('Adding image to canvas:', '{image_path}');
+            if (window.fooocusCanvas) {{
+                window.fooocusCanvas.addImage('{image_path}', '{escaped_prompt}', {json.dumps(metadata or {})});
+            }} else {{
+                console.log('Canvas not ready, storing for later...');
+                window.pendingCanvasImages = window.pendingCanvasImages || [];
+                window.pendingCanvasImages.push({{
+                    path: '{image_path}',
+                    prompt: '{escaped_prompt}',
+                    metadata: {json.dumps(metadata or {})}
+                }});
             }}
         </script>
         """
@@ -309,9 +129,65 @@ class CanvasInterface:
         scripts = []
         for image_path in task_results:
             script = self.add_image_to_canvas(image_path, prompt, metadata)
-            scripts.append(script)
+            if script:
+                scripts.append(script)
         
         return "".join(scripts)
+    
+    def get_canvas_integration_script(self):
+        """Get the JavaScript integration script for canvas mode"""
+        return """
+        <script>
+            // Canvas integration functions
+            window.addImageToCanvas = function(imageData, prompt, metadata) {
+                console.log('Adding image to canvas:', imageData, prompt);
+                if (window.fooocusCanvas) {
+                    window.fooocusCanvas.addImage(imageData, prompt, metadata);
+                } else {
+                    console.log('Canvas not ready, storing for later...');
+                    window.pendingCanvasImages = window.pendingCanvasImages || [];
+                    window.pendingCanvasImages.push({
+                        path: imageData,
+                        prompt: prompt,
+                        metadata: metadata
+                    });
+                }
+            };
+            
+            // Connect regeneration to Gradio
+            window.regenerateWithPrompt = function(prompt, metadata) {
+                console.log('Regenerating with prompt:', prompt);
+                const promptInput = document.querySelector('#positive_prompt textarea');
+                if (promptInput) {
+                    promptInput.value = prompt;
+                    promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                
+                const generateBtn = document.querySelector('#generate_button');
+                if (generateBtn) {
+                    generateBtn.click();
+                }
+            };
+            
+            // Update canvas status
+            window.updateCanvasStatus = function() {
+                if (window.fooocusCanvas) {
+                    const zoomLevel = document.getElementById('canvas-zoom-level');
+                    const imageCount = document.getElementById('canvas-image-count');
+                    const selectedCount = document.getElementById('canvas-selected-count');
+                    
+                    if (zoomLevel) zoomLevel.textContent = `Zoom: ${Math.round(window.fooocusCanvas.zoom * 100)}%`;
+                    if (imageCount) imageCount.textContent = `Images: ${window.fooocusCanvas.images ? window.fooocusCanvas.images.size : 0}`;
+                    if (selectedCount) selectedCount.textContent = `Selected: ${window.fooocusCanvas.selectedImages ? window.fooocusCanvas.selectedImages.size : 0}`;
+                }
+            };
+            
+            // Set up periodic status updates
+            if (!window.canvasStatusInterval) {
+                window.canvasStatusInterval = setInterval(window.updateCanvasStatus, 1000);
+            }
+        </script>
+        """
     
     def get_canvas_state(self):
         """Get current canvas state for saving"""
@@ -336,99 +212,174 @@ class CanvasInterface:
     def clear_canvas(self):
         """Clear all images from canvas"""
         self.canvas_images.clear()
-        return """
+        return gr.HTML("""
         <script>
+            console.log('Clearing canvas...');
             if (window.fooocusCanvas) {
-                window.fooocusCanvas.clear();
+                if (confirm('Are you sure you want to clear all images from the canvas?')) {
+                    window.fooocusCanvas.clear();
+                    console.log('Canvas cleared');
+                }
+            } else {
+                console.log('Canvas not ready');
             }
         </script>
-        """
+        """)
     
     def fit_to_screen(self):
         """Fit canvas content to screen"""
-        return """
+        return gr.HTML("""
         <script>
+            console.log('Fitting canvas to screen...');
             if (window.fooocusCanvas) {
                 window.fooocusCanvas.fitToScreen();
+                console.log('Canvas fitted to screen');
+            } else {
+                console.log('Canvas not ready');
             }
         </script>
-        """
+        """)
     
     def export_selected_images(self):
         """Export selected images from canvas"""
-        return """
+        return gr.HTML("""
         <script>
-            if (window.fooocusCanvas && window.fooocusCanvas.selectedImages.size > 0) {
+            console.log('Exporting selected images...');
+            if (window.fooocusCanvas && window.fooocusCanvas.selectedImages && window.fooocusCanvas.selectedImages.size > 0) {
                 // Create download links for selected images
                 window.fooocusCanvas.selectedImages.forEach(id => {
                     const img = window.fooocusCanvas.images.get(id);
-                    if (img) {
+                    if (img && img.element) {
                         const link = document.createElement('a');
                         link.download = `fooocus_canvas_${id}.png`;
                         link.href = img.element.src;
+                        document.body.appendChild(link);
                         link.click();
+                        document.body.removeChild(link);
                     }
                 });
+                console.log('Selected images exported');
+            } else {
+                alert('No images selected for export');
+                console.log('No images selected');
             }
         </script>
-        """
+        """)
     
     def regenerate_selected_images(self):
         """Regenerate selected images with their original prompts"""
-        return """
+        return gr.HTML("""
         <script>
-            if (window.fooocusCanvas && window.fooocusCanvas.selectedImages.size > 0) {
+            console.log('Regenerating selected images...');
+            if (window.fooocusCanvas && window.fooocusCanvas.selectedImages && window.fooocusCanvas.selectedImages.size > 0) {
                 // Get first selected image and regenerate with its prompt
                 const firstId = Array.from(window.fooocusCanvas.selectedImages)[0];
                 const img = window.fooocusCanvas.images.get(firstId);
                 if (img && window.regenerateWithPrompt) {
                     window.regenerateWithPrompt(img.prompt, img.metadata);
+                    console.log('Regeneration triggered with prompt:', img.prompt);
+                } else {
+                    console.log('No regeneration function available');
                 }
+            } else {
+                alert('No images selected for regeneration');
+                console.log('No images selected');
             }
         </script>
-        """
+        """)
     
     def delete_selected_images(self):
         """Delete selected images from canvas"""
-        return """
+        return gr.HTML("""
         <script>
-            if (window.fooocusCanvas) {
-                window.fooocusCanvas.deleteSelectedImages();
+            console.log('Deleting selected images...');
+            if (window.fooocusCanvas && window.fooocusCanvas.selectedImages && window.fooocusCanvas.selectedImages.size > 0) {
+                if (confirm('Are you sure you want to delete the selected images?')) {
+                    if (window.fooocusCanvas.deleteSelectedImages) {
+                        window.fooocusCanvas.deleteSelectedImages();
+                        console.log('Selected images deleted');
+                    } else {
+                        // Fallback deletion
+                        window.fooocusCanvas.selectedImages.forEach(id => {
+                            window.fooocusCanvas.images.delete(id);
+                        });
+                        window.fooocusCanvas.selectedImages.clear();
+                        if (window.fooocusCanvas.render) {
+                            window.fooocusCanvas.render();
+                        }
+                        console.log('Selected images deleted (fallback)');
+                    }
+                }
+            } else {
+                alert('No images selected for deletion');
+                console.log('No images selected');
             }
         </script>
-        """
+        """)
     
     def select_all_images(self):
         """Select all images on canvas"""
-        return """
+        return gr.HTML("""
         <script>
+            console.log('Selecting all images...');
             if (window.fooocusCanvas) {
-                window.fooocusCanvas.selectAllImages();
+                if (window.fooocusCanvas.selectAllImages) {
+                    window.fooocusCanvas.selectAllImages();
+                } else {
+                    // Fallback selection
+                    window.fooocusCanvas.selectedImages = window.fooocusCanvas.selectedImages || new Set();
+                    window.fooocusCanvas.selectedImages.clear();
+                    if (window.fooocusCanvas.images) {
+                        window.fooocusCanvas.images.forEach((img, id) => {
+                            window.fooocusCanvas.selectedImages.add(id);
+                        });
+                    }
+                    if (window.fooocusCanvas.render) {
+                        window.fooocusCanvas.render();
+                    }
+                }
+                console.log('All images selected');
+            } else {
+                console.log('Canvas not ready');
             }
         </script>
-        """
+        """)
     
     def deselect_all_images(self):
         """Deselect all images on canvas"""
-        return """
+        return gr.HTML("""
         <script>
+            console.log('Deselecting all images...');
             if (window.fooocusCanvas) {
-                window.fooocusCanvas.selectedImages.clear();
-                window.fooocusCanvas.render();
+                if (window.fooocusCanvas.selectedImages) {
+                    window.fooocusCanvas.selectedImages.clear();
+                }
+                if (window.fooocusCanvas.render) {
+                    window.fooocusCanvas.render();
+                }
+                console.log('All images deselected');
+            } else {
+                console.log('Canvas not ready');
             }
         </script>
-        """
+        """)
     
     def save_canvas(self):
         """Save canvas state"""
-        return """
+        return gr.HTML("""
         <script>
+            console.log('Saving canvas...');
             if (window.fooocusCanvas) {
-                window.fooocusCanvas.saveCanvas();
+                if (window.fooocusCanvas.saveCanvas) {
+                    window.fooocusCanvas.saveCanvas();
+                }
                 alert('Canvas saved successfully!');
+                console.log('Canvas saved');
+            } else {
+                console.log('Canvas not ready');
             }
         </script>
-        """
+        """)
 
 
 # Global canvas interface instance
