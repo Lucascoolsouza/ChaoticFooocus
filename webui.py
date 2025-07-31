@@ -168,6 +168,11 @@ canvas_css = """
     box-shadow: inset 0 0 20px rgba(0,0,0,0.3);
 }
 
+#canvas-mode-container {
+    width: 100%;
+    height: 100%;
+}
+
 #fooocus-canvas {
     display: block;
     cursor: default;
@@ -370,6 +375,11 @@ with shared.gradio_root:
                                  elem_classes=['resizable_area', 'main_view', 'final_gallery', 'image_gallery'],
                                  elem_id='final_gallery')
             
+            # Mode toggle buttons
+            with gr.Row():
+                canvas_mode_btn = gr.Button("Switch to Canvas Mode", elem_classes=["mode-toggle-btn"])
+                gallery_mode_btn = gr.Button("Switch to Gallery Mode", elem_classes=["mode-toggle-btn"], visible=False)
+            
             # Canvas interface
             canvas_mode_state = gr.State(False)
             with gr.Column(visible=False, elem_id="canvas-mode-container") as canvas_container:
@@ -393,10 +403,15 @@ with shared.gradio_root:
                     delete_selected_btn = gr.Button("Delete Selected", size="sm")
                     select_all_btn = gr.Button("Select All", size="sm")
                     deselect_all_btn = gr.Button("Deselect All", size="sm")
-            # Mode toggle buttons
-            with gr.Row():
-                canvas_mode_btn = gr.Button("Switch to Canvas Mode", elem_classes=["mode-toggle-btn"])
-                gallery_mode_btn = gr.Button("Switch to Gallery Mode", elem_classes=["mode-toggle-btn"], visible=False)
+                
+                with gr.Row():
+                    test_add_image_btn = gr.Button("Add Test Image", size="sm", variant="secondary")
+                
+                # Canvas info panel
+                canvas_info = gr.HTML(
+                    value="<div><h4>Canvas Info</h4><p>Images: 0</p><p>Selected: 0</p></div>",
+                    elem_id="canvas-info"
+                )
             
             with gr.Row():
                 with gr.Column(scale=17):
@@ -1783,7 +1798,7 @@ with shared.gradio_root:
             .then(fn=refresh_seed, inputs=[seed_random, image_seed], outputs=image_seed) \
             .then(fn=get_task, inputs=ctrls, outputs=currentTask) \
             .then(fn=generate_clicked, inputs=currentTask, outputs=[progress_html, progress_window, progress_gallery, gallery]) \
-            .then(lambda gallery_result, canvas_mode, prompt_text: canvas_interface.handle_canvas_generation(gallery_result, prompt_text) if canvas_mode else "",
+            .then(lambda gallery_result, canvas_mode, prompt_text: canvas_interface.handle_canvas_generation(gallery_result, prompt_text) if canvas_mode else gr.update(),
                   inputs=[gallery, canvas_mode_state, prompt], outputs=[canvas_html]) \
             .then(lambda: (gr.update(visible=True, interactive=True), gr.update(visible=False, interactive=False), gr.update(visible=False, interactive=False), False),
                   outputs=[generate_button, stop_button, skip_button, state_is_generating]) \
@@ -1794,73 +1809,89 @@ with shared.gradio_root:
         def toggle_mode(current_mode):
             new_mode = not current_mode
             canvas_interface.canvas_mode = new_mode
+            
+            # Return the integration script when switching to canvas mode
+            integration_script = canvas_interface.get_canvas_integration_script() if new_mode else ""
+            
             return (
                 new_mode,  # canvas_mode_state
                 gr.update(visible=new_mode),  # canvas_container
                 gr.update(visible=not new_mode),  # gallery
                 gr.update(visible=new_mode, value="Switch to Gallery Mode"),  # canvas_mode_btn
-                gr.update(visible=not new_mode, value="Switch to Canvas Mode")  # gallery_mode_btn
+                gr.update(visible=not new_mode, value="Switch to Canvas Mode"),  # gallery_mode_btn
+                gr.update(value=integration_script) if new_mode else gr.update()  # canvas_html
             )
 
         canvas_mode_btn.click(
             toggle_mode,
             inputs=[canvas_mode_state],
-            outputs=[canvas_mode_state, canvas_container, gallery, canvas_mode_btn, gallery_mode_btn],
+            outputs=[canvas_mode_state, canvas_container, gallery, canvas_mode_btn, gallery_mode_btn, canvas_html],
             queue=False
         )
 
         gallery_mode_btn.click(
             toggle_mode,
             inputs=[canvas_mode_state],
-            outputs=[canvas_mode_state, canvas_container, gallery, canvas_mode_btn, gallery_mode_btn],
+            outputs=[canvas_mode_state, canvas_container, gallery, canvas_mode_btn, gallery_mode_btn, canvas_html],
             queue=False
         )
 
         # Canvas control buttons
         fit_screen_btn.click(
-            lambda: gr.update(value=canvas_interface.fit_to_screen()),
+            canvas_interface.fit_to_screen,
             outputs=[canvas_html],
             queue=False
         )
 
         clear_canvas_btn.click(
-            lambda: gr.update(value=canvas_interface.clear_canvas()),
+            canvas_interface.clear_canvas,
             outputs=[canvas_html],
             queue=False
         )
 
         save_canvas_btn.click(
-            lambda: gr.update(value=canvas_interface.save_canvas()),
+            canvas_interface.save_canvas,
             outputs=[canvas_html],
             queue=False
         )
 
         export_selected_btn.click(
-            lambda: gr.update(value=canvas_interface.export_selected_images()),
+            canvas_interface.export_selected_images,
             outputs=[canvas_html],
             queue=False
         )
 
         regenerate_selected_btn.click(
-            lambda: gr.update(value=canvas_interface.regenerate_selected_images()),
+            canvas_interface.regenerate_selected_images,
             outputs=[canvas_html],
             queue=False
         )
 
         delete_selected_btn.click(
-            lambda: gr.update(value=canvas_interface.delete_selected_images()),
+            canvas_interface.delete_selected_images,
             outputs=[canvas_html],
             queue=False
         )
 
         select_all_btn.click(
-            lambda: gr.update(value=canvas_interface.select_all_images()),
+            canvas_interface.select_all_images,
             outputs=[canvas_html],
             queue=False
         )
 
         deselect_all_btn.click(
-            lambda: gr.update(value=canvas_interface.deselect_all_images()),
+            canvas_interface.deselect_all_images,
+            outputs=[canvas_html],
+            queue=False
+        )
+
+        # Test button to add a sample image to canvas
+        def add_test_image():
+            test_image_data = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjU2IiBoZWlnaHQ9IjI1NiIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjU2IiBoZWlnaHQ9IjI1NiIgZmlsbD0iIzQyODVmNCIvPjx0ZXh0IHg9IjEyOCIgeT0iMTI4IiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMjQiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+VGVzdCBJbWFnZTwvdGV4dD48L3N2Zz4="
+            return canvas_interface.add_image_to_canvas(test_image_data, "Test image for canvas", {"test": True})
+
+        test_add_image_btn.click(
+            add_test_image,
             outputs=[canvas_html],
             queue=False
         )
