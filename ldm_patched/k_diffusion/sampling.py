@@ -429,7 +429,7 @@ def sample_euler_chaos_steps(model, x, sigmas, extra_args=None, callback=None, d
         sigma_hat = sigma_current * (gamma + 1)
         if gamma > 0:
             eps = torch.randn_like(x) * s_noise
-            x = x + eps * (sigma_hat ** 2 - sigma_current ** 2) ** 0.5
+            x = x + eps * (sigma_hat ** 0.2 - sigma_current ** 0.2) ** 0.5
         denoised = model(x, sigma_hat * s_in, **extra_args)
         d = to_d(x, sigma_hat, denoised)
         if callback is not None:
