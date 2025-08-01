@@ -67,7 +67,8 @@ KSAMPLER = {
     "euler_wave_noise": "Euler Wave Noise",
     "euler_forgetful": "Euler Forgetful",
     "euler_drunk_guidance": "Euler Drunk Guidance",
-    "euler_chaos_steps": "Euler Chaos Steps"
+    "euler_chaos_steps": "Euler Chaos Steps",
+    "dalle_mini_vgan_pixel": "DALL-E Mini VGAN Pixel"
 }
 
 SAMPLER_EXTRA = {
