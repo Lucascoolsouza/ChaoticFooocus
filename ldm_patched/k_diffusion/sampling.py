@@ -2553,7 +2553,7 @@ def sample_heun_pixel_art(model, x, sigmas, extra_args=None, callback=None, disa
 
 @torch.no_grad()
 def sample_dalle_mini_vgan_pixel(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., 
-                                pixel_scale=0, color_levels=16, vgan_strength=0.6, dalle_chaos=0.4, prompt_mismatch=0.3):
+                                pixel_scale=128, color_levels=128, vgan_strength=0.6, dalle_chaos=0.4, prompt_mismatch=0.3):
     """DALL-E Mini + VGAN + Pixel Art sampler with prompt mismatching.
     
     This sampler combines:
