@@ -15,8 +15,9 @@ tghqface8x = 'TGHQFace8x'
 
 remove_background = 'Remove Background'
 seamless_tiling = 'Seamless Tiling'
+vibe_memory = 'Vibe Memory'
 
-uov_list = [disabled, subtle_variation, strong_variation, upscale_15, upscale_2, upscale_fast, ultrasharp, realistic_rescaler, latent_upscale, pixelsharpen, tghqface8x, remove_background, seamless_tiling]
+uov_list = [disabled, subtle_variation, strong_variation, upscale_15, upscale_2, upscale_fast, ultrasharp, realistic_rescaler, latent_upscale, pixelsharpen, tghqface8x, remove_background, seamless_tiling, vibe_memory]
 
 enhancement_uov_before = "Before First Enhancement"
 enhancement_uov_after = "After Last Enhancement"
@@ -68,7 +69,9 @@ KSAMPLER = {
     "euler_forgetful": "Euler Forgetful",
     "euler_drunk_guidance": "Euler Drunk Guidance",
     "euler_chaos_steps": "Euler Chaos Steps",
-    "dalle_mini_vgan_pixel": "DALL-E Mini VGAN Pixel"
+    "dalle_mini": "DALL-E Mini",
+    "vgan_pixel": "VGAN Pixel",
+    "pixel_32x32": "Pixel 32x32"
 }
 
 SAMPLER_EXTRA = {

@@ -2742,173 +2742,71 @@ def sample_dalle_mini_vgan_pixel(model, x, sigmas, extra_args=None, callback=Non
 
 
 @torch.no_grad()
-def sample_dalle_mini_vgan_pixel(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., 
-                                pixel_scale=4, color_levels=16, vgan_strength=0.6, dalle_chaos=0.4, prompt_mismatch=0.3):
-    """DALL-E Mini + VGAN + Pixel Art sampler with prompt mismatching.
+def sample_dalle_mini(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., chaos_factor=0.6):
+    """DALL-E Mini style sampler with chaotic generation patterns.
     
-    This sampler combines:
-    - DALL-E Mini's chaotic generation patterns
-    - VGAN's adversarial-like noise injection
-    - 32x32 nearest neighbor pixel art upscaling
-    - Prompt mismatching for creative deviation
+    Mimics DALL-E Mini's characteristic artifacts: color bleeding, spatial distortions,
+    random channel mixing, and general chaotic behavior.
     
     Args:
-        pixel_scale: Downscaling factor for pixelation (higher = more pixelated)
-        color_levels: Number of color levels per channel (lower = more pixel art-like)
-        vgan_strength: Strength of VGAN-like adversarial noise (0.0 = none, 1.0 = maximum)
-        dalle_chaos: Chaos factor for DALL-E Mini style generation (0.0 = none, 1.0 = maximum)
-        prompt_mismatch: Probability of prompt mismatching per step (0.0 = none, 1.0 = always)
+        chaos_factor: Strength of chaotic transformations (0.0 = none, 1.0 = maximum)
     """
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
-    
-    # Store original shape for pixel art processing
     batch_size, channels, height, width = x.shape
     
-    print(f"DALL-E Mini VGAN Pixel sampler active - pixel_scale: {pixel_scale}, colors: {color_levels}, vgan: {vgan_strength}, chaos: {dalle_chaos}")
+    print(f"DALL-E Mini sampler active - chaos: {chaos_factor}")
     
-    def apply_dalle_mini_chaos(tensor, chaos_factor, step_ratio):
+    def apply_dalle_chaos(tensor, chaos_strength, step_ratio):
         """Apply DALL-E Mini style chaotic transformations"""
-        if chaos_factor <= 0:
+        if chaos_strength <= 0:
             return tensor
             
         # Progressive chaos that's strongest in middle steps
-        dynamic_chaos = chaos_factor * (1.0 - abs(step_ratio - 0.5) * 2) ** 0.5
+        dynamic_chaos = chaos_strength * (1.0 - abs(step_ratio - 0.5) * 2) ** 0.5
         
         if dynamic_chaos <= 0.01:
             return tensor
         
-        # DALL-E Mini style transformations
         result = tensor.clone()
         
-        # 1. Random channel mixing (DALL-E Mini often has color bleeding)
+        # 1. Random channel mixing (DALL-E Mini color bleeding)
         if torch.rand(1).item() < dynamic_chaos:
-            # Mix channels randomly
             perm = torch.randperm(channels, device=tensor.device)
-            mix_strength = dynamic_chaos * 0.3
+            mix_strength = dynamic_chaos * 0.4
             mixed = tensor[:, perm]
             result = result * (1 - mix_strength) + mixed * mix_strength
         
-        # 2. Spatial distortions (DALL-E Mini has weird spatial relationships)
-        if torch.rand(1).item() < dynamic_chaos * 0.7:
-            # Random spatial shifts
-            shift_h = int(height * dynamic_chaos * 0.1)
-            shift_w = int(width * dynamic_chaos * 0.1)
+        # 2. Spatial distortions (weird spatial relationships)
+        if torch.rand(1).item() < dynamic_chaos * 0.8:
+            shift_h = int(height * dynamic_chaos * 0.15)
+            shift_w = int(width * dynamic_chaos * 0.15)
             if shift_h > 0 or shift_w > 0:
                 shifted = torch.roll(result, shifts=(shift_h, shift_w), dims=(2, 3))
-                blend_factor = dynamic_chaos * 0.2
+                blend_factor = dynamic_chaos * 0.3
                 result = result * (1 - blend_factor) + shifted * blend_factor
         
-        # 3. Random noise injection (DALL-E Mini has artifacts)
+        # 3. Random artifacts and noise
         if torch.rand(1).item() < dynamic_chaos:
-            noise = torch.randn_like(result) * dynamic_chaos * 0.15
+            noise = torch.randn_like(result) * dynamic_chaos * 0.2
             result = result + noise
         
-        return result
-    
-    def apply_vgan_adversarial(tensor, vgan_strength, step_ratio):
-        """Apply VGAN-style adversarial noise injection"""
-        if vgan_strength <= 0:
-            return tensor
-            
-        # VGAN strength peaks in early-middle steps
-        dynamic_vgan = vgan_strength * (1.0 - step_ratio * 0.8)
-        
-        if dynamic_vgan <= 0.01:
-            return tensor
-        
-        # VGAN-style adversarial perturbations
-        result = tensor.clone()
-        
-        # 1. Gradient-like noise (simulates adversarial examples)
-        grad_noise = torch.randn_like(result)
-        # Make noise more structured (like adversarial gradients)
-        grad_noise = torch.nn.functional.conv2d(
-            grad_noise, 
-            torch.ones(channels, 1, 3, 3, device=tensor.device) / 9.0,
-            padding=1, groups=channels
-        )
-        result = result + grad_noise * dynamic_vgan * 0.1
-        
-        # 2. High-frequency perturbations (VGAN artifacts)
-        if torch.rand(1).item() < dynamic_vgan:
-            # Create high-frequency noise
-            hf_noise = torch.randn_like(result)
-            # Apply high-pass filter
-            kernel = torch.tensor([[[[-1, -1, -1], [-1, 8, -1], [-1, -1, -1]]]], 
-                                dtype=result.dtype, device=result.device)
-            kernel = kernel.repeat(channels, 1, 1, 1) / 8.0
-            hf_filtered = torch.nn.functional.conv2d(hf_noise, kernel, padding=1, groups=channels)
-            result = result + hf_filtered * dynamic_vgan * 0.05
+        # 4. Occasional complete chaos
+        if torch.rand(1).item() < dynamic_chaos * 0.1:
+            chaos_mask = torch.rand_like(result) < 0.1
+            chaos_values = torch.randn_like(result) * 2.0
+            result = torch.where(chaos_mask, chaos_values, result)
         
         return result
-    
-    def apply_pixel_art_32x32(tensor, scale_factor, color_levels):
-        """Apply 32x32 nearest neighbor pixel art effect"""
-        if scale_factor <= 1:
-            return tensor
-            
-        b, c, h, w = tensor.shape
-        
-        # Target 32x32 resolution for true pixel art feel
-        target_size = 32
-        
-        # Downsample to 32x32 with area interpolation
-        downsampled = torch.nn.functional.interpolate(
-            tensor, size=(target_size, target_size), mode='area'
-        )
-        
-        # Color quantization at low resolution for better pixel art effect
-        if color_levels < 256:
-            # Normalize to [0, 1]
-            norm = (downsampled + 1.0) / 2.0
-            # Quantize
-            quantized = torch.round(norm * (color_levels - 1)) / (color_levels - 1)
-            # Back to [-1, 1]
-            downsampled = quantized * 2.0 - 1.0
-        
-        # Upsample back with nearest neighbor for sharp pixels
-        pixelated = torch.nn.functional.interpolate(
-            downsampled, size=(h, w), mode='nearest'
-        )
-        
-        return pixelated
-    
-    def apply_prompt_mismatch(extra_args, mismatch_prob):
-        """Randomly corrupt or modify conditioning to simulate prompt mismatching"""
-        if torch.rand(1).item() > mismatch_prob:
-            return extra_args
-        
-        # Create modified args that simulate prompt confusion
-        modified_args = extra_args.copy()
-        
-        # Simulate prompt misunderstanding by adding noise to conditioning
-        if 'cond' in modified_args and modified_args['cond']:
-            # This is a simplified approach - in practice you'd modify the actual conditioning tensors
-            # For now, we'll just add some chaos to the generation process
-            pass
-        
-        return modified_args
     
     for i in trange(len(sigmas) - 1, disable=disable):
-        # Calculate step ratio for progressive effects
         step_ratio = i / (len(sigmas) - 1)
         
-        # Apply prompt mismatching
-        current_args = apply_prompt_mismatch(extra_args, prompt_mismatch * (1.0 - step_ratio))
+        # Standard denoising
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
         
-        # Standard denoising step
-        denoised = model(x, sigmas[i] * s_in, **current_args)
-        
-        # Apply DALL-E Mini chaos to denoised result
-        denoised = apply_dalle_mini_chaos(denoised, dalle_chaos, step_ratio)
-        
-        # Apply VGAN adversarial effects
-        denoised = apply_vgan_adversarial(denoised, vgan_strength, step_ratio)
-        
-        # Apply pixel art effects (more aggressive in later steps)
-        if step_ratio > 0.3:  # Start pixel art effects after 30% of steps
-            denoised = apply_pixel_art_32x32(denoised, pixel_scale, color_levels)
+        # Apply DALL-E Mini chaos
+        denoised = apply_dalle_chaos(denoised, chaos_factor, step_ratio)
         
         d = to_d(x, sigmas[i], denoised)
         
@@ -2916,17 +2814,259 @@ def sample_dalle_mini_vgan_pixel(model, x, sigmas, extra_args=None, callback=Non
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
         
         dt = sigmas[i + 1] - sigmas[i]
-        
-        # Euler step with additional DALL-E Mini style noise
         x = x + d * dt
         
-        # Add DALL-E Mini style chaos to the latent state
-        if step_ratio < 0.8:  # Don't add chaos in final steps
-            x = apply_dalle_mini_chaos(x, dalle_chaos * 0.3, step_ratio)
+        # Add chaos to latent state too
+        if step_ratio < 0.8:
+            x = apply_dalle_chaos(x, chaos_factor * 0.2, step_ratio)
+    
+    return x
+
+
+@torch.no_grad()
+def sample_vgan(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., adversarial_strength=0.5):
+    """VGAN-style sampler with adversarial noise injection.
+    
+    Simulates adversarial training effects with gradient-like perturbations
+    and high-frequency artifacts typical of GANs.
+    
+    Args:
+        adversarial_strength: Strength of adversarial effects (0.0 = none, 1.0 = maximum)
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    batch_size, channels, height, width = x.shape
+    
+    print(f"VGAN sampler active - adversarial strength: {adversarial_strength}")
+    
+    def apply_adversarial_noise(tensor, strength, step_ratio):
+        """Apply VGAN-style adversarial perturbations"""
+        if strength <= 0:
+            return tensor
+            
+        # Adversarial strength peaks in early-middle steps
+        dynamic_strength = strength * (1.0 - step_ratio * 0.7)
         
-        # Add VGAN-style perturbations to latent
-        if step_ratio < 0.9:  # Don't add VGAN noise in final steps
-            x = apply_vgan_adversarial(x, vgan_strength * 0.2, step_ratio)
+        if dynamic_strength <= 0.01:
+            return tensor
+        
+        result = tensor.clone()
+        
+        # 1. Gradient-like structured noise (adversarial examples)
+        grad_noise = torch.randn_like(result)
+        # Smooth the noise to make it more gradient-like
+        kernel = torch.ones(channels, 1, 3, 3, device=tensor.device) / 9.0
+        grad_noise = torch.nn.functional.conv2d(grad_noise, kernel, padding=1, groups=channels)
+        result = result + grad_noise * dynamic_strength * 0.15
+        
+        # 2. High-frequency adversarial artifacts
+        if torch.rand(1).item() < dynamic_strength:
+            # High-pass filter for adversarial-like high-freq noise
+            hf_kernel = torch.tensor([[[[-1, -1, -1], [-1, 8, -1], [-1, -1, -1]]]], 
+                                   dtype=result.dtype, device=result.device)
+            hf_kernel = hf_kernel.repeat(channels, 1, 1, 1) / 8.0
+            hf_noise = torch.randn_like(result)
+            hf_filtered = torch.nn.functional.conv2d(hf_noise, hf_kernel, padding=1, groups=channels)
+            result = result + hf_filtered * dynamic_strength * 0.08
+        
+        # 3. Adversarial boundary effects
+        if torch.rand(1).item() < dynamic_strength * 0.6:
+            # Create adversarial-like decision boundary artifacts
+            boundary_noise = torch.sign(result) * torch.rand_like(result) * dynamic_strength * 0.1
+            result = result + boundary_noise
+        
+        return result
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        step_ratio = i / (len(sigmas) - 1)
+        
+        # Standard denoising
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        
+        # Apply adversarial effects
+        denoised = apply_adversarial_noise(denoised, adversarial_strength, step_ratio)
+        
+        d = to_d(x, sigmas[i], denoised)
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        
+        dt = sigmas[i + 1] - sigmas[i]
+        x = x + d * dt
+        
+        # Apply adversarial noise to latent state
+        if step_ratio < 0.9:
+            x = apply_adversarial_noise(x, adversarial_strength * 0.3, step_ratio)
+    
+    return x
+
+
+@torch.no_grad()
+def sample_pixel_art_32x32(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., 
+                          pixel_intensity=0.8, color_levels=16):
+    """32x32 nearest neighbor pixel art sampler.
+    
+    Creates authentic pixel art by downsampling to 32x32 resolution with
+    nearest neighbor upscaling and color quantization.
+    
+    Args:
+        pixel_intensity: How aggressively to apply pixelation (0.0 = none, 1.0 = maximum)
+        color_levels: Number of color levels per channel (lower = more pixelated)
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    print(f"32x32 Pixel Art sampler active - intensity: {pixel_intensity}, colors: {color_levels}")
+    
+    def apply_pixel_art(tensor, intensity, colors, step_ratio):
+        """Apply 32x32 pixel art effect"""
+        if intensity <= 0:
+            return tensor
+            
+        # Apply pixel art more aggressively in later steps
+        dynamic_intensity = intensity * max(0.1, step_ratio)
+        
+        if dynamic_intensity <= 0.05:
+            return tensor
+        
+        b, c, h, w = tensor.shape
+        
+        # Always target 32x32 for authentic pixel art
+        target_size = 32
+        
+        # Downsample to 32x32 with area interpolation
+        downsampled = torch.nn.functional.interpolate(
+            tensor, size=(target_size, target_size), mode='area'
+        )
+        
+        # Color quantization at low resolution
+        if colors < 256:
+            # Normalize to [0, 1]
+            norm = (downsampled + 1.0) / 2.0
+            # Quantize
+            quantized = torch.round(norm * (colors - 1)) / (colors - 1)
+            # Back to [-1, 1]
+            downsampled = quantized * 2.0 - 1.0
+        
+        # Upsample with nearest neighbor for sharp pixels
+        pixelated = torch.nn.functional.interpolate(
+            downsampled, size=(h, w), mode='nearest'
+        )
+        
+        # Blend with original based on intensity
+        result = tensor * (1 - dynamic_intensity) + pixelated * dynamic_intensity
+        
+        return torch.clamp(result, -1.0, 1.0)
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        step_ratio = i / (len(sigmas) - 1)
+        
+        # Standard denoising
+        denoised = model(x, sigmas[i] * s_in, **extra_args)
+        
+        # Apply pixel art effect
+        denoised = apply_pixel_art(denoised, pixel_intensity, color_levels, step_ratio)
+        
+        d = to_d(x, sigmas[i], denoised)
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        
+        dt = sigmas[i + 1] - sigmas[i]
+        x = x + d * dt
+    
+    return x
+
+
+@torch.no_grad()
+def sample_prompt_mismatch(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., 
+                          mismatch_probability=0.3, mismatch_strength=0.5):
+    """Prompt mismatching sampler for creative deviation.
+    
+    Randomly corrupts or ignores conditioning to simulate prompt misunderstanding
+    and create unexpected creative results.
+    
+    Args:
+        mismatch_probability: Probability of prompt corruption per step (0.0 = never, 1.0 = always)
+        mismatch_strength: Strength of prompt corruption when it occurs (0.0 = subtle, 1.0 = extreme)
+    """
+    extra_args = {} if extra_args is None else extra_args
+    s_in = x.new_ones([x.shape[0]])
+    
+    print(f"Prompt Mismatch sampler active - probability: {mismatch_probability}, strength: {mismatch_strength}")
+    
+    def corrupt_conditioning(args, mismatch_prob, strength, step_ratio):
+        """Randomly corrupt conditioning to simulate prompt misunderstanding"""
+        if torch.rand(1).item() > mismatch_prob:
+            return args
+        
+        # Create modified args
+        modified_args = args.copy()
+        
+        # Progressive mismatch - stronger early, weaker later
+        dynamic_strength = strength * (1.0 - step_ratio * 0.6)
+        
+        # Simulate different types of prompt misunderstanding
+        mismatch_type = torch.rand(1).item()
+        
+        if mismatch_type < 0.3:
+            # Type 1: Add noise to guidance (simulates confusion)
+            if 'cond_scale' in modified_args:
+                noise_factor = 1.0 + (torch.randn(1).item() * dynamic_strength * 0.5)
+                modified_args['cond_scale'] = max(0.1, modified_args['cond_scale'] * noise_factor)
+        
+        elif mismatch_type < 0.6:
+            # Type 2: Randomly reduce guidance (simulates ignoring prompt)
+            if 'cond_scale' in modified_args:
+                reduction = torch.rand(1).item() * dynamic_strength
+                modified_args['cond_scale'] = modified_args['cond_scale'] * (1.0 - reduction)
+        
+        else:
+            # Type 3: Add chaos to the process (simulates complete misunderstanding)
+            # This will be handled in the main loop by adding noise
+            modified_args['_add_chaos'] = dynamic_strength
+        
+        return modified_args
+    
+    for i in trange(len(sigmas) - 1, disable=disable):
+        step_ratio = i / (len(sigmas) - 1)
+        
+        # Apply prompt mismatching
+        current_args = corrupt_conditioning(extra_args, mismatch_probability, mismatch_strength, step_ratio)
+        
+        # Standard denoising with potentially corrupted conditioning
+        denoised = model(x, sigmas[i] * s_in, **current_args)
+        
+        # Add chaos if prompt was completely misunderstood
+        if '_add_chaos' in current_args:
+            chaos_strength = current_args['_add_chaos']
+            if torch.rand(1).item() < chaos_strength:
+                # Add random noise to simulate complete misunderstanding
+                chaos_noise = torch.randn_like(denoised) * chaos_strength * 0.3
+                denoised = denoised + chaos_noise
+                
+                # Occasionally add spatial distortions
+                if torch.rand(1).item() < chaos_strength * 0.5:
+                    shift_h = int(denoised.shape[2] * chaos_strength * 0.1)
+                    shift_w = int(denoised.shape[3] * chaos_strength * 0.1)
+                    if shift_h > 0 or shift_w > 0:
+                        shifted = torch.roll(denoised, shifts=(shift_h, shift_w), dims=(2, 3))
+                        blend = chaos_strength * 0.2
+                        denoised = denoised * (1 - blend) + shifted * blend
+        
+        d = to_d(x, sigmas[i], denoised)
+        
+        if callback is not None:
+            callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigmas[i], 'denoised': denoised})
+        
+        dt = sigmas[i + 1] - sigmas[i]
+        x = x + d * dt
+        
+        # Add occasional chaos to latent state for prompt mismatch
+        if '_add_chaos' in current_args and step_ratio < 0.8:
+            chaos_strength = current_args['_add_chaos']
+            if torch.rand(1).item() < chaos_strength * 0.3:
+                x = x + torch.randn_like(x) * chaos_strength * 0.1
     
     return x
 

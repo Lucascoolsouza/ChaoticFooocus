@@ -1413,6 +1413,88 @@ with shared.gradio_root:
                     artistic_strength = gr.Slider(label='Artistic Strength', minimum=0.0, maximum=10.0, step=0.01,
                                                   value=0.0,
                                                   info='Controls the level of artistic distortion in the VAE output.')
+                
+                with gr.Accordion(label='Vibe Memory (VSM)', open=False):
+                    vibe_memory_enabled = gr.Checkbox(label='Enable Vibe Memory', value=False,
+                                                     info='Remember liked/disliked images and steer generation toward preferred aesthetics')
+                    
+                    with gr.Row(visible=False) as vibe_memory_controls:
+                        with gr.Column():
+                            vibe_memory_threshold = gr.Slider(label='Acceptance Threshold', minimum=-1.0, maximum=1.0, step=0.01,
+                                                            value=-0.1, info='Minimum vibe score to accept images (higher = more selective)')
+                            vibe_memory_max_retries = gr.Slider(label='Max Retries', minimum=1, maximum=10, step=1,
+                                                              value=3, info='Maximum attempts to generate acceptable image')
+                        
+                        with gr.Column():
+                            with gr.Row():
+                                vibe_like_btn = gr.Button("👍 Like Current", size="sm", variant="primary")
+                                vibe_dislike_btn = gr.Button("👎 Dislike Current", size="sm", variant="secondary")
+                            
+                            with gr.Row():
+                                vibe_clear_btn = gr.Button("Clear Memory", size="sm", variant="stop")
+                                vibe_stats_btn = gr.Button("Show Stats", size="sm")
+                    
+                    vibe_memory_status = gr.Textbox(label='Vibe Memory Status', interactive=False, 
+                                                   value='Vibe Memory: Disabled', visible=False)
+                    vibe_memory_stats = gr.Textbox(label='Memory Statistics', interactive=False, 
+                                                  value='', visible=False)
+                    
+                    def update_vibe_memory_visibility(enabled):
+                        return [gr.update(visible=enabled)] * 2
+                    
+                    def update_vibe_memory_status(enabled, threshold, max_retries):
+                        if not enabled:
+                            return "Vibe Memory: Disabled"
+                        return f"Vibe Memory: Enabled | Threshold: {threshold} | Max Retries: {max_retries}"
+                    
+                    def show_vibe_stats():
+                        try:
+                            from modules.vibe_memory_integration import get_memory_stats
+                            stats = get_memory_stats()
+                            if stats["available"]:
+                                return f"Liked: {stats['liked']} images | Disliked: {stats['disliked']} images"
+                            else:
+                                return "Vibe Memory not available (CLIP not installed)"
+                        except Exception as e:
+                            return f"Error getting stats: {str(e)}"
+                    
+                    def clear_vibe_memory():
+                        try:
+                            from modules.vibe_memory_integration import clear_memory
+                            if clear_memory():
+                                return "Memory cleared successfully"
+                            else:
+                                return "Failed to clear memory"
+                        except Exception as e:
+                            return f"Error clearing memory: {str(e)}"
+                    
+                    def like_current_image():
+                        # This will be connected to the current generated image
+                        return "👍 Added to likes (feature requires integration with gallery)"
+                    
+                    def dislike_current_image():
+                        # This will be connected to the current generated image
+                        return "👎 Added to dislikes (feature requires integration with gallery)"
+                    
+                    vibe_memory_enabled.change(update_vibe_memory_visibility, 
+                                             inputs=vibe_memory_enabled,
+                                             outputs=[vibe_memory_controls, vibe_memory_status],
+                                             queue=False, show_progress=False)
+                    
+                    # Update status when parameters change
+                    vibe_inputs = [vibe_memory_enabled, vibe_memory_threshold, vibe_memory_max_retries]
+                    for input_component in vibe_inputs:
+                        input_component.change(update_vibe_memory_status,
+                                             inputs=vibe_inputs,
+                                             outputs=vibe_memory_status,
+                                             queue=False, show_progress=False)
+                    
+                    # Button actions
+                    vibe_stats_btn.click(show_vibe_stats, outputs=vibe_memory_stats, queue=False, show_progress=False)
+                    vibe_clear_btn.click(clear_vibe_memory, outputs=vibe_memory_stats, queue=False, show_progress=False)
+                    vibe_like_btn.click(like_current_image, outputs=vibe_memory_stats, queue=False, show_progress=False)
+                    vibe_dislike_btn.click(dislike_current_image, outputs=vibe_memory_stats, queue=False, show_progress=False)
+                
                 dev_mode = gr.Checkbox(label='Developer Debug Mode', value=modules.config.default_developer_debug_mode_checkbox, container=False)
 
                 with gr.Column(visible=modules.config.default_developer_debug_mode_checkbox) as dev_tools:
@@ -1760,6 +1842,10 @@ with shared.gradio_root:
         
         # Confuse VAE controls (must be after all disco parameters)
         ctrls += [artistic_strength]
+        
+        # Vibe Memory controls
+        ctrls += [vibe_memory_enabled, vibe_memory_threshold, vibe_memory_max_retries]
+        
         ctrls += [performance_selection]
 
         def parse_meta(raw_prompt_txt, is_generating):

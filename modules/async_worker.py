@@ -347,6 +347,28 @@ class AsyncTask:
         self.artistic_strength = args.pop() if len(args) > 0 else 0.0
         print(f"[DEBUG] Confuse VAE artistic_strength: {self.artistic_strength}")
 
+        # Vibe Memory parameters
+        print(f"[DEBUG] Args remaining before Vibe Memory: {len(args)}")
+        vibe_params = []
+        try:
+            for i in range(3):
+                param = args.pop()
+                vibe_params.append(param)
+                print(f"[DEBUG] Popped Vibe Memory param {i}: {param} (type: {type(param)})")
+        except IndexError as e:
+            print(f"[DEBUG] Error popping Vibe Memory parameter {i}: {e}")
+            print(f"[DEBUG] Args remaining: {len(args)}")
+            # Fill remaining with defaults
+            while len(vibe_params) < 3:
+                vibe_params.append(None)
+        
+        # Assign in correct order matching webui ctrls order with defaults
+        self.vibe_memory_enabled = vibe_params[0] if vibe_params[0] is not None else False
+        self.vibe_memory_threshold = vibe_params[1] if vibe_params[1] is not None else -0.1
+        self.vibe_memory_max_retries = vibe_params[2] if vibe_params[2] is not None else 3
+        
+        print(f"[DEBUG] Vibe Memory params: enabled={self.vibe_memory_enabled}, threshold={self.vibe_memory_threshold}, max_retries={self.vibe_memory_max_retries}")
+
         # Performance selection (added at the end to match webui.py ctrls order)
         self.performance_selection = Performance(args.pop())
         self.steps = self.performance_selection.steps()
@@ -583,6 +605,38 @@ def worker():
             disco_range_scale=async_task.disco_range_scale,
             force_grid_checkbox=async_task.force_grid_checkbox
         )
+        
+        # Apply vibe memory filtering if enabled
+        try:
+            from modules.vibe_memory_integration import is_vibe_memory_enabled, get_vibe_memory
+            if is_vibe_memory_enabled(async_task) and imgs:
+                vibe = get_vibe_memory()
+                if vibe and vibe.clip_model:
+                    progressbar(async_task, current_progress, 'Applying vibe memory filtering...')
+                    threshold = getattr(async_task, 'vibe_memory_threshold', -0.1)
+                    # Filter images based on vibe score
+                    filtered_imgs = []
+                    for img in imgs:
+                        try:
+                            embedding = vibe.tensor_to_embedding(img)
+                            embedding_tensor = torch.tensor(embedding, device=img.device if hasattr(img, 'device') else 'cpu')
+                            score = vibe.score(embedding_tensor)
+                            print(f"[VibeMemory] Image score: {score:.3f}")
+                            # Only keep images with score above threshold
+                            if score >= threshold:
+                                filtered_imgs.append(img)
+                            else:
+                                print(f"[VibeMemory] Rejected image with score {score:.3f} (threshold: {threshold})")
+                        except Exception as e:
+                            print(f"[VibeMemory] Error scoring image: {e}")
+                            filtered_imgs.append(img)  # Keep image if scoring fails
+                    
+                    if filtered_imgs:
+                        imgs = filtered_imgs
+                    else:
+                        print("[VibeMemory] All images rejected, keeping original set")
+        except Exception as e:
+            print(f"[VibeMemory] Error in vibe filtering: {e}")
 
         if imgs is None:
             imgs = []
