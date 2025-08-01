@@ -403,10 +403,11 @@ def sample_euler_drunk_guidance(model, x, sigmas, extra_args=None, callback=None
         if gamma > 0:
             eps = torch.randn_like(x) * s_noise
             x = x + eps * (sigma_hat ** 2 - sigmas[i] ** 2) ** 0.5
-        # drunk sine oscillating guidance
-        guidance = base_guidance + math.sin(i / 3.0) * 3.0
+        # drunk sine oscillating guidance - apply to the derivative, not the denoised output
+        guidance_scale = 1.0 + (math.sin(i / 3.0) * 0.3)  # Oscillate between 0.7 and 1.3
         denoised = model(x, sigma_hat * s_in, **extra_args)
-        d = to_d(x, sigma_hat, denoised * guidance)
+        d = to_d(x, sigma_hat, denoised)
+        d = d * guidance_scale  # Apply guidance to derivative instead
         if callback is not None:
             callback({'x': x, 'i': i, 'sigma': sigmas[i], 'sigma_hat': sigma_hat, 'denoised': denoised})
         dt = sigmas[i + 1] - sigma_hat
@@ -418,21 +419,22 @@ def sample_euler_chaos_steps(model, x, sigmas, extra_args=None, callback=None, d
                              s_churn=0., s_tmin=0., s_tmax=float('inf'), s_noise=1.):
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
-    sigmas_shuffled = sigmas.clone()
-    indices = list(range(len(sigmas_shuffled) - 1))
-    random.shuffle(indices)
-    for i in trange(len(indices), disable=disable):
-        idx = indices[i]
-        gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigmas_shuffled[idx] <= s_tmax else 0.
-        sigma_hat = sigmas_shuffled[idx] * (gamma + 1)
+    # Create pairs of (current_sigma, next_sigma) and shuffle them
+    sigma_pairs = [(sigmas[i], sigmas[i + 1]) for i in range(len(sigmas) - 1)]
+    random.shuffle(sigma_pairs)
+    
+    for i in trange(len(sigma_pairs), disable=disable):
+        sigma_current, sigma_next = sigma_pairs[i]
+        gamma = min(s_churn / (len(sigmas) - 1), 2 ** 0.5 - 1) if s_tmin <= sigma_current <= s_tmax else 0.
+        sigma_hat = sigma_current * (gamma + 1)
         if gamma > 0:
             eps = torch.randn_like(x) * s_noise
-            x = x + eps * (sigma_hat ** 2 - sigmas_shuffled[idx] ** 2) ** 0.5
+            x = x + eps * (sigma_hat ** 2 - sigma_current ** 2) ** 0.5
         denoised = model(x, sigma_hat * s_in, **extra_args)
         d = to_d(x, sigma_hat, denoised)
         if callback is not None:
-            callback({'x': x, 'i': i, 'sigma': sigmas_shuffled[idx], 'sigma_hat': sigma_hat, 'denoised': denoised})
-        dt = sigmas_shuffled[idx + 1] - sigma_hat if idx + 1 < len(sigmas_shuffled) else -sigma_hat
+            callback({'x': x, 'i': i, 'sigma': sigma_current, 'sigma_hat': sigma_hat, 'denoised': denoised})
+        dt = sigma_next - sigma_hat
         x = x + d * dt
     return x
 
