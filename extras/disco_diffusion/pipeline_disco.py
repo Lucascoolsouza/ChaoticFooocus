@@ -97,118 +97,147 @@ def texture_std_penalty(img_tensor):
     # Return the mean std dev across channels for each image in the batch
     return std_per_channel.mean(dim=1)  # Shape: (batch_size,)
 
-def run_clip_guidance_loop(
-    latent, vae, clip_model, clip_preprocess, text_prompt, async_task,
-    steps=30, disco_scale=5.0, cutn=12, tv_scale=0.0, range_scale=0.0, # tv_scale will control texture penalty
-    n_candidates=8, blend_factor=0.2  # More conservative default
-):
+def inject_disco_distortion(latent_samples, disco_scale=5.0, distortion_type='psychedelic'):
     """
-    CLIP guidance on the latent space using a gradient-free search method.
-    This version uses a perceptual penalty (texture std) to regularize the output.
+    Inject Disco Diffusion-style distortions directly into latent space.
+    This is called once during the middle of generation for maximum effect.
     """
-    print("[Disco] Starting CLIP guidance (latent search with perceptual penalty)...")
+    print(f"[Disco] Injecting {distortion_type} distortion with scale {disco_scale}")
+    
     try:
-        # Get device from latent
-        latent_tensor = latent['samples']
-        device = latent_tensor.device
+        device = latent_samples.device
+        batch_size, channels, height, width = latent_samples.shape
         
-        # Load CLIP model
-        print("[Disco] Loading CLIP model...")
-        clip_model, _ = clip.load("RN50", device=device)
-        clip_model.eval()
+        # Create coordinate grids for spatial transformations
+        y_coords = torch.linspace(-1, 1, height, device=device)
+        x_coords = torch.linspace(-1, 1, width, device=device)
+        y_grid, x_grid = torch.meshgrid(y_coords, x_coords, indexing='ij')
         
-        # 1. Prepare text embeddings
-        with torch.no_grad():
-            text_tokens = clip.tokenize([text_prompt], truncate=True).to(device)
-            text_features = clip_model.encode_text(text_tokens).float()
-            text_features = text_features / text_features.norm(dim=-1, keepdim=True)
-
-        # 2. Set up for latent space optimization with more conservative parameters
-        # Reduce noise strength significantly to avoid generating pure noise
-        noise_strength = min(disco_scale / 10.0, 0.1)  # Much more conservative
+        # Apply different distortion types based on preset
+        if distortion_type == 'psychedelic':
+            # Psychedelic swirl and wave distortions
+            radius = torch.sqrt(x_grid**2 + y_grid**2)
+            angle = torch.atan2(y_grid, x_grid)
+            
+            # Swirl distortion
+            swirl_strength = disco_scale * 0.3
+            new_angle = angle + swirl_strength * torch.exp(-radius * 2)
+            
+            # Wave distortions
+            wave_freq = disco_scale * 2.0
+            wave_amp = disco_scale * 0.1
+            x_wave = x_grid + wave_amp * torch.sin(wave_freq * y_grid)
+            y_wave = y_grid + wave_amp * torch.cos(wave_freq * x_grid)
+            
+            # Combine swirl and wave
+            new_x = radius * torch.cos(new_angle) + x_wave * 0.3
+            new_y = radius * torch.sin(new_angle) + y_wave * 0.3
+            
+        elif distortion_type == 'fractal':
+            # Fractal-like recursive distortions
+            scale1 = disco_scale * 0.5
+            scale2 = disco_scale * 0.3
+            scale3 = disco_scale * 0.2
+            
+            new_x = x_grid + scale1 * torch.sin(3 * x_grid) * torch.cos(2 * y_grid)
+            new_y = y_grid + scale1 * torch.cos(3 * y_grid) * torch.sin(2 * x_grid)
+            
+            # Add smaller scale details
+            new_x += scale2 * torch.sin(7 * new_x) * torch.cos(5 * new_y)
+            new_y += scale2 * torch.cos(7 * new_y) * torch.sin(5 * new_x)
+            
+            # Add even finer details
+            new_x += scale3 * torch.sin(13 * new_x) * torch.cos(11 * new_y)
+            new_y += scale3 * torch.cos(13 * new_y) * torch.sin(11 * new_x)
+            
+        elif distortion_type == 'kaleidoscope':
+            # Kaleidoscope-like symmetrical distortions
+            radius = torch.sqrt(x_grid**2 + y_grid**2)
+            angle = torch.atan2(y_grid, x_grid)
+            
+            # Create kaleidoscope effect
+            n_mirrors = 6
+            mirror_angle = 2 * math.pi / n_mirrors
+            folded_angle = torch.abs((angle % mirror_angle) - mirror_angle/2)
+            
+            new_x = radius * torch.cos(folded_angle) * (1 + disco_scale * 0.1 * torch.sin(radius * 5))
+            new_y = radius * torch.sin(folded_angle) * (1 + disco_scale * 0.1 * torch.cos(radius * 5))
+            
+        elif distortion_type == 'wave':
+            # Simple wave distortions
+            wave_freq = disco_scale * 1.5
+            wave_amp = disco_scale * 0.15
+            
+            new_x = x_grid + wave_amp * torch.sin(wave_freq * y_grid)
+            new_y = y_grid + wave_amp * torch.sin(wave_freq * x_grid)
+            
+        else:  # default fallback
+            # Default to psychedelic if unknown type
+            radius = torch.sqrt(x_grid**2 + y_grid**2)
+            angle = torch.atan2(y_grid, x_grid)
+            
+            swirl_strength = disco_scale * 0.3
+            new_angle = angle + swirl_strength * torch.exp(-radius * 2)
+            
+            new_x = radius * torch.cos(new_angle)
+            new_y = radius * torch.sin(new_angle)
         
-        cut_size = clip_model.visual.input_resolution
-        make_cutouts = SimpleMakeCutouts(cut_size, cutn)
-        normalize = transforms.Normalize(
-            mean=(0.48145466, 0.4578275, 0.40821073),
-            std=(0.26862954, 0.26130258, 0.27577711)
+        # Clamp coordinates to valid range
+        new_x = torch.clamp(new_x, -1, 1)
+        new_y = torch.clamp(new_y, -1, 1)
+        
+        # Create sampling grid for grid_sample
+        grid = torch.stack([new_x, new_y], dim=-1).unsqueeze(0).repeat(batch_size, 1, 1, 1)
+        
+        # Apply the distortion using grid sampling
+        distorted_latent = F.grid_sample(
+            latent_samples, 
+            grid, 
+            mode='bilinear', 
+            padding_mode='reflection',
+            align_corners=False
         )
         
-        current_latent = latent_tensor.clone()
-        # Use more conservative blend factor to preserve original structure
-        blend_factor = min(blend_factor, 0.2)  # Much more conservative blending
-
-        # Check if we're starting with a reasonable latent (not pure noise)
-        latent_std = current_latent.std().item()
-        if latent_std > 2.0:  # If latent seems like pure noise
-            print(f"[Disco] Warning: Input latent has high std ({latent_std:.2f}), reducing noise strength further")
-            noise_strength *= 0.5  # Further reduce noise strength
+        # Blend with original based on disco_scale
+        blend_factor = min(disco_scale / 10.0, 0.8)  # Scale from 0 to 0.8 max
+        result = (1 - blend_factor) * latent_samples + blend_factor * distorted_latent
         
-        print(f"[Disco] Starting latent search: {steps} steps, {n_candidates} candidates, noise strength {noise_strength:.4f}")
-        print(f"[Disco] Using conservative blend factor: {blend_factor:.2f}")
-        print(f"[Disco] Input latent std: {latent_std:.3f}")
-        if tv_scale > 0:
-            print(f"[Disco] Perceptual penalty enabled: scale {tv_scale}")
+        print(f"[Disco] Applied {distortion_type} distortion with blend factor {blend_factor:.3f}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Disco distortion failed: {e}", exc_info=True)
+        return latent_samples
 
-        for i in range(steps):
-            with torch.no_grad():
-                # a. Create a batch of candidate latents by adding noise
-                candidate_latents = current_latent.repeat(n_candidates, 1, 1, 1)
-                noise = torch.randn_like(candidate_latents) * noise_strength
-                candidate_latents += noise
-
-                # b. Decode candidate latents into images
-                decoded_images = vae.decode(candidate_latents)
-                decoded_images = (decoded_images / 2 + 0.5).clamp(0, 1)
-
-                # c. Skip aggressive smoothing that might destroy patterns
-                # Use original decoded images for CLIP scoring to preserve detail
-                
-                # d. Score decoded images with CLIP
-                cutouts_list = [make_cutouts(img.unsqueeze(0)) for img in decoded_images]
-                all_cutouts = torch.cat(cutouts_list, dim=0)
-                
-                normalized_cutouts = normalize(all_cutouts)
-                image_features = clip_model.encode_image(normalized_cutouts).float()
-                image_features = image_features / image_features.norm(dim=-1, keepdim=True)
-                image_features = image_features.view(n_candidates, cutn, -1)
-                
-                clip_scores = torch.einsum('cf,bcf->bc', text_features.squeeze(0), image_features).mean(dim=1)
-
-                # Use much lighter texture penalty to avoid over-smoothing
-                if tv_scale > 0:
-                    texture_penalties = texture_std_penalty(decoded_images)
-                    # Reduce penalty strength significantly
-                    penalty_amount = texture_penalties * (tv_scale / 1000.0)  # Much lighter penalty
-                    total_scores = clip_scores - penalty_amount
-                else:
-                    total_scores = clip_scores
-
-                # e. Select the best latent from candidates
-                best_idx = torch.argmax(total_scores)
-                best_latent = candidate_latents[best_idx]
-
-                # f. Very conservative blending to preserve original structure
-                current_latent = (1 - blend_factor) * current_latent + blend_factor * best_latent
-            
-            if i % 5 == 0 or i == steps - 1:
-                print(f"[Disco] Step {i+1}/{steps}, Best Score: {total_scores.max().item():.4f} (CLIP: {clip_scores[best_idx]:.4f}, Penalty: {texture_penalties[best_idx]:.4f})")
-            
-            # Update progress with a preview image
-            if async_task is not None and (i % 2 == 0 or i == steps - 1):
-                progress = int((i + 1) / steps * 100)
-                preview_image = vae.decode(current_latent)
-                preview_image = (preview_image / 2 + 0.5).clamp(0, 1)
-                preview_image_np = (preview_image.squeeze(0).permute(1, 2, 0) * 255).clamp(0, 255).to(torch.uint8).cpu().numpy()
-                async_task.yields.append(['preview', (progress, f'Disco Step {i+1}/{steps}', preview_image_np)])
-
-        # Store the optimized latent back into the dictionary
-        latent['samples'] = current_latent
-        print("[Disco] Latent search optimization completed.")
+def run_clip_guidance_loop(
+    latent, vae, clip_model, clip_preprocess, text_prompt, async_task,
+    steps=30, disco_scale=5.0, cutn=12, tv_scale=0.0, range_scale=0.0,
+    n_candidates=8, blend_factor=0.2
+):
+    """
+    New approach: Instead of complex CLIP guidance, inject distortion once during generation.
+    This is much more effective and creates the classic Disco Diffusion look.
+    """
+    print("[Disco] Injecting one-shot distortion instead of iterative CLIP guidance...")
+    
+    try:
+        # Get the distortion type from disco settings
+        distortion_type = getattr(disco_settings, 'disco_preset', 'psychedelic')
+        if distortion_type == 'custom':
+            distortion_type = 'psychedelic'  # Default fallback
+        
+        # Apply the distortion directly to the latent
+        latent['samples'] = inject_disco_distortion(
+            latent['samples'], 
+            disco_scale=disco_scale, 
+            distortion_type=distortion_type
+        )
+        
+        print("[Disco] One-shot distortion injection completed.")
         return latent
 
     except Exception as e:
-        logger.error(f"CLIP guidance failed: {e}", exc_info=True)
+        logger.error(f"Disco distortion injection failed: {e}", exc_info=True)
         return latent
 
 def run_clip_post_processing(
