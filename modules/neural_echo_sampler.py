@@ -48,6 +48,9 @@ class NeuralEchoSampler:
         Call this right after sampler.step returns the denoised latent.
         Returns the modified latent with echo added.
         """
+        if not self.enabled:
+            return x
+            
         # 1. Store denoised to memory
         self.history.append(denoised.clone())
         if len(self.history) > self.max_memory:
