@@ -31,6 +31,7 @@ class NeuralEchoSampler:
         self.decay_factor = decay_factor
         self.max_memory = max_memory
         self.history: List[torch.Tensor] = []
+        self.enabled = True
 
     def compute_echo(self) -> torch.Tensor:
         """Return weighted sum of all stored denoised tensors."""
