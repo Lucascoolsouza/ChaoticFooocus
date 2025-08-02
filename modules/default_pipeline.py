@@ -338,7 +338,7 @@ def get_candidate_vae(steps, switch, denoise=1.0, refiner_swap_method='joint'):
 
 @torch.no_grad()
 @torch.inference_mode()
-def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, original_prompt=None, original_negative_prompt=None, detail_daemon_enabled=False, detail_daemon_amount=0.25, detail_daemon_start=0.2, detail_daemon_end=0.8, detail_daemon_bias=0.71, detail_daemon_base_multiplier=0.85, detail_daemon_start_offset=0, detail_daemon_end_offset=-0.15, detail_daemon_exponent=1, detail_daemon_fade=0, detail_daemon_mode='both', detail_daemon_smooth=True, tpg_enabled=False, tpg_scale=3.0, tpg_applied_layers=None, tpg_shuffle_strength=1.0, tpg_adaptive_strength=True, drunk_enabled=False, drunk_attn_noise=0.0, drunk_layer_dropout=0.0, drunk_prompt_noise=0.0, drunk_cognitive_echo=0.0, drunk_dynamic_guidance=0.0, drunk_applied_layers=None, nag_enabled=False, nag_scale=1.5, nag_tau=5.0, nag_alpha=0.5, nag_negative_prompt="", nag_end=1.0, disco_enabled=False, disco_scale=0.5, disco_preset='custom', disco_transforms=None, disco_seed=None, disco_animation_mode='none', disco_zoom_factor=1.02, disco_rotation_speed=0.1, disco_translation_x=0.0, disco_translation_y=0.0, disco_color_coherence=0.5, disco_saturation_boost=1.2, disco_contrast_boost=1.1, disco_symmetry_mode='none', disco_fractal_octaves=3, disco_clip_model='RN50', disco_guidance_steps=100, disco_cutn=16, disco_tv_scale=150.0, disco_range_scale=50.0, lfl_enabled=False, lfl_echo_strength=0.05, lfl_decay_factor=0.9, lfl_max_memory=20, force_grid_checkbox=False, async_task=None):
+def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, original_prompt=None, original_negative_prompt=None, detail_daemon_enabled=False, detail_daemon_amount=0.25, detail_daemon_start=0.2, detail_daemon_end=0.8, detail_daemon_bias=0.71, detail_daemon_base_multiplier=0.85, detail_daemon_start_offset=0, detail_daemon_end_offset=-0.15, detail_daemon_exponent=1, detail_daemon_fade=0, detail_daemon_mode='both', detail_daemon_smooth=True, tpg_enabled=False, tpg_scale=3.0, tpg_applied_layers=None, tpg_shuffle_strength=1.0, tpg_adaptive_strength=True, drunk_enabled=False, drunk_attn_noise=0.0, drunk_layer_dropout=0.0, drunk_prompt_noise=0.0, drunk_cognitive_echo=0.0, drunk_dynamic_guidance=0.0, drunk_applied_layers=None, nag_enabled=False, nag_scale=1.5, nag_tau=5.0, nag_alpha=0.5, nag_negative_prompt="", nag_end=1.0, disco_enabled=False, disco_scale=0.5, disco_preset='custom', disco_transforms=None, disco_seed=None, disco_animation_mode='none', disco_zoom_factor=1.02, disco_rotation_speed=0.1, disco_translation_x=0.0, disco_translation_y=0.0, disco_color_coherence=0.5, disco_saturation_boost=1.2, disco_contrast_boost=1.1, disco_symmetry_mode='none', disco_fractal_octaves=3, disco_clip_model='RN50', disco_guidance_steps=100, disco_cutn=16, disco_tv_scale=150.0, disco_range_scale=50.0, lfl_enabled=False, lfl_reference_image=None, lfl_aesthetic_strength=0.3, lfl_blend_mode='adaptive', force_grid_checkbox=False, async_task=None):
     print(f"[PROCESS_DIFFUSION ENTRY]")
 
     force_grid_unet_context = None # Initialize to None for cleanup
@@ -596,22 +596,31 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             initial_latent['samples'].to(ldm_patched.modules.model_management.get_torch_device()),
             sigma_min, sigma_max, seed=image_seed, cpu=False)
 
-        # Neural Echo Sampler (LFL) Integration
-        neural_echo_sampler = None
+        # Aesthetic Replication (LFL) Integration
+        aesthetic_replicator = None
         if lfl_enabled:
             try:
-                from modules.neural_echo_sampler import initialize_neural_echo
-                neural_echo_sampler = initialize_neural_echo(
-                    echo_strength=lfl_echo_strength,
-                    decay_factor=lfl_decay_factor,
-                    max_memory=int(lfl_max_memory)
-                )
-                # Reset the sampler for this generation
-                neural_echo_sampler.reset()
-                print(f"[LFL] Neural Echo Sampler initialized: strength={lfl_echo_strength}, decay={lfl_decay_factor}, memory={int(lfl_max_memory)}")
+                from modules.neural_echo_sampler import setup_aesthetic_replication_for_task
+                
+                # Create a mock task object with the parameters
+                class MockTask:
+                    def __init__(self):
+                        self.lfl_enabled = lfl_enabled
+                        self.lfl_reference_image = lfl_reference_image
+                        self.lfl_aesthetic_strength = lfl_aesthetic_strength
+                        self.lfl_blend_mode = lfl_blend_mode
+                
+                mock_task = MockTask()
+                aesthetic_replicator = setup_aesthetic_replication_for_task(mock_task, final_vae)
+                
+                if aesthetic_replicator:
+                    print(f"[LFL] Aesthetic Replication initialized: strength={lfl_aesthetic_strength}, mode={lfl_blend_mode}")
+                else:
+                    print("[LFL] Failed to initialize Aesthetic Replication")
+                    
             except Exception as e:
-                print(f"[LFL] Error initializing Neural Echo Sampler: {e}")
-                neural_echo_sampler = None
+                print(f"[LFL] Error initializing Aesthetic Replication: {e}")
+                aesthetic_replicator = None
 
         # Note: Detail daemon callback approach is too expensive (VAE decode on every step)
         # We'll apply detail daemon as post-processing instead
@@ -621,15 +630,15 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         # Create enhanced callback with Neural Echo and AGGRESSIVE Disco injection
         enhanced_callback = callback
         
-        def create_disco_enhanced_callback(original_callback, neural_echo_sampler, disco_enabled, disco_scale, disco_preset):
+        def create_disco_enhanced_callback(original_callback, aesthetic_replicator, disco_enabled, disco_scale, disco_preset):
             def disco_enhanced_callback(step, x0, x, total_steps, preview_image=None):
-                # Apply neural echo if enabled
+                # Apply aesthetic replication if enabled
                 enhanced_x0 = x0
-                if neural_echo_sampler is not None:
+                if aesthetic_replicator is not None:
                     try:
-                        enhanced_x0 = neural_echo_sampler(x, x0)
+                        enhanced_x0 = aesthetic_replicator(x, x0)
                     except Exception as e:
-                        print(f"[LFL] Error in neural echo callback: {e}")
+                        print(f"[LFL] Error in aesthetic replication callback: {e}")
                         enhanced_x0 = x0
                 
                 # AGGRESSIVE Disco injection during FIRST HALF of generation (0-50%)
@@ -686,7 +695,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             return disco_enhanced_callback
         
         # Create the enhanced callback
-        enhanced_callback = create_disco_enhanced_callback(callback, neural_echo_sampler, disco_enabled, disco_scale, disco_preset)
+        enhanced_callback = create_disco_enhanced_callback(callback, aesthetic_replicator, disco_enabled, disco_scale, disco_preset)
 
         # Use sampler (with or without guidance)
         ksampler_imgs = core.ksampler(

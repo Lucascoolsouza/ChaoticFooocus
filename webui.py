@@ -1495,29 +1495,33 @@ with shared.gradio_root:
                     vibe_like_btn.click(like_current_image, outputs=vibe_memory_stats, queue=False, show_progress=False)
                     vibe_dislike_btn.click(dislike_current_image, outputs=vibe_memory_stats, queue=False, show_progress=False)
                 
-                with gr.Accordion(label='Latent Feedback Loop (LFL)', open=False):
-                    lfl_enabled = gr.Checkbox(label='Enable Latent Feedback Loop', value=False,
-                                            info='Add fading memory (echo) of denoised latents to improve coherence')
+                with gr.Accordion(label='Aesthetic Replication (LFL)', open=False):
+                    lfl_enabled = gr.Checkbox(label='Enable Aesthetic Replication', value=False,
+                                            info='Replicate the aesthetic of a reference image into the generation')
                     
                     with gr.Row(visible=False) as lfl_controls:
                         with gr.Column():
-                            lfl_echo_strength = gr.Slider(label='Echo Strength', minimum=0.001, maximum=0.2, step=0.001,
-                                                        value=0.05, info='Global multiplier on the summed echo')
-                            lfl_decay_factor = gr.Slider(label='Decay Factor', minimum=0.1, maximum=0.99, step=0.01,
-                                                       value=0.9, info='Weight multiplier per step (older = weaker)')
-                            lfl_max_memory = gr.Slider(label='Max Memory', minimum=5, maximum=50, step=1,
-                                                     value=20, info='Maximum number of steps to remember')
+                            lfl_reference_image = gr.Image(label='Reference Image', 
+                                                         type='pil', 
+                                                         info='Upload an image whose aesthetic you want to replicate')
+                            lfl_aesthetic_strength = gr.Slider(label='Aesthetic Strength', minimum=0.1, maximum=1.0, step=0.05,
+                                                             value=0.3, info='How strongly to apply aesthetic guidance')
+                            lfl_blend_mode = gr.Dropdown(label='Blend Mode', 
+                                                       choices=['adaptive', 'linear', 'attention'],
+                                                       value='adaptive',
+                                                       info='How to blend aesthetic features into generation')
                     
                     lfl_status = gr.Textbox(label='LFL Status', interactive=False, 
-                                          value='Latent Feedback Loop: Disabled', visible=False)
+                                          value='Aesthetic Replication: Disabled', visible=False)
                     
                     def update_lfl_visibility(enabled):
                         return [gr.update(visible=enabled)] * 2
                     
-                    def update_lfl_status(enabled, echo_strength, decay_factor, max_memory):
+                    def update_lfl_status(enabled, reference_image, aesthetic_strength, blend_mode):
                         if not enabled:
-                            return "Latent Feedback Loop: Disabled"
-                        return f"LFL: Enabled | Echo: {echo_strength:.3f} | Decay: {decay_factor:.2f} | Memory: {int(max_memory)}"
+                            return "Aesthetic Replication: Disabled"
+                        ref_status = "Set" if reference_image is not None else "Not Set"
+                        return f"LFL: Enabled | Reference: {ref_status} | Strength: {aesthetic_strength:.2f} | Mode: {blend_mode}"
                     
                     lfl_enabled.change(update_lfl_visibility, 
                                      inputs=lfl_enabled,
@@ -1525,7 +1529,7 @@ with shared.gradio_root:
                                      queue=False, show_progress=False)
                     
                     # Update status when parameters change
-                    lfl_inputs = [lfl_enabled, lfl_echo_strength, lfl_decay_factor, lfl_max_memory]
+                    lfl_inputs = [lfl_enabled, lfl_reference_image, lfl_aesthetic_strength, lfl_blend_mode]
                     for input_component in lfl_inputs:
                         input_component.change(update_lfl_status,
                                              inputs=lfl_inputs,
@@ -1884,7 +1888,7 @@ with shared.gradio_root:
         ctrls += [vibe_memory_enabled, vibe_memory_threshold, vibe_memory_max_retries]
         
         # LFL controls
-        ctrls += [lfl_enabled, lfl_echo_strength, lfl_decay_factor, lfl_max_memory]
+        ctrls += [lfl_enabled, lfl_reference_image, lfl_aesthetic_strength, lfl_blend_mode]
         
         ctrls += [performance_selection]
 

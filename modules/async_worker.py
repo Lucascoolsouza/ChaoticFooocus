@@ -386,11 +386,11 @@ class AsyncTask:
         
         # Assign in correct order matching webui ctrls order with defaults
         self.lfl_enabled = lfl_params[0] if lfl_params[0] is not None else False
-        self.lfl_echo_strength = lfl_params[1] if lfl_params[1] is not None else 0.05
-        self.lfl_decay_factor = lfl_params[2] if lfl_params[2] is not None else 0.9
-        self.lfl_max_memory = lfl_params[3] if lfl_params[3] is not None else 20
+        self.lfl_reference_image = lfl_params[1] if lfl_params[1] is not None else None
+        self.lfl_aesthetic_strength = lfl_params[2] if lfl_params[2] is not None else 0.3
+        self.lfl_blend_mode = lfl_params[3] if lfl_params[3] is not None else 'adaptive'
         
-        print(f"[DEBUG] LFL params: enabled={self.lfl_enabled}, echo_strength={self.lfl_echo_strength}, decay_factor={self.lfl_decay_factor}, max_memory={self.lfl_max_memory}")
+        print(f"[DEBUG] LFL params: enabled={self.lfl_enabled}, reference_image={'Set' if self.lfl_reference_image else 'None'}, strength={self.lfl_aesthetic_strength}, mode={self.lfl_blend_mode}")
 
         # Performance selection (added at the end to match webui.py ctrls order)
         self.performance_selection = Performance(args.pop())
@@ -628,9 +628,9 @@ def worker():
             disco_range_scale=async_task.disco_range_scale,
             
             lfl_enabled=async_task.lfl_enabled,
-            lfl_echo_strength=async_task.lfl_echo_strength,
-            lfl_decay_factor=async_task.lfl_decay_factor,
-            lfl_max_memory=async_task.lfl_max_memory,
+            lfl_reference_image=async_task.lfl_reference_image,
+            lfl_aesthetic_strength=async_task.lfl_aesthetic_strength,
+            lfl_blend_mode=async_task.lfl_blend_mode,
             
             force_grid_checkbox=async_task.force_grid_checkbox
         )
