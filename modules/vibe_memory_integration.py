@@ -58,20 +58,45 @@ def is_vibe_memory_enabled(async_task):
     return hasattr(async_task, 'vibe_memory_enabled') and async_task.vibe_memory_enabled
 
 def apply_vibe_filtering(latent_samples, vae_model, async_task):
-    """Apply vibe filtering to generated samples."""
+    """Apply vibe filtering to generated samples with enhanced error handling."""
     if not TORCH_AVAILABLE:
+        logger.info("[VibeMemory] PyTorch not available, skipping vibe filtering")
         return latent_samples
         
     vibe = get_vibe_memory()
-    if not vibe or not is_vibe_memory_enabled(async_task):
+    if not vibe:
+        logger.info("[VibeMemory] Vibe memory not available, skipping filtering")
+        return latent_samples
+        
+    if not is_vibe_memory_enabled(async_task):
+        logger.debug("[VibeMemory] Vibe memory not enabled for this task")
+        return latent_samples
+    
+    if not vibe.clip_model:
+        logger.warning("[VibeMemory] CLIP model not available, cannot perform filtering")
+        logger.info("[VibeMemory] Install CLIP with: pip install git+https://github.com/openai/CLIP.git")
+        return latent_samples
+    
+    # Check if we have any memories to work with
+    total_memories = len(vibe.data.get("liked", [])) + len(vibe.data.get("disliked", []))
+    if total_memories == 0:
+        logger.info("[VibeMemory] No memories stored, skipping filtering")
+        logger.info("[VibeMemory] Use 👍/👎 buttons to add image preferences")
         return latent_samples
     
     # Get parameters from async_task
     threshold = getattr(async_task, 'vibe_memory_threshold', -0.1)
     max_retries = getattr(async_task, 'vibe_memory_max_retries', 3)
+    category = getattr(async_task, 'vibe_memory_category', None)
+    
+    logger.info(f"[VibeMemory] Applying vibe filtering (threshold: {threshold:.3f}, max_retries: {max_retries})")
     
     try:
+        original_latent = latent_samples.clone()
+        best_score = float('-inf')
+        best_latent = latent_samples.clone()
         retry_count = 0
+        
         while retry_count < max_retries:
             # Decode latent to image for scoring
             with torch.no_grad():
@@ -85,28 +110,49 @@ def apply_vibe_filtering(latent_samples, vae_model, async_task):
                 if decoded.dim() == 4:
                     decoded = decoded.squeeze(0)
                 
-                # Get embedding and score - pass the embedding directly
+                # Get embedding and score
                 embedding = vibe.tensor_to_embedding(decoded)
-                score = vibe.score(embedding)  # Pass the list directly, score() handles conversion
+                if not embedding or all(x == 0 for x in embedding):
+                    logger.warning("[VibeMemory] Got zero embedding, skipping this attempt")
+                    retry_count += 1
+                    continue
                 
-                logger.info(f"[VibeMemory] Attempt {retry_count + 1}, Score: {score:.3f}")
+                score = vibe.score(embedding, category=category)
+                
+                logger.info(f"[VibeMemory] Attempt {retry_count + 1}/{max_retries}, Score: {score:.6f}")
+                
+                # Keep track of best result
+                if score > best_score:
+                    best_score = score
+                    best_latent = latent_samples.clone()
                 
                 if score >= threshold:
-                    logger.info(f"[VibeMemory] Accepted image with score {score:.3f}")
+                    logger.info(f"[VibeMemory] ✅ Accepted image with score {score:.6f}")
                     break
                 
                 # Generate new latent if score is too low
                 if retry_count < max_retries - 1:
-                    latent_samples = torch.randn_like(latent_samples)
+                    # Add controlled noise to original latent instead of completely random
+                    noise_strength = 0.1 + (retry_count * 0.05)
+                    latent_samples = original_latent + torch.randn_like(original_latent) * noise_strength
                     retry_count += 1
                 else:
-                    logger.info(f"[VibeMemory] Max retries reached, using last sample with score {score:.3f}")
+                    # Use best result if no sample met threshold
+                    latent_samples = best_latent
+                    logger.info(f"[VibeMemory] ⚠️ Max retries reached, using best score: {best_score:.6f}")
                     break
+        
+        # Update statistics
+        if hasattr(vibe, 'data') and 'statistics' in vibe.data:
+            vibe.data["statistics"]["filter_applications"] += 1
+            vibe._save()
                     
     except Exception as e:
-        logger.warning(f"[VibeMemory] Error during filtering: {e}")
+        logger.error(f"[VibeMemory] Error during filtering: {e}")
         import traceback
         traceback.print_exc()
+        # Return original latent on error
+        return original_latent if 'original_latent' in locals() else latent_samples
     
     return latent_samples
 
