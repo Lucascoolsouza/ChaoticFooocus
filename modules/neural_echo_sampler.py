@@ -31,7 +31,7 @@ def get_blend_mode(async_task) -> str:
 
 
 def setup_aesthetic_replication_for_task(async_task, vae=None):
-    """Setup aesthetic replication for a specific task."""
+    """Setup aggressive aesthetic replication for a specific task."""
     if not is_aesthetic_replication_enabled(async_task):
         return None
     
@@ -47,10 +47,10 @@ def setup_aesthetic_replication_for_task(async_task, vae=None):
             logger.warning("[LFL] No reference image provided for aesthetic replication")
             return None
         
-        # Initialize the replicator
+        # Initialize the replicator with aggressive settings
         replicator = initialize_aesthetic_replicator(
             aesthetic_strength=aesthetic_strength,
-            blend_mode=blend_mode
+            blend_mode=blend_mode if blend_mode != 'adaptive' else 'aggressive'
         )
         
         # Set the reference image
@@ -59,12 +59,40 @@ def setup_aesthetic_replication_for_task(async_task, vae=None):
             logger.error("[LFL] Failed to set reference image")
             return None
         
-        logger.info(f"[LFL] Aesthetic replication initialized: strength={aesthetic_strength}, mode={blend_mode}")
+        logger.info(f"[LFL] Aggressive aesthetic replication initialized: strength={aesthetic_strength}, mode={blend_mode}")
         return replicator
         
     except Exception as e:
         logger.error(f"[LFL] Error setting up aesthetic replication: {e}")
         return None
+
+
+def hook_unet_for_aesthetic_replication(unet_model, reference_noise=None):
+    """Hook UNet for aggressive aesthetic replication."""
+    try:
+        from extras.LFL.latent_feedback_loop import hook_unet_for_aesthetic_replication
+        return hook_unet_for_aesthetic_replication(unet_model, reference_noise)
+    except Exception as e:
+        logger.error(f"[LFL] Error hooking UNet: {e}")
+        return False
+
+
+def unhook_unet_aesthetic_replication():
+    """Remove UNet hooks."""
+    try:
+        from extras.LFL.latent_feedback_loop import unhook_unet_aesthetic_replication
+        unhook_unet_aesthetic_replication()
+    except Exception as e:
+        logger.warning(f"[LFL] Error unhooking UNet: {e}")
+
+
+def set_aesthetic_timestep(timestep):
+    """Update timestep for adaptive blending."""
+    try:
+        from extras.LFL.latent_feedback_loop import set_aesthetic_timestep
+        set_aesthetic_timestep(timestep)
+    except Exception as e:
+        logger.debug(f"[LFL] Error setting timestep: {e}")
 
 
 def apply_aesthetic_replication(x: torch.Tensor, denoised: torch.Tensor) -> torch.Tensor:

@@ -1,14 +1,16 @@
 """
 Latent Feedback Loop (LFL) - Aesthetic Replication System
 Replicates the aesthetic of an input image into the UNet during generation.
+Uses aggressive UNet layer hooks for maximum aesthetic impact.
 """
 
 import torch
 import torch.nn.functional as F
-from typing import Optional
+from typing import Optional, Dict, List
 import logging
 from PIL import Image
 import numpy as np
+import weakref
 
 logger = logging.getLogger(__name__)
 
@@ -16,27 +18,45 @@ logger = logging.getLogger(__name__)
 class AestheticReplicator:
     """
     Replicates the aesthetic of a reference image into the UNet during generation.
-    Uses latent space analysis and feature matching to guide the generation process.
+    Uses aggressive UNet layer hooks for maximum aesthetic impact.
     """
 
     def __init__(
         self,
-        aesthetic_strength: float = 0.3,
+        aesthetic_strength: float = 0.5,
         feature_layers: list = None,
-        blend_mode: str = 'adaptive'
+        blend_mode: str = 'aggressive'
     ):
         """
-        aesthetic_strength: How strongly to apply aesthetic guidance (0.0-1.0)
+        aesthetic_strength: How strongly to apply aesthetic guidance (0.0-2.0, higher = more aggressive)
         feature_layers: Which UNet layers to target for aesthetic guidance
-        blend_mode: How to blend aesthetic features ('adaptive', 'linear', 'attention')
+        blend_mode: How to blend aesthetic features ('aggressive', 'adaptive', 'linear', 'attention')
         """
         self.aesthetic_strength = aesthetic_strength
-        self.feature_layers = feature_layers or ['down_blocks.0', 'down_blocks.1', 'mid_block', 'up_blocks.0', 'up_blocks.1']
+        self.feature_layers = feature_layers or [
+            'down_blocks.0.resnets.0',
+            'down_blocks.0.resnets.1', 
+            'down_blocks.1.resnets.0',
+            'down_blocks.1.resnets.1',
+            'mid_block.resnets.0',
+            'mid_block.resnets.1',
+            'up_blocks.0.resnets.0',
+            'up_blocks.0.resnets.1',
+            'up_blocks.1.resnets.0',
+            'up_blocks.1.resnets.1'
+        ]
         self.blend_mode = blend_mode
         self.reference_latent = None
         self.reference_features = {}
         self.enabled = True
         self.vae = None
+        
+        # UNet hook management
+        self.hooked_unet = None
+        self.hook_handles = []
+        self.layer_activations = {}
+        self.reference_activations = {}
+        self.current_timestep = 0
 
     def set_reference_image(self, image_path: str, vae=None):
         """Set the reference image for aesthetic replication."""
@@ -286,16 +306,228 @@ class AestheticReplicator:
             logger.warning(f"[LFL] Error in aesthetic replication: {e}")
             return x
 
+    def hook_unet_layers(self, unet_model):
+        """Apply hooks to UNet layers for aggressive aesthetic replication."""
+        if self.hooked_unet is unet_model:
+            return  # Already hooked
+            
+        # Remove existing hooks
+        self.remove_unet_hooks()
+        
+        self.hooked_unet = unet_model
+        logger.info(f"[LFL] Hooking UNet layers for aggressive aesthetic replication")
+        
+        def create_aesthetic_hook(layer_name):
+            def hook_fn(module, input, output):
+                if not self.enabled or self.reference_latent is None:
+                    return output
+                    
+                try:
+                    # Store current activation
+                    self.layer_activations[layer_name] = output
+                    
+                    # Apply aesthetic guidance if we have reference activations
+                    if layer_name in self.reference_activations:
+                        reference_activation = self.reference_activations[layer_name]
+                        
+                        # Resize reference to match current if needed
+                        if reference_activation.shape != output.shape:
+                            reference_activation = F.interpolate(
+                                reference_activation,
+                                size=output.shape[2:],
+                                mode='bilinear',
+                                align_corners=False
+                            )
+                            
+                            # Handle channel mismatch
+                            if reference_activation.shape[1] != output.shape[1]:
+                                if reference_activation.shape[1] < output.shape[1]:
+                                    repeat_factor = output.shape[1] // reference_activation.shape[1]
+                                    reference_activation = reference_activation.repeat(1, repeat_factor, 1, 1)
+                                else:
+                                    reference_activation = reference_activation[:, :output.shape[1], :, :]
+                        
+                        # Compute aesthetic guidance
+                        aesthetic_diff = reference_activation - output
+                        
+                        # Apply different blending strategies
+                        if self.blend_mode == 'aggressive':
+                            # Very strong aesthetic influence
+                            strength = self.aesthetic_strength * 2.0
+                            guided_output = output + aesthetic_diff * strength
+                            
+                        elif self.blend_mode == 'adaptive':
+                            # Adaptive strength based on layer depth and timestep
+                            layer_depth = self._get_layer_depth(layer_name)
+                            timestep_factor = max(0.1, 1.0 - (self.current_timestep / 1000.0))
+                            strength = self.aesthetic_strength * layer_depth * timestep_factor
+                            guided_output = output + aesthetic_diff * strength
+                            
+                        elif self.blend_mode == 'attention':
+                            # Attention-weighted blending
+                            attention_map = torch.softmax(torch.abs(aesthetic_diff), dim=1)
+                            guided_output = output + aesthetic_diff * attention_map * self.aesthetic_strength
+                            
+                        else:  # linear
+                            guided_output = output + aesthetic_diff * self.aesthetic_strength
+                        
+                        # Clamp to prevent extreme values
+                        guided_output = torch.clamp(guided_output, -10.0, 10.0)
+                        
+                        return guided_output
+                    
+                    return output
+                    
+                except Exception as e:
+                    logger.warning(f"[LFL] Error in aesthetic hook for {layer_name}: {e}")
+                    return output
+            
+            return hook_fn
+        
+        # Apply hooks to specified layers
+        hooked_count = 0
+        for layer_name in self.feature_layers:
+            try:
+                module = self._get_module_by_name(unet_model, layer_name)
+                if module is not None:
+                    handle = module.register_forward_hook(create_aesthetic_hook(layer_name))
+                    self.hook_handles.append(handle)
+                    hooked_count += 1
+                    logger.debug(f"[LFL] Hooked layer: {layer_name}")
+                else:
+                    logger.warning(f"[LFL] Could not find layer: {layer_name}")
+            except Exception as e:
+                logger.warning(f"[LFL] Failed to hook layer {layer_name}: {e}")
+        
+        logger.info(f"[LFL] Successfully hooked {hooked_count}/{len(self.feature_layers)} UNet layers")
+
+    def remove_unet_hooks(self):
+        """Remove all UNet hooks."""
+        for handle in self.hook_handles:
+            try:
+                handle.remove()
+            except:
+                pass
+        self.hook_handles.clear()
+        self.hooked_unet = None
+        self.layer_activations.clear()
+        logger.debug("[LFL] Removed all UNet hooks")
+
+    def _get_module_by_name(self, model, name):
+        """Get a module by its dotted name."""
+        try:
+            parts = name.split('.')
+            module = model
+            for part in parts:
+                if part.isdigit():
+                    module = module[int(part)]
+                else:
+                    module = getattr(module, part)
+            return module
+        except:
+            return None
+
+    def _get_layer_depth(self, layer_name):
+        """Get relative depth factor for layer-specific strength."""
+        if 'down_blocks.0' in layer_name:
+            return 1.5  # Early layers get stronger influence
+        elif 'down_blocks.1' in layer_name:
+            return 1.3
+        elif 'mid_block' in layer_name:
+            return 1.0  # Middle layers get normal influence
+        elif 'up_blocks.0' in layer_name:
+            return 0.8
+        elif 'up_blocks.1' in layer_name:
+            return 0.6  # Later layers get weaker influence
+        else:
+            return 1.0
+
+    def extract_reference_activations(self, unet_model, reference_noise):
+        """Extract reference activations by running reference through UNet."""
+        if self.reference_latent is None:
+            return
+            
+        logger.info("[LFL] Extracting reference activations from UNet")
+        
+        # Temporarily store activations during reference pass
+        temp_activations = {}
+        temp_handles = []
+        
+        def create_capture_hook(layer_name):
+            def hook_fn(module, input, output):
+                temp_activations[layer_name] = output.detach().clone()
+                return output
+            return hook_fn
+        
+        # Apply capture hooks
+        for layer_name in self.feature_layers:
+            try:
+                module = self._get_module_by_name(unet_model, layer_name)
+                if module is not None:
+                    handle = module.register_forward_hook(create_capture_hook(layer_name))
+                    temp_handles.append(handle)
+            except Exception as e:
+                logger.warning(f"[LFL] Failed to add capture hook for {layer_name}: {e}")
+        
+        try:
+            # Run reference latent through UNet to capture activations
+            with torch.no_grad():
+                # Create reference noise with same shape as current generation
+                ref_noise = reference_noise.clone()
+                if self.reference_latent.shape != ref_noise.shape:
+                    ref_latent = F.interpolate(
+                        self.reference_latent,
+                        size=ref_noise.shape[2:],
+                        mode='bilinear',
+                        align_corners=False
+                    )
+                    if ref_latent.shape[1] != ref_noise.shape[1]:
+                        if ref_latent.shape[1] < ref_noise.shape[1]:
+                            repeat_factor = ref_noise.shape[1] // ref_latent.shape[1]
+                            ref_latent = ref_latent.repeat(1, repeat_factor, 1, 1)
+                        else:
+                            ref_latent = ref_latent[:, :ref_noise.shape[1], :, :]
+                else:
+                    ref_latent = self.reference_latent
+                
+                # Use a dummy timestep for reference extraction
+                dummy_timestep = torch.tensor([500], device=ref_latent.device)
+                
+                # Run through UNet (this will trigger our capture hooks)
+                try:
+                    _ = unet_model(ref_latent, dummy_timestep)
+                except Exception as e:
+                    logger.warning(f"[LFL] UNet forward pass failed during reference extraction: {e}")
+            
+            # Store captured activations
+            self.reference_activations = temp_activations.copy()
+            logger.info(f"[LFL] Captured {len(self.reference_activations)} reference activations")
+            
+        finally:
+            # Remove capture hooks
+            for handle in temp_handles:
+                try:
+                    handle.remove()
+                except:
+                    pass
+
+    def set_current_timestep(self, timestep):
+        """Update current timestep for adaptive blending."""
+        self.current_timestep = timestep
+
     def reset(self):
         """Reset the aesthetic replicator."""
+        self.remove_unet_hooks()
         self.reference_latent = None
         self.reference_features = {}
+        self.reference_activations.clear()
+        self.layer_activations.clear()
 
     def set_enabled(self, enabled: bool):
         """Enable or disable aesthetic replication."""
         self.enabled = enabled
         if not enabled:
-            self.reset()
+            self.remove_unet_hooks()
 
     def update_parameters(self, aesthetic_strength: float = None, blend_mode: str = None):
         """Update replicator parameters during runtime."""
@@ -309,8 +541,8 @@ class AestheticReplicator:
 aesthetic_replicator = None
 
 
-def initialize_aesthetic_replicator(aesthetic_strength: float = 0.3, blend_mode: str = 'adaptive'):
-    """Initialize the global aesthetic replicator."""
+def initialize_aesthetic_replicator(aesthetic_strength: float = 0.5, blend_mode: str = 'aggressive'):
+    """Initialize the global aesthetic replicator with aggressive settings."""
     global aesthetic_replicator
     aesthetic_replicator = AestheticReplicator(aesthetic_strength, blend_mode=blend_mode)
     return aesthetic_replicator
@@ -329,8 +561,38 @@ def set_reference_image(image_path, vae=None):
     return False
 
 
+def hook_unet_for_aesthetic_replication(unet_model, reference_noise=None):
+    """Hook UNet layers for aggressive aesthetic replication."""
+    global aesthetic_replicator
+    if aesthetic_replicator and aesthetic_replicator.enabled:
+        aesthetic_replicator.hook_unet_layers(unet_model)
+        
+        # Extract reference activations if we have reference noise
+        if reference_noise is not None:
+            aesthetic_replicator.extract_reference_activations(unet_model, reference_noise)
+        
+        logger.info("[LFL] UNet hooked for aggressive aesthetic replication")
+        return True
+    return False
+
+
+def unhook_unet_aesthetic_replication():
+    """Remove UNet hooks for aesthetic replication."""
+    global aesthetic_replicator
+    if aesthetic_replicator:
+        aesthetic_replicator.remove_unet_hooks()
+        logger.info("[LFL] UNet hooks removed")
+
+
+def set_aesthetic_timestep(timestep):
+    """Update current timestep for adaptive blending."""
+    global aesthetic_replicator
+    if aesthetic_replicator:
+        aesthetic_replicator.set_current_timestep(timestep)
+
+
 def apply_aesthetic_replication(x: torch.Tensor, denoised: torch.Tensor) -> torch.Tensor:
-    """Apply aesthetic replication if enabled."""
+    """Apply aesthetic replication if enabled (legacy callback method)."""
     global aesthetic_replicator
     if aesthetic_replicator and aesthetic_replicator.enabled:
         return aesthetic_replicator(x, denoised)

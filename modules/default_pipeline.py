@@ -596,11 +596,17 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             initial_latent['samples'].to(ldm_patched.modules.model_management.get_torch_device()),
             sigma_min, sigma_max, seed=image_seed, cpu=False)
 
-        # Aesthetic Replication (LFL) Integration
+        # Aggressive Aesthetic Replication (LFL) Integration with UNet Hooks
         aesthetic_replicator = None
+        lfl_hooked = False
         if lfl_enabled:
             try:
-                from modules.neural_echo_sampler import setup_aesthetic_replication_for_task
+                from modules.neural_echo_sampler import (
+                    setup_aesthetic_replication_for_task,
+                    hook_unet_for_aesthetic_replication,
+                    unhook_unet_aesthetic_replication,
+                    set_aesthetic_timestep
+                )
                 
                 # Create a mock task object with the parameters
                 class MockTask:
@@ -614,12 +620,21 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 aesthetic_replicator = setup_aesthetic_replication_for_task(mock_task, final_vae)
                 
                 if aesthetic_replicator:
-                    print(f"[LFL] Aesthetic Replication initialized: strength={lfl_aesthetic_strength}, mode={lfl_blend_mode}")
+                    print(f"[LFL] AGGRESSIVE Aesthetic Replication initialized: strength={lfl_aesthetic_strength}, mode={lfl_blend_mode}")
+                    
+                    # Hook the UNet for aggressive aesthetic replication
+                    lfl_hooked = hook_unet_for_aesthetic_replication(final_unet.model, initial_latent['samples'])
+                    if lfl_hooked:
+                        print("[LFL] UNet successfully hooked for aggressive aesthetic replication")
+                    else:
+                        print("[LFL] Warning: Failed to hook UNet, falling back to callback method")
                 else:
                     print("[LFL] Failed to initialize Aesthetic Replication")
                     
             except Exception as e:
                 print(f"[LFL] Error initializing Aesthetic Replication: {e}")
+                import traceback
+                traceback.print_exc()
                 aesthetic_replicator = None
 
         # Note: Detail daemon callback approach is too expensive (VAE decode on every step)
@@ -630,11 +645,20 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         # Create enhanced callback with Neural Echo and AGGRESSIVE Disco injection
         enhanced_callback = callback
         
-        def create_disco_enhanced_callback(original_callback, aesthetic_replicator, disco_enabled, disco_scale, disco_preset):
+        def create_disco_enhanced_callback(original_callback, aesthetic_replicator, disco_enabled, disco_scale, disco_preset, lfl_hooked):
             def disco_enhanced_callback(step, x0, x, total_steps, preview_image=None):
-                # Apply aesthetic replication if enabled
+                # Update timestep for adaptive aesthetic blending
+                if lfl_hooked:
+                    try:
+                        # Convert step to approximate timestep (1000 -> 0)
+                        timestep = int(1000 * (1.0 - step / total_steps))
+                        set_aesthetic_timestep(timestep)
+                    except Exception as e:
+                        pass  # Silent fail for timestep updates
+                
+                # Apply aesthetic replication if enabled (fallback callback method)
                 enhanced_x0 = x0
-                if aesthetic_replicator is not None:
+                if aesthetic_replicator is not None and not lfl_hooked:
                     try:
                         enhanced_x0 = aesthetic_replicator(x, x0)
                     except Exception as e:
@@ -695,7 +719,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             return disco_enhanced_callback
         
         # Create the enhanced callback
-        enhanced_callback = create_disco_enhanced_callback(callback, aesthetic_replicator, disco_enabled, disco_scale, disco_preset)
+        enhanced_callback = create_disco_enhanced_callback(callback, aesthetic_replicator, disco_enabled, disco_scale, disco_preset, lfl_hooked)
 
         # Use sampler (with or without guidance)
         ksampler_imgs = core.ksampler(
@@ -774,6 +798,15 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 print("[Force Grid UNet] Disabled after generation.")
             except Exception as e:
                 print(f"[Force Grid] Error disabling Force Grid: {e}")
+        
+        # Cleanup LFL UNet hooks
+        if lfl_hooked:
+            try:
+                from modules.neural_echo_sampler import unhook_unet_aesthetic_replication
+                unhook_unet_aesthetic_replication()
+                print("[LFL] UNet hooks cleaned up after generation.")
+            except Exception as e:
+                print(f"[LFL] Error cleaning up UNet hooks: {e}")
                 import traceback
                 traceback.print_exc()
     
