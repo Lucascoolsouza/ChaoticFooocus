@@ -514,19 +514,34 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         else:
             initial_latent = latent
 
-        # Disco Diffusion: Inject distortion into initial latent (mid-generation approach)
+        # ULTRA AGGRESSIVE Disco Diffusion: Multiple injection points for maximum effect
         if disco_enabled and disco_scale > 0:
             try:
-                from extras.disco_diffusion.pipeline_disco import inject_disco_distortion
-                print(f"[Disco] Injecting distortion into initial latent with scale={disco_scale}")
+                from extras.disco_diffusion.pipeline_disco import inject_multiple_disco_distortions
+                print(f"[Disco] ULTRA AGGRESSIVE: Multiple distortion injections with scale={disco_scale}")
                 
-                # Apply distortion to the initial latent
-                initial_latent['samples'] = inject_disco_distortion(
+                # Determine aggression level based on scale
+                if disco_scale >= 20.0:
+                    num_layers = 6  # Maximum chaos
+                    print("[Disco] MAXIMUM CHAOS MODE ACTIVATED")
+                elif disco_scale >= 15.0:
+                    num_layers = 4  # High aggression
+                    print("[Disco] HIGH AGGRESSION MODE")
+                elif disco_scale >= 10.0:
+                    num_layers = 3  # Medium aggression
+                    print("[Disco] MEDIUM AGGRESSION MODE")
+                else:
+                    num_layers = 2  # Minimum for aggressive mode
+                    print("[Disco] AGGRESSIVE MODE")
+                
+                # Apply multiple layers of distortion to initial latent
+                initial_latent['samples'] = inject_multiple_disco_distortions(
                     initial_latent['samples'],
                     disco_scale=disco_scale,
-                    distortion_type=disco_preset if disco_preset != 'custom' else 'psychedelic'
+                    distortion_type=disco_preset if disco_preset != 'custom' else 'psychedelic',
+                    num_layers=num_layers
                 )
-                print("[Disco] Distortion injection completed")
+                print(f"[Disco] ULTRA AGGRESSIVE {num_layers}-layer initial distortion completed")
                 
             except Exception as e:
                 print(f"[Disco] Error injecting distortion: {e}")
@@ -615,22 +630,63 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
 
         decoded_latent = None
 
-        # Create Neural Echo enhanced callback if LFL is enabled
+        # Create enhanced callback with Neural Echo and AGGRESSIVE Disco injection
         enhanced_callback = callback
-        if neural_echo_sampler is not None:
-            def neural_echo_callback(step, x0, x, total_steps, preview_image=None):
-                # Apply neural echo to the denoised latent (x0)
-                try:
-                    enhanced_x0 = neural_echo_sampler(x, x0)
-                    # Call the original callback with the enhanced latent
-                    if callback is not None:
-                        callback(step, enhanced_x0, x, total_steps, preview_image)
-                except Exception as e:
-                    print(f"[LFL] Error in neural echo callback: {e}")
-                    # Fallback to original callback
-                    if callback is not None:
-                        callback(step, x0, x, total_steps, preview_image)
-            enhanced_callback = neural_echo_callback
+        
+        def create_disco_enhanced_callback(original_callback, neural_echo_sampler, disco_enabled, disco_scale, disco_preset):
+            def disco_enhanced_callback(step, x0, x, total_steps, preview_image=None):
+                # Apply neural echo if enabled
+                enhanced_x0 = x0
+                if neural_echo_sampler is not None:
+                    try:
+                        enhanced_x0 = neural_echo_sampler(x, x0)
+                    except Exception as e:
+                        print(f"[LFL] Error in neural echo callback: {e}")
+                        enhanced_x0 = x0
+                
+                # AGGRESSIVE Disco injection during sampling at key points
+                if disco_enabled and disco_scale > 0:
+                    # Inject at 25%, 50%, and 75% of sampling for maximum chaos
+                    injection_points = [int(total_steps * 0.25), int(total_steps * 0.5), int(total_steps * 0.75)]
+                    
+                    if step in injection_points:
+                        try:
+                            from extras.disco_diffusion.pipeline_disco import inject_disco_distortion
+                            
+                            # More aggressive injection during sampling
+                            mid_sampling_scale = disco_scale * 1.5  # 50% more aggressive during sampling
+                            
+                            print(f"[Disco] MID-SAMPLING INJECTION at step {step}/{total_steps} (scale={mid_sampling_scale:.1f})")
+                            
+                            # Apply to both the current latent and the denoised prediction
+                            enhanced_x0 = inject_disco_distortion(
+                                enhanced_x0,
+                                disco_scale=mid_sampling_scale,
+                                distortion_type=disco_preset if disco_preset != 'custom' else 'psychedelic',
+                                intensity_multiplier=1.5  # Extra intensity during sampling
+                            )
+                            
+                            # Also apply to the noisy latent for maximum chaos
+                            if disco_scale >= 15.0:  # Only for high scales
+                                x = inject_disco_distortion(
+                                    x,
+                                    disco_scale=mid_sampling_scale * 0.7,  # Slightly less for noisy latent
+                                    distortion_type=disco_preset if disco_preset != 'custom' else 'psychedelic',
+                                    intensity_multiplier=1.2
+                                )
+                                print(f"[Disco] CHAOS MODE: Also injected into noisy latent")
+                            
+                        except Exception as e:
+                            print(f"[Disco] Error in mid-sampling injection: {e}")
+                
+                # Call the original callback
+                if original_callback is not None:
+                    original_callback(step, enhanced_x0, x, total_steps, preview_image)
+            
+            return disco_enhanced_callback
+        
+        # Create the enhanced callback
+        enhanced_callback = create_disco_enhanced_callback(callback, neural_echo_sampler, disco_enabled, disco_scale, disco_preset)
 
         # Use sampler (with or without guidance)
         ksampler_imgs = core.ksampler(
@@ -651,6 +707,26 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             callback_function=enhanced_callback
         )['samples']
         
+        # FINAL AGGRESSIVE Disco injection on the final latent before decoding
+        if disco_enabled and disco_scale > 0 and ksampler_imgs is not None:
+            try:
+                from extras.disco_diffusion.pipeline_disco import inject_disco_distortion
+                
+                # Final aggressive injection with maximum intensity
+                final_scale = disco_scale * 2.0  # Double intensity for final injection
+                print(f"[Disco] FINAL AGGRESSIVE INJECTION before decoding (scale={final_scale:.1f})")
+                
+                ksampler_imgs = inject_disco_distortion(
+                    ksampler_imgs,
+                    disco_scale=final_scale,
+                    distortion_type=disco_preset if disco_preset != 'custom' else 'psychedelic',
+                    intensity_multiplier=2.0  # Maximum intensity for final effect
+                )
+                print("[Disco] FINAL INJECTION completed - maximum disco effect achieved!")
+                
+            except Exception as e:
+                print(f"[Disco] Error in final injection: {e}")
+        
         # Convert latents to images
         if ksampler_imgs is not None:
             latent_dict = {'samples': ksampler_imgs}
@@ -659,9 +735,32 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         else:
             imgs = []
         
-        # Disco Diffusion: Distortion was already applied during generation
-        if disco_enabled and disco_scale > 0:
-            print(f"[Disco] Distortion effects applied during generation with scale={disco_scale}")
+        # ULTRA AGGRESSIVE Disco post-processing on final images
+        if disco_enabled and disco_scale > 0 and len(imgs) > 0:
+            try:
+                from extras.disco_diffusion.disco_integration import disco_integration
+                print("[Disco] ULTRA AGGRESSIVE post-processing on final images...")
+                
+                # Convert numpy back to tensor for processing
+                import torch
+                imgs_tensor = torch.from_numpy(imgs).permute(0, 3, 1, 2).float() / 255.0
+                
+                # Apply aggressive post-processing
+                processed_imgs = disco_integration.run_disco_post_processing(
+                    imgs_tensor, 
+                    text_prompt=positive_cond_text if 'positive_cond_text' in locals() else "disco art",
+                    async_task=async_task
+                )
+                
+                # Convert back to numpy
+                if processed_imgs is not None:
+                    imgs = (processed_imgs.permute(0, 2, 3, 1) * 255.0).clamp(0, 255).to(torch.uint8).cpu().numpy()
+                    print("[Disco] ULTRA AGGRESSIVE post-processing completed!")
+                
+            except Exception as e:
+                print(f"[Disco] Error in post-processing: {e}")
+        
+        print(f"[Disco] TOTAL AGGRESSIVE DISCO PIPELINE COMPLETED with {disco_scale}x intensity")
         
         # TPG Cleanup
         if tpg_enabled and tpg_scale > 0:

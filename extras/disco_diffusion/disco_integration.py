@@ -17,10 +17,24 @@ class DiscoIntegration:
         self.clip_preprocess = None
 
     def initialize_disco(self, **kwargs):
-        """Initialize disco diffusion with given parameters"""
-        disco_settings.update(**kwargs)
+        """Initialize disco diffusion with AGGRESSIVE parameters"""
+        # Load aggressive presets
+        from . import get_disco_presets
+        presets = get_disco_presets()
+        
+        # If a preset is specified, use its aggressive values
+        preset_name = kwargs.get('disco_preset', 'psychedelic')
+        if preset_name in presets:
+            preset_values = presets[preset_name].copy()
+            # Override with any custom values
+            preset_values.update(kwargs)
+            disco_settings.update(**preset_values)
+            print(f"[Disco] AGGRESSIVE mode initialized with preset '{preset_name}': {preset_values}")
+        else:
+            disco_settings.update(**kwargs)
+            print(f"[Disco] Initialized with custom settings: {kwargs}")
+        
         self.is_initialized = True
-        print(f"[Disco] Initialized with settings: {kwargs}")
 
     def _load_clip_model(self):
         if self.clip_model is None:
@@ -51,11 +65,11 @@ class DiscoIntegration:
             clip_preprocess=self.clip_preprocess,
             text_prompt=text_prompt,
             async_task=async_task,
-            steps=getattr(disco_settings, 'disco_guidance_steps', 100),
-            disco_scale=disco_settings.disco_scale,
-            cutn=getattr(disco_settings, 'cutn', 16),
-            tv_scale=getattr(disco_settings, 'tv_scale', 150.0),
-            range_scale=getattr(disco_settings, 'range_scale', 50.0)
+            steps=getattr(disco_settings, 'steps', 50),  # Use aggressive preset steps
+            disco_scale=getattr(disco_settings, 'disco_scale', 15.0),  # Much higher default
+            cutn=getattr(disco_settings, 'cutn', 24),  # More cutouts
+            tv_scale=getattr(disco_settings, 'tv_scale', 300.0),  # Higher TV scale
+            range_scale=getattr(disco_settings, 'range_scale', 100.0)  # Higher range scale
         )
 
     def run_disco_post_processing(self, image_tensor, text_prompt, async_task=None):
@@ -77,9 +91,9 @@ class DiscoIntegration:
             clip_preprocess=self.clip_preprocess,
             text_prompt=text_prompt,
             async_task=async_task,
-            steps=getattr(disco_settings, 'disco_guidance_steps', 30),
-            disco_scale=disco_settings.disco_scale,
-            cutn=getattr(disco_settings, 'cutn', 12)
+            steps=getattr(disco_settings, 'steps', 50),  # Use aggressive preset steps
+            disco_scale=getattr(disco_settings, 'disco_scale', 15.0),  # Much higher default
+            cutn=getattr(disco_settings, 'cutn', 24)  # More cutouts for aggressive effect
         )
 
     def deactivate_after_generation(self):

@@ -97,12 +97,12 @@ def texture_std_penalty(img_tensor):
     # Return the mean std dev across channels for each image in the batch
     return std_per_channel.mean(dim=1)  # Shape: (batch_size,)
 
-def inject_disco_distortion(latent_samples, disco_scale=5.0, distortion_type='psychedelic'):
+def inject_disco_distortion(latent_samples, disco_scale=5.0, distortion_type='psychedelic', intensity_multiplier=1.0):
     """
-    Inject Disco Diffusion-style distortions directly into latent space.
-    This is called once during the middle of generation for maximum effect.
+    AGGRESSIVE Disco Diffusion-style distortions directly into latent space.
+    This creates the classic psychedelic disco diffusion look with maximum impact.
     """
-    print(f"[Disco] Injecting {distortion_type} distortion with scale {disco_scale}")
+    print(f"[Disco] AGGRESSIVE injection: {distortion_type} distortion with scale {disco_scale} x{intensity_multiplier}")
     
     try:
         device = latent_samples.device
@@ -113,78 +113,159 @@ def inject_disco_distortion(latent_samples, disco_scale=5.0, distortion_type='ps
         x_coords = torch.linspace(-1, 1, width, device=device)
         y_grid, x_grid = torch.meshgrid(y_coords, x_coords, indexing='ij')
         
+        # MUCH MORE AGGRESSIVE scaling
+        base_scale = disco_scale * intensity_multiplier
+        
         # Apply different distortion types based on preset
         if distortion_type == 'psychedelic':
-            # Psychedelic swirl and wave distortions
+            # AGGRESSIVE Psychedelic swirl and wave distortions
             radius = torch.sqrt(x_grid**2 + y_grid**2)
             angle = torch.atan2(y_grid, x_grid)
             
-            # Swirl distortion
-            swirl_strength = disco_scale * 0.3
-            new_angle = angle + swirl_strength * torch.exp(-radius * 2)
+            # MUCH stronger swirl distortion
+            swirl_strength = base_scale * 1.2  # 4x stronger
+            new_angle = angle + swirl_strength * torch.exp(-radius * 1.0)  # Less decay
             
-            # Wave distortions
-            wave_freq = disco_scale * 2.0
-            wave_amp = disco_scale * 0.1
+            # MUCH stronger wave distortions
+            wave_freq = base_scale * 4.0  # 2x frequency
+            wave_amp = base_scale * 0.4   # 4x amplitude
             x_wave = x_grid + wave_amp * torch.sin(wave_freq * y_grid)
             y_wave = y_grid + wave_amp * torch.cos(wave_freq * x_grid)
             
-            # Combine swirl and wave
-            new_x = radius * torch.cos(new_angle) + x_wave * 0.3
-            new_y = radius * torch.sin(new_angle) + y_wave * 0.3
+            # Add secondary wave layers for more complexity
+            wave_freq2 = base_scale * 6.0
+            wave_amp2 = base_scale * 0.2
+            x_wave += wave_amp2 * torch.sin(wave_freq2 * y_grid + math.pi/3)
+            y_wave += wave_amp2 * torch.cos(wave_freq2 * x_grid + math.pi/3)
+            
+            # Combine swirl and wave with higher influence
+            new_x = radius * torch.cos(new_angle) + x_wave * 0.8  # Much higher influence
+            new_y = radius * torch.sin(new_angle) + y_wave * 0.8
             
         elif distortion_type == 'fractal':
-            # Fractal-like recursive distortions
-            scale1 = disco_scale * 0.5
-            scale2 = disco_scale * 0.3
-            scale3 = disco_scale * 0.2
+            # AGGRESSIVE Fractal-like recursive distortions
+            scale1 = base_scale * 1.5  # 3x stronger
+            scale2 = base_scale * 1.0  # 3.3x stronger
+            scale3 = base_scale * 0.7  # 3.5x stronger
             
             new_x = x_grid + scale1 * torch.sin(3 * x_grid) * torch.cos(2 * y_grid)
             new_y = y_grid + scale1 * torch.cos(3 * y_grid) * torch.sin(2 * x_grid)
             
-            # Add smaller scale details
+            # Add stronger scale details
             new_x += scale2 * torch.sin(7 * new_x) * torch.cos(5 * new_y)
             new_y += scale2 * torch.cos(7 * new_y) * torch.sin(5 * new_x)
             
-            # Add even finer details
+            # Add even stronger finer details
             new_x += scale3 * torch.sin(13 * new_x) * torch.cos(11 * new_y)
             new_y += scale3 * torch.cos(13 * new_y) * torch.sin(11 * new_x)
             
+            # Add fourth layer for extreme fractal complexity
+            scale4 = base_scale * 0.4
+            new_x += scale4 * torch.sin(19 * new_x) * torch.cos(17 * new_y)
+            new_y += scale4 * torch.cos(19 * new_y) * torch.sin(17 * new_x)
+            
         elif distortion_type == 'kaleidoscope':
-            # Kaleidoscope-like symmetrical distortions
+            # AGGRESSIVE Kaleidoscope-like symmetrical distortions
             radius = torch.sqrt(x_grid**2 + y_grid**2)
             angle = torch.atan2(y_grid, x_grid)
             
-            # Create kaleidoscope effect
-            n_mirrors = 6
+            # Create stronger kaleidoscope effect
+            n_mirrors = 8  # More mirrors for complexity
             mirror_angle = 2 * math.pi / n_mirrors
             folded_angle = torch.abs((angle % mirror_angle) - mirror_angle/2)
             
-            new_x = radius * torch.cos(folded_angle) * (1 + disco_scale * 0.1 * torch.sin(radius * 5))
-            new_y = radius * torch.sin(folded_angle) * (1 + disco_scale * 0.1 * torch.cos(radius * 5))
+            # Much stronger radial modulation
+            radial_mod = 1 + base_scale * 0.5 * torch.sin(radius * 8)  # 5x stronger, higher frequency
+            radial_mod2 = 1 + base_scale * 0.3 * torch.cos(radius * 12)  # Additional layer
+            
+            new_x = radius * torch.cos(folded_angle) * radial_mod * radial_mod2
+            new_y = radius * torch.sin(folded_angle) * radial_mod * radial_mod2
+            
+            # Add spiral component for more complexity
+            spiral_strength = base_scale * 0.4
+            spiral_angle = folded_angle + spiral_strength * radius
+            new_x += base_scale * 0.2 * torch.cos(spiral_angle)
+            new_y += base_scale * 0.2 * torch.sin(spiral_angle)
             
         elif distortion_type == 'wave':
-            # Simple wave distortions
-            wave_freq = disco_scale * 1.5
-            wave_amp = disco_scale * 0.15
+            # AGGRESSIVE wave distortions
+            wave_freq = base_scale * 3.0  # 2x frequency
+            wave_amp = base_scale * 0.6   # 4x amplitude
             
             new_x = x_grid + wave_amp * torch.sin(wave_freq * y_grid)
             new_y = y_grid + wave_amp * torch.sin(wave_freq * x_grid)
             
-        else:  # default fallback
-            # Default to psychedelic if unknown type
+            # Add perpendicular waves for interference patterns
+            wave_freq2 = base_scale * 4.5
+            wave_amp2 = base_scale * 0.4
+            new_x += wave_amp2 * torch.cos(wave_freq2 * x_grid)
+            new_y += wave_amp2 * torch.cos(wave_freq2 * y_grid)
+            
+        elif distortion_type == 'scientific':
+            # MAXIMUM AGGRESSION scientific distortion
             radius = torch.sqrt(x_grid**2 + y_grid**2)
             angle = torch.atan2(y_grid, x_grid)
             
-            swirl_strength = disco_scale * 0.3
-            new_angle = angle + swirl_strength * torch.exp(-radius * 2)
+            # Combine all distortion types for maximum effect
+            # Swirl component
+            swirl_strength = base_scale * 1.5
+            new_angle = angle + swirl_strength * torch.exp(-radius * 0.8)
             
-            new_x = radius * torch.cos(new_angle)
-            new_y = radius * torch.sin(new_angle)
+            # Wave components
+            wave_freq = base_scale * 5.0
+            wave_amp = base_scale * 0.8
+            x_wave = wave_amp * torch.sin(wave_freq * y_grid) * torch.cos(wave_freq * x_grid)
+            y_wave = wave_amp * torch.cos(wave_freq * x_grid) * torch.sin(wave_freq * y_grid)
+            
+            # Fractal components
+            fractal_scale = base_scale * 1.2
+            x_fractal = fractal_scale * torch.sin(5 * x_grid) * torch.cos(3 * y_grid)
+            y_fractal = fractal_scale * torch.cos(5 * y_grid) * torch.sin(3 * x_grid)
+            
+            # Kaleidoscope component
+            n_mirrors = 12
+            mirror_angle = 2 * math.pi / n_mirrors
+            folded_angle = torch.abs((angle % mirror_angle) - mirror_angle/2)
+            kaleido_mod = 1 + base_scale * 0.6 * torch.sin(radius * 10)
+            
+            # Combine everything
+            new_x = (radius * torch.cos(new_angle) * kaleido_mod + x_wave + x_fractal)
+            new_y = (radius * torch.sin(new_angle) * kaleido_mod + y_wave + y_fractal)
+            
+        elif distortion_type == 'dreamy':
+            # Softer but still aggressive dreamy distortions
+            radius = torch.sqrt(x_grid**2 + y_grid**2)
+            angle = torch.atan2(y_grid, x_grid)
+            
+            # Gentle swirl
+            swirl_strength = base_scale * 0.8
+            new_angle = angle + swirl_strength * torch.exp(-radius * 1.5)
+            
+            # Flowing waves
+            wave_freq = base_scale * 2.5
+            wave_amp = base_scale * 0.5
+            x_wave = wave_amp * torch.sin(wave_freq * y_grid + angle)
+            y_wave = wave_amp * torch.cos(wave_freq * x_grid + angle)
+            
+            new_x = radius * torch.cos(new_angle) + x_wave * 0.7
+            new_y = radius * torch.sin(new_angle) + y_wave * 0.7
+            
+        else:  # default fallback - aggressive psychedelic
+            radius = torch.sqrt(x_grid**2 + y_grid**2)
+            angle = torch.atan2(y_grid, x_grid)
+            
+            swirl_strength = base_scale * 1.2  # Much stronger default
+            new_angle = angle + swirl_strength * torch.exp(-radius * 1.0)
+            
+            # Add wave component to default
+            wave_amp = base_scale * 0.4
+            wave_freq = base_scale * 3.0
+            new_x = radius * torch.cos(new_angle) + wave_amp * torch.sin(wave_freq * y_grid)
+            new_y = radius * torch.sin(new_angle) + wave_amp * torch.cos(wave_freq * x_grid)
         
-        # Clamp coordinates to valid range
-        new_x = torch.clamp(new_x, -1, 1)
-        new_y = torch.clamp(new_y, -1, 1)
+        # Clamp coordinates to valid range but allow more extreme values
+        new_x = torch.clamp(new_x, -2, 2)  # Allow more extreme distortion
+        new_y = torch.clamp(new_y, -2, 2)
         
         # Create sampling grid for grid_sample
         grid = torch.stack([new_x, new_y], dim=-1).unsqueeze(0).repeat(batch_size, 1, 1, 1)
@@ -198,16 +279,52 @@ def inject_disco_distortion(latent_samples, disco_scale=5.0, distortion_type='ps
             align_corners=False
         )
         
-        # Blend with original based on disco_scale
-        blend_factor = min(disco_scale / 10.0, 0.8)  # Scale from 0 to 0.8 max
+        # MUCH MORE AGGRESSIVE blending
+        blend_factor = min(disco_scale / 5.0, 0.95)  # Much higher max blend, faster scaling
         result = (1 - blend_factor) * latent_samples + blend_factor * distorted_latent
         
-        print(f"[Disco] Applied {distortion_type} distortion with blend factor {blend_factor:.3f}")
+        # Add noise injection for extra chaos
+        if base_scale > 10.0:  # Only for high scales
+            noise_strength = (base_scale - 10.0) / 100.0
+            noise = torch.randn_like(result) * noise_strength
+            result = result + noise
+        
+        print(f"[Disco] AGGRESSIVE {distortion_type} distortion applied with blend factor {blend_factor:.3f}")
         return result
         
     except Exception as e:
         logger.error(f"Disco distortion failed: {e}", exc_info=True)
         return latent_samples
+
+def inject_multiple_disco_distortions(latent_samples, disco_scale=5.0, distortion_type='psychedelic', num_layers=3):
+    """
+    ULTRA AGGRESSIVE: Apply multiple layers of distortion for maximum disco effect
+    """
+    print(f"[Disco] ULTRA AGGRESSIVE: Applying {num_layers} layers of {distortion_type} distortion")
+    
+    result = latent_samples
+    
+    for layer in range(num_layers):
+        # Each layer gets progressively more intense
+        layer_intensity = 1.0 + (layer * 0.5)  # 1.0, 1.5, 2.0, etc.
+        layer_scale = disco_scale * layer_intensity
+        
+        print(f"[Disco] Layer {layer+1}/{num_layers}: intensity {layer_intensity:.1f}x")
+        
+        result = inject_disco_distortion(
+            result, 
+            disco_scale=layer_scale, 
+            distortion_type=distortion_type,
+            intensity_multiplier=layer_intensity
+        )
+        
+        # Add some randomness between layers
+        if layer < num_layers - 1:  # Not on the last layer
+            noise_strength = disco_scale / 200.0
+            noise = torch.randn_like(result) * noise_strength
+            result = result + noise
+    
+    return result
 
 def run_clip_guidance_loop(
     latent, vae, clip_model, clip_preprocess, text_prompt, async_task,
@@ -215,10 +332,9 @@ def run_clip_guidance_loop(
     n_candidates=8, blend_factor=0.2
 ):
     """
-    New approach: Instead of complex CLIP guidance, inject distortion once during generation.
-    This is much more effective and creates the classic Disco Diffusion look.
+    ULTRA AGGRESSIVE approach: Multiple distortion injections for maximum disco effect
     """
-    print("[Disco] Injecting one-shot distortion instead of iterative CLIP guidance...")
+    print("[Disco] ULTRA AGGRESSIVE multi-layer distortion injection...")
     
     try:
         # Get the distortion type from disco settings
@@ -226,14 +342,25 @@ def run_clip_guidance_loop(
         if distortion_type == 'custom':
             distortion_type = 'psychedelic'  # Default fallback
         
-        # Apply the distortion directly to the latent
-        latent['samples'] = inject_disco_distortion(
+        # Determine number of layers based on disco_scale
+        if disco_scale >= 20.0:
+            num_layers = 5  # Maximum aggression
+        elif disco_scale >= 15.0:
+            num_layers = 4
+        elif disco_scale >= 10.0:
+            num_layers = 3
+        else:
+            num_layers = 2  # Minimum for aggressive mode
+        
+        # Apply multiple layers of distortion
+        latent['samples'] = inject_multiple_disco_distortions(
             latent['samples'], 
             disco_scale=disco_scale, 
-            distortion_type=distortion_type
+            distortion_type=distortion_type,
+            num_layers=num_layers
         )
         
-        print("[Disco] One-shot distortion injection completed.")
+        print(f"[Disco] ULTRA AGGRESSIVE {num_layers}-layer distortion injection completed.")
         return latent
 
     except Exception as e:
@@ -291,7 +418,7 @@ def run_clip_post_processing(
         
         print(f"[Disco] Starting post-processing optimization...")
         
-        # More conservative post-processing to preserve image structure
+        # AGGRESSIVE post-processing for maximum disco effect
         for i in range(steps):
             current_loss = clip_loss(working_image)
             
@@ -299,11 +426,29 @@ def run_clip_post_processing(
             best_image = working_image.clone()
             best_loss = current_loss
             
-            # Try fewer, smaller perturbations to preserve image quality
-            for attempt in range(3):  # Reduced from 5 to 3
-                # Much smaller perturbation to preserve original image structure
-                perturbation_strength = max(0.005, disco_scale / 1000.0)  # Much smaller perturbations
-                perturbation = torch.randn_like(working_image) * perturbation_strength
+            # Try MORE and LARGER perturbations for aggressive disco effect
+            num_attempts = max(8, int(disco_scale))  # More attempts for higher scales
+            for attempt in range(num_attempts):
+                # MUCH LARGER perturbations for aggressive disco effect
+                perturbation_strength = max(0.02, disco_scale / 100.0)  # 4x-10x larger perturbations
+                
+                # Add structured perturbations based on disco type
+                if i % 5 == 0:  # Every 5th step, add disco-style perturbations
+                    # Create disco-style structured noise
+                    h, w = working_image.shape[2], working_image.shape[3]
+                    y_coords = torch.linspace(-1, 1, h, device=working_image.device)
+                    x_coords = torch.linspace(-1, 1, w, device=working_image.device)
+                    y_grid, x_grid = torch.meshgrid(y_coords, x_coords, indexing='ij')
+                    
+                    # Create structured disco noise
+                    disco_noise = perturbation_strength * 0.5 * (
+                        torch.sin(disco_scale * x_grid) * torch.cos(disco_scale * y_grid)
+                    ).unsqueeze(0).unsqueeze(0).repeat(1, 3, 1, 1)
+                    
+                    perturbation = torch.randn_like(working_image) * perturbation_strength + disco_noise
+                else:
+                    perturbation = torch.randn_like(working_image) * perturbation_strength
+                
                 test_image = (working_image + perturbation).clamp(0, 1)
                 
                 # Test this perturbation
@@ -314,8 +459,8 @@ def run_clip_post_processing(
                     best_loss = test_loss
                     best_image = test_image.clone()
             
-            # Update image to best found with conservative blending
-            blend_strength = 0.3  # Conservative blending for post-processing
+            # AGGRESSIVE blending for maximum effect
+            blend_strength = min(0.8, disco_scale / 10.0)  # Much more aggressive blending
             working_image = (1 - blend_strength) * working_image + blend_strength * best_image
             
             if i % 5 == 0:
