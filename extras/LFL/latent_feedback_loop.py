@@ -21,6 +21,32 @@ class AestheticReplicator:
     Uses aggressive UNet layer hooks for maximum aesthetic impact.
     """
 
+    def _get_default_layers(self) -> list:
+        """
+        Returns a list of default UNet layer paths to target for aesthetic replication.
+        These layers are chosen to capture both high-level structure and fine details.
+        """
+        return [
+            # Input blocks
+            'input_blocks.0.0',
+            'input_blocks.1.0',
+            'input_blocks.2.0',
+            'input_blocks.3.0',
+            # Middle blocks
+            'middle_block.0',
+            'middle_block.1',
+            'middle_block.2',
+            # Output blocks
+            'output_blocks.0.0',
+            'output_blocks.1.0',
+            'output_blocks.2.0',
+            'output_blocks.3.0',
+            # Skip connections
+            'skip_connections.0',
+            'skip_connections.1',
+            'skip_connections.2',
+        ]
+
     def __init__(
         self,
         aesthetic_strength: float = 0.5,
