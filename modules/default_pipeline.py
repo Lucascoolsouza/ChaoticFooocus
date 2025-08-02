@@ -523,13 +523,53 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 # Light initial injection - main effect comes from continuous first-half injection
                 initial_scale = disco_scale * 0.3  # Much lighter initial injection
                 
+                # Debug: Print latent stats before distortion
+                print("\n[Disco] === INITIAL LATENT BEFORE DISTORTION ===")
+                debug_latent_pass(initial_latent['samples'], "Initial Latent")
+                
+                # Apply distortion with test mode enabled
+                test_mode = True  # Set to True to test inversion, False for normal operation
+                print("\n[Disco] ===== TEST MODE ENABLED =====" if test_mode else "\n[Disco] ===== NORMAL MODE =====")
+                
                 initial_latent['samples'] = inject_disco_distortion(
                     initial_latent['samples'],
                     disco_scale=initial_scale,
                     distortion_type=disco_preset if disco_preset != 'custom' else 'psychedelic',
-                    intensity_multiplier=0.5  # Light initial touch
+                    intensity_multiplier=0.5,  # Light initial touch
+                    test_mode=test_mode  # Enable test mode to verify distortion application
                 )
-                print(f"[Disco] Light initial injection completed (scale={initial_scale:.1f}) - continuous effects will apply during first 50%")
+                
+                if test_mode:
+                    # Save the test result for comparison
+                    with torch.no_grad():
+                        try:
+                            decoded = vae_decode(initial_latent['samples'])
+                            preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                            Image.fromarray(preview).save("test_mode_result.png")
+                            print("[Disco] Saved test mode result to test_mode_result.png")
+                        except Exception as e:
+                            print(f"[Disco] Error saving test mode result: {e}")
+                
+                # Debug: Print latent stats after distortion
+                print("[Disco] === LATENT AFTER DISTORTION ===")
+                debug_latent_pass(initial_latent['samples'], "Distorted Latent")
+                
+                # Debug: Run through VAE to check effect
+                with torch.no_grad():
+                    try:
+                        decoded = vae_decode(initial_latent['samples'])
+                        print("\n[Disco] === VAE DECODED IMAGE STATS ===")
+                        print(f"Mean: {decoded.mean().item():.4f}, Std: {decoded.std().item():.4f}, "
+                              f"Min: {decoded.min().item():.4f}, Max: {decoded.max().item():.4f}")
+                        
+                        # Save preview
+                        preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                        Image.fromarray(preview).save("debug_vae_output.png")
+                        print("[Disco] Saved VAE debug preview to debug_vae_output.png")
+                    except Exception as e:
+                        print(f"[Disco] Error during VAE debug: {e}")
+                
+                print(f"\n[Disco] Light initial injection completed (scale={initial_scale:.1f}) - continuous effects will apply during first 50%")
                 
             except Exception as e:
                 print(f"[Disco] Error injecting distortion: {e}")
@@ -687,6 +727,10 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                                 
                                 print(f"[Disco] FIRST-HALF INJECTION at step {step}/{total_steps} ({step/total_steps*100:.1f}%) - intensity {intensity_curve:.2f}")
                                 
+                                # Debug: Print before distortion
+                                print(f"\n[Disco] === STEP {step}/{total_steps} - BEFORE DISTORTION ===")
+                                debug_latent_pass(enhanced_x0, f"Step {step} - Before")
+                                
                                 # Apply to the denoised prediction (x0)
                                 enhanced_x0 = inject_disco_distortion(
                                     enhanced_x0,
@@ -694,6 +738,21 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                                     distortion_type=disco_preset if disco_preset != 'custom' else 'psychedelic',
                                     intensity_multiplier=intensity_curve * 1.5
                                 )
+                                
+                                # Debug: Print after distortion
+                                print(f"[Disco] === STEP {step}/{total_steps} - AFTER DISTORTION ===")
+                                debug_latent_pass(enhanced_x0, f"Step {step} - After")
+                                
+                                # Save intermediate latent for debugging
+                                if step % 5 == 0:  # Save every 5 steps
+                                    try:
+                                        with torch.no_grad():
+                                            decoded = vae_decode(enhanced_x0)
+                                            preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                                            Image.fromarray(preview).save(f"debug_step_{step:03d}.png")
+                                            print(f"[Disco] Saved debug preview for step {step}")
+                                    except Exception as e:
+                                        print(f"[Disco] Error saving debug preview: {e}")
                                 
                                 # For high scales, also apply to noisy latent but with less intensity
                                 if disco_scale >= 15.0 and step <= int(total_steps * 0.3):  # Only first 30% for noisy latent

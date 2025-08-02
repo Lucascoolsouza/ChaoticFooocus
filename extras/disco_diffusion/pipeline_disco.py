@@ -6,10 +6,100 @@ import torch.nn.functional as F
 import numpy as np
 import math
 import random
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Union
 import logging
 import clip
 from torchvision import transforms
+import matplotlib.pyplot as plt
+import io
+from PIL import Image
+
+def debug_latent_pass(latent: torch.Tensor, name: str = "latent") -> torch.Tensor:
+    """Debug function to print stats and visualize latent tensors.
+    
+    Args:
+        latent: Input latent tensor [B,C,H,W]
+        name: Name for debug output
+        
+    Returns:
+        The input latent tensor unchanged
+    """
+    if latent is None:
+        print(f"[{name}] None")
+        return latent
+    
+    # Get tensor memory address and gradient info
+    tensor_id = id(latent)
+    requires_grad = latent.requires_grad
+    grad_fn = str(latent.grad_fn).split('(')[0] if latent.grad_fn is not None else 'None'
+    
+    # Get device and memory stats if available
+    device = latent.device
+    if device.type == 'cuda':
+        mem_alloc = torch.cuda.memory_allocated(device) / 1024**2
+        mem_cached = torch.cuda.memory_reserved(device) / 1024**2
+        device_info = f"cuda:{device.index} (alloc: {mem_alloc:.1f}MB, cache: {mem_cached:.1f}MB)"
+    else:
+        device_info = str(device)
+    
+    # Calculate basic stats
+    with torch.no_grad():
+        stats = {
+            'mean': latent.mean().item(),
+            'std': latent.std().item(),
+            'min': latent.min().item(),
+            'max': latent.max().item(),
+            'shape': tuple(latent.shape),
+            'dtype': str(latent.dtype),
+            'device': device_info,
+            'grad_fn': grad_fn,
+            'requires_grad': requires_grad,
+            'memory_id': f"{tensor_id}"
+        }
+    
+    print(f"[{name}] "
+          f"mean={stats['mean']:8.4f} | std={stats['std']:8.4f} | "
+          f"range=[{stats['min']:6.2f}, {stats['max']:6.2f}] | "
+          f"shape={str(stats['shape']):<20} | "
+          f"dtype={stats['dtype']:8} | device={stats['device']}\n"
+          f"       grad_fn={stats['grad_fn']} | requires_grad={stats['requires_grad']} | id={stats['memory_id']}")
+    
+    return latent
+
+def preview_latent(latent: torch.Tensor, title: str = "Latent Preview") -> Image.Image:
+    """Create a preview of a latent tensor.
+    
+    Args:
+        latent: Input latent tensor [B,C,H,W]
+        title: Title for the preview
+        
+    Returns:
+        PIL.Image: Preview image
+    """
+    if latent is None:
+        return None
+        
+    # Take first sample in batch and first 3 channels
+    latent = latent[0, :3].detach().cpu()
+    
+    # Normalize to 0-1
+    latent = (latent - latent.min()) / (latent.max() - latent.min() + 1e-8)
+    
+    # Convert to numpy and permute to HWC
+    img_np = latent.permute(1, 2, 0).numpy()
+    
+    # Convert to 0-255 uint8
+    img_np = (img_np * 255).clip(0, 255).astype(np.uint8)
+    
+    # Create PIL image
+    img = Image.fromarray(img_np)
+    
+    # Add title
+    # img = Image.new('RGB', (img.width, img.height + 20), color='white')
+    # d = ImageDraw.Draw(img)
+    # d.text((10, img.height - 15), title, fill='black')
+    
+    return img
 
 logger = logging.getLogger(__name__)
 
@@ -97,12 +187,37 @@ def texture_std_penalty(img_tensor):
     # Return the mean std dev across channels for each image in the batch
     return std_per_channel.mean(dim=1)  # Shape: (batch_size,)
 
-def inject_disco_distortion(latent_samples, disco_scale=5.0, distortion_type='psychedelic', intensity_multiplier=1.0):
+def inject_disco_distortion(latent_samples, disco_scale=5.0, distortion_type='psychedelic', intensity_multiplier=1.0, test_mode=False):
     """
     AGGRESSIVE Disco Diffusion-style distortions directly into latent space.
     This creates the classic psychedelic disco diffusion look with maximum impact.
+    
+    Args:
+        latent_samples: Input latent tensor [B,C,H,W]
+        disco_scale: Overall strength of the distortion
+        distortion_type: Type of distortion to apply
+        intensity_multiplier: Additional multiplier for intensity
+        test_mode: If True, applies a simple inversion test instead of distortion
     """
+    if test_mode:
+        print("\n[Disco] ⚠️  TEST MODE: INVERTING LATENTS ⚠️")
+        debug_latent_pass(latent_samples, "Before Inversion")
+        inverted = -latent_samples  # Simple inversion for testing
+        debug_latent_pass(inverted, "After Inversion")
+        return inverted
+        
     print(f"[Disco] AGGRESSIVE injection: {distortion_type} distortion with scale {disco_scale} x{intensity_multiplier}")
+    
+    # Debug: Print input latent stats
+    debug_latent_pass(latent_samples, "Disco Input")
+    
+    # Store original device and move to CPU for processing if needed
+    device = latent_samples.device
+    if latent_samples.device.type != 'cpu':
+        latent_samples = latent_samples.detach().cpu()
+    
+    # Create a copy to avoid modifying the original
+    result = latent_samples.clone()
     
     try:
         device = latent_samples.device
@@ -118,6 +233,8 @@ def inject_disco_distortion(latent_samples, disco_scale=5.0, distortion_type='ps
         
         # Apply different distortion types based on preset
         if distortion_type == 'psychedelic':
+            print(f"[Disco] Applying PSYCHEDELIC distortion at scale {base_scale:.2f}")
+            debug_latent_pass(latent_samples, "Before Psychedelic")
             # AGGRESSIVE Psychedelic swirl and wave distortions
             radius = torch.sqrt(x_grid**2 + y_grid**2)
             angle = torch.atan2(y_grid, x_grid)
@@ -143,6 +260,8 @@ def inject_disco_distortion(latent_samples, disco_scale=5.0, distortion_type='ps
             new_y = radius * torch.sin(new_angle) + y_wave * 0.8
             
         elif distortion_type == 'fractal':
+            print(f"[Disco] Applying FRACTAL distortion at scale {base_scale:.2f}")
+            debug_latent_pass(latent_samples, "Before Fractal")
             # AGGRESSIVE Fractal-like recursive distortions
             scale1 = base_scale * 1.5  # 3x stronger
             scale2 = base_scale * 1.0  # 3.3x stronger
@@ -165,6 +284,8 @@ def inject_disco_distortion(latent_samples, disco_scale=5.0, distortion_type='ps
             new_y += scale4 * torch.cos(19 * new_y) * torch.sin(17 * new_x)
             
         elif distortion_type == 'kaleidoscope':
+            print(f"[Disco] Applying KALEIDOSCOPE distortion at scale {base_scale:.2f}")
+            debug_latent_pass(latent_samples, "Before Kaleidoscope")
             # AGGRESSIVE Kaleidoscope-like symmetrical distortions
             radius = torch.sqrt(x_grid**2 + y_grid**2)
             angle = torch.atan2(y_grid, x_grid)
@@ -188,6 +309,8 @@ def inject_disco_distortion(latent_samples, disco_scale=5.0, distortion_type='ps
             new_y += base_scale * 0.2 * torch.sin(spiral_angle)
             
         elif distortion_type == 'wave':
+            print(f"[Disco] Applying WAVE distortion at scale {base_scale:.2f}")
+            debug_latent_pass(latent_samples, "Before Wave")
             # AGGRESSIVE wave distortions
             wave_freq = base_scale * 3.0  # 2x frequency
             wave_amp = base_scale * 0.6   # 4x amplitude
@@ -267,11 +390,16 @@ def inject_disco_distortion(latent_samples, disco_scale=5.0, distortion_type='ps
         new_x = torch.clamp(new_x, -2, 2)  # Allow more extreme distortion
         new_y = torch.clamp(new_y, -2, 2)
         
-        # Create sampling grid for grid_sample
-        grid = torch.stack([new_x, new_y], dim=-1).unsqueeze(0).repeat(batch_size, 1, 1, 1)
+        # Apply grid sampling with padding mode to handle out-of-bound values
+        grid = torch.stack((new_x, new_y), dim=-1)
+        grid = grid.unsqueeze(0).repeat(batch_size, 1, 1, 1)  # Expand to batch size
         
-        # Apply the distortion using grid sampling
-        distorted_latent = F.grid_sample(
+        # Debug: Save grid before sampling
+        debug_grid = grid.detach().cpu()
+        print(f"[Disco] Grid stats - min={debug_grid.min():.4f}, max={debug_grid.max():.4f}, mean={debug_grid.mean():.4f}")
+        
+        # Sample from the original latent using the distortion grid
+        result = F.grid_sample(
             latent_samples, 
             grid, 
             mode='bilinear', 
@@ -279,9 +407,29 @@ def inject_disco_distortion(latent_samples, disco_scale=5.0, distortion_type='ps
             align_corners=False
         )
         
+        # Debug: Print output stats
+        debug_latent_pass(result, "After Grid Sample")
+        
         # MUCH MORE AGGRESSIVE blending
-        blend_factor = min(disco_scale / 5.0, 0.95)  # Much higher max blend, faster scaling
-        result = (1 - blend_factor) * latent_samples + blend_factor * distorted_latent
+        blend_factor = min(1.0, intensity_multiplier * 0.5)  # Cap at 0.5 for stability
+        result = latent_samples * (1.0 - blend_factor) + result * blend_factor
+        
+        # Debug: Print final stats
+        debug_latent_pass(result, f"After Blending (factor={blend_factor:.2f})")
+        
+        # Generate preview
+        preview = preview_latent(result, f"Disco: {distortion_type} x{intensity_multiplier:.1f}")
+        if preview is not None:
+            try:
+                preview_path = "disco_preview.png"
+                preview.save(preview_path)
+                print(f"[Disco] Preview saved to {preview_path}")
+            except Exception as e:
+                print(f"[Disco] Failed to save preview: {e}")
+        
+        # Move back to original device if needed
+        if result.device != device:
+            result = result.to(device)
         
         # Add noise injection for extra chaos
         if base_scale > 10.0:  # Only for high scales
