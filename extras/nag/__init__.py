@@ -10,10 +10,12 @@ NAGStableDiffusionXLPipeline = _nag_components['NAGStableDiffusionXLPipeline']
 NAGSampler = _nag_components['NAGSampler']
 nag_sampler = _nag_components['nag_sampler']
 NAG_AVAILABLE = _nag_components['available']
+NAG_STANDALONE = _nag_components.get('standalone', False)
 
 __all__ = [
     "NAGStableDiffusionXLPipeline",
     "NAGSampler", 
     "nag_sampler",
-    "NAG_AVAILABLE"
+    "NAG_AVAILABLE",
+    "NAG_STANDALONE"
 ]

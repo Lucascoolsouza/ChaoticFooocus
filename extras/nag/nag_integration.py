@@ -13,9 +13,10 @@ logger = logging.getLogger(__name__)
 
 # Check NAG availability
 try:
-    from . import NAG_AVAILABLE
+    from . import NAG_AVAILABLE, NAG_STANDALONE
 except ImportError:
     NAG_AVAILABLE = False
+    NAG_STANDALONE = False
 
 # Global NAG configuration
 _nag_config = {
@@ -64,6 +65,20 @@ def create_nag_sampling_function(original_sampling_function):
     This wraps the sampling_function which has the signature:
     sampling_function(model, x, timestep, uncond, cond, cond_scale, model_options={}, seed=None)
     """
+    
+    if NAG_STANDALONE:
+        # Use standalone implementation
+        from .standalone_nag import create_standalone_nag_sampling_function
+        
+        return create_standalone_nag_sampling_function(
+            original_sampling_function,
+            scale=_nag_config.get('scale', 1.5),
+            tau=_nag_config.get('tau', 5.0),
+            alpha=_nag_config.get('alpha', 0.5),
+            negative_prompt=_nag_config.get('negative_prompt', ''),
+            end=_nag_config.get('end', 1.0)
+        )
+    
     def nag_sampling_function(model, x, timestep, uncond, cond, cond_scale, model_options={}, seed=None):
         # Check if NAG should be applied
         if not is_nag_enabled():
