@@ -1234,20 +1234,20 @@ with shared.gradio_root:
                                              queue=False, show_progress=False)
                 
                 with gr.Accordion(label='Disco Diffusion (Psychedelic Effects)', open=False):
-                    disco_enabled = gr.Checkbox(label='Enable Disco Diffusion', value=False,
+                    disco_enabled = gr.Checkbox(label='Enable Disco Diffusion', value=modules.config.default_disco_enabled,
                                                info='Enable psychedelic disco diffusion effects')
                     disco_scale = gr.Slider(label='Disco Scale', minimum=0.0, maximum=1.0, step=0.01,
-                                           value=0.8, visible=False,
+                                           value=modules.config.default_disco_scale, visible=False,
                                            info='Overall strength of disco effects (80% = strong CLIP guidance)')
                     disco_preset = gr.Dropdown(label='Disco Preset', 
-                                              choices=['custom', 'psychedelic', 'fractal', 'kaleidoscope', 'dreamy'],
-                                              value='psychedelic', visible=False,
+                                              choices=modules.flags.disco_presets,
+                                              value=modules.config.default_disco_preset, visible=False,
                                               info='Predefined disco effect combinations')
                     disco_transforms = gr.CheckboxGroup(label='Transform Effects', 
-                                                       choices=['spherical', 'kaleidoscope', 'fractal_zoom', 'color_shift'], 
-                                                       value=['spherical', 'color_shift'], visible=False,
+                                                       choices=modules.flags.disco_transforms, 
+                                                       value=modules.config.default_disco_transforms, visible=False,
                                                        info='Which transformation effects to apply')
-                    disco_seed = gr.Number(label='Disco Seed', value=None, visible=False,
+                    disco_seed = gr.Number(label='Disco Seed', value=modules.config.default_disco_seed, visible=False,
                                           info='Seed for disco effects (leave empty for random)')
                     
                     disco_clip_model = gr.Dropdown(label='CLIP Model', 
@@ -1271,38 +1271,38 @@ with shared.gradio_root:
 
                     with gr.Accordion(label='Animation & Movement', open=False, visible=False) as disco_animation_accordion:
                         disco_animation_mode = gr.Dropdown(label='Animation Mode', 
-                                                          choices=['none', 'zoom', 'rotate', 'translate'],
-                                                          value='none',
+                                                          choices=modules.flags.disco_animation_modes,
+                                                          value=modules.config.default_disco_animation_mode,
                                                           info='Type of animation effect')
                         disco_zoom_factor = gr.Slider(label='Zoom Factor', minimum=1.0, maximum=1.1, step=0.001,
-                                                     value=1.02,
+                                                     value=modules.config.default_disco_zoom_factor,
                                                      info='Zoom intensity for fractal effects')
                         disco_rotation_speed = gr.Slider(label='Rotation Speed', minimum=0.0, maximum=1.0, step=0.01,
-                                                         value=0.1,
+                                                         value=modules.config.default_disco_rotation_speed,
                                                          info='Speed of rotation effects')
                         disco_translation_x = gr.Slider(label='Translation X', minimum=-1.0, maximum=1.0, step=0.01,
-                                                        value=0.0,
+                                                        value=modules.config.default_disco_translation_x,
                                                         info='Horizontal movement amplitude')
                         disco_translation_y = gr.Slider(label='Translation Y', minimum=-1.0, maximum=1.0, step=0.01,
-                                                        value=0.0,
+                                                        value=modules.config.default_disco_translation_y,
                                                         info='Vertical movement amplitude')
                     
                     with gr.Accordion(label='Color & Visual Effects', open=False, visible=False) as disco_visual_accordion:
                         disco_color_coherence = gr.Slider(label='Color Coherence', minimum=0.0, maximum=1.0, step=0.01,
-                                                          value=0.5,
+                                                          value=modules.config.default_disco_color_coherence,
                                                           info='How much to preserve original colors (higher = more original)')
                         disco_saturation_boost = gr.Slider(label='Saturation Boost', minimum=0.5, maximum=2.0, step=0.01,
-                                                           value=1.2,
+                                                           value=modules.config.default_disco_saturation_boost,
                                                            info='Increase color saturation')
                         disco_contrast_boost = gr.Slider(label='Contrast Boost', minimum=0.5, maximum=2.0, step=0.01,
-                                                         value=1.1,
+                                                         value=modules.config.default_disco_contrast_boost,
                                                          info='Increase image contrast')
                         disco_symmetry_mode = gr.Dropdown(label='Symmetry Mode', 
-                                                         choices=['none', 'horizontal', 'vertical', 'radial'],
-                                                         value='none',
+                                                         choices=modules.flags.disco_symmetry_modes,
+                                                         value=modules.config.default_disco_symmetry_mode,
                                                          info='Apply symmetry effects')
                         disco_fractal_octaves = gr.Slider(label='Fractal Octaves', minimum=1, maximum=6, step=1,
-                                                          value=3,
+                                                          value=modules.config.default_disco_fractal_octaves,
                                                           info='Complexity of fractal effects')
                     
                     disco_status = gr.Textbox(label='Disco Status', interactive=False, 

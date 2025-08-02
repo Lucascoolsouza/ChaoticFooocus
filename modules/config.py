@@ -811,6 +811,70 @@ default_disco_range_scale = get_config_item_or_set_default(
     expected_type=numbers.Number
 )
 
+# Additional disco parameters referenced in webui.py
+default_disco_zoom_factor = get_config_item_or_set_default(
+    key='default_disco_zoom_factor',
+    default_value=1.02,
+    validator=lambda x: isinstance(x, numbers.Number) and 1.0 <= x <= 1.1,
+    expected_type=numbers.Number
+)
+
+default_disco_rotation_speed = get_config_item_or_set_default(
+    key='default_disco_rotation_speed',
+    default_value=0.1,
+    validator=lambda x: isinstance(x, numbers.Number) and 0.0 <= x <= 1.0,
+    expected_type=numbers.Number
+)
+
+default_disco_translation_x = get_config_item_or_set_default(
+    key='default_disco_translation_x',
+    default_value=0.0,
+    validator=lambda x: isinstance(x, numbers.Number) and -1.0 <= x <= 1.0,
+    expected_type=numbers.Number
+)
+
+default_disco_translation_y = get_config_item_or_set_default(
+    key='default_disco_translation_y',
+    default_value=0.0,
+    validator=lambda x: isinstance(x, numbers.Number) and -1.0 <= x <= 1.0,
+    expected_type=numbers.Number
+)
+
+default_disco_color_coherence = get_config_item_or_set_default(
+    key='default_disco_color_coherence',
+    default_value=0.5,
+    validator=lambda x: isinstance(x, numbers.Number) and 0.0 <= x <= 1.0,
+    expected_type=numbers.Number
+)
+
+default_disco_saturation_boost = get_config_item_or_set_default(
+    key='default_disco_saturation_boost',
+    default_value=1.2,
+    validator=lambda x: isinstance(x, numbers.Number) and 0.5 <= x <= 2.0,
+    expected_type=numbers.Number
+)
+
+default_disco_contrast_boost = get_config_item_or_set_default(
+    key='default_disco_contrast_boost',
+    default_value=1.1,
+    validator=lambda x: isinstance(x, numbers.Number) and 0.5 <= x <= 2.0,
+    expected_type=numbers.Number
+)
+
+default_disco_fractal_octaves = get_config_item_or_set_default(
+    key='default_disco_fractal_octaves',
+    default_value=3,
+    validator=lambda x: isinstance(x, int) and 1 <= x <= 6,
+    expected_type=int
+)
+
+default_disco_seed = get_config_item_or_set_default(
+    key='default_disco_seed',
+    default_value=None,
+    validator=lambda x: x is None or isinstance(x, int),
+    expected_type=int
+)
+
 config_dict["default_loras"] = default_loras = default_loras[:default_max_lora_number] + [[True, 'None', 1.0] for _ in range(default_max_lora_number - len(default_loras))]
 
 # mapping config to meta parameter

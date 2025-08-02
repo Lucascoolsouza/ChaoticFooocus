@@ -125,7 +125,7 @@ bg_removal_models = ['u2net', 'u2netp', 'u2net_human_seg', 'silueta', 'isnet-gen
 
 # Disco Diffusion options (Real Disco Diffusion algorithm)
 disco_presets = ['custom', 'psychedelic', 'fractal', 'kaleidoscope', 'dreamy', 'scientific']
-disco_transforms = ['translate', 'rotate', 'zoom']  # Real geometric transforms
+disco_transforms = ['spherical', 'kaleidoscope', 'fractal_zoom', 'color_shift']  # Real geometric transforms
 disco_animation_modes = ['none', 'zoom', 'rotate', 'translate']
 disco_symmetry_modes = ['none', 'horizontal', 'vertical', 'radial']
 disco_noise_schedules = ['linear', 'cosine', 'exponential']
