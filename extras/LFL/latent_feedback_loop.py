@@ -21,13 +21,44 @@ class AestheticReplicator:
     Uses aggressive UNet layer hooks for maximum aesthetic impact.
     """
 
-    def _get_default_layers(self) -> list:
+    def _get_module_by_name(self, module, name):
+        """Safely get a submodule by name, returns None if not found."""
+        names = name.split('.')
+        current = module
+        for name in names:
+            try:
+                if hasattr(current, name):
+                    current = getattr(current, name)
+                elif hasattr(current, '__getitem__') and name.isdigit():
+                    current = current[int(name)]
+                else:
+                    return None
+            except (KeyError, IndexError, AttributeError):
+                return None
+        return current
+
+    def _get_default_layers(self, unet_model=None) -> list:
         """
-        Returns a list of common layer patterns to try for different UNet architectures.
-        The actual layers will be verified and filtered when hooking the UNet.
+        Try to automatically discover valid layers in the UNet model.
+        Falls back to common layer patterns if model inspection fails.
         """
+        if unet_model is not None:
+            try:
+                # Try to get layer names from the actual model
+                layer_names = []
+                for name, _ in unet_model.named_modules():
+                    if name and len(name.split('.')) > 2:  # Only include deeper layers
+                        layer_names.append(name)
+                
+                if layer_names:
+                    logger.info(f"[LFL] Discovered {len(layer_names)} potential layers in UNet")
+                    return layer_names
+            except Exception as e:
+                logger.warning(f"[LFL] Could not inspect UNet layers: {e}")
+        
+        # Fallback to common layer patterns if model inspection fails
         return [
-            # Common input block patterns
+            # Common SDXL patterns
             'input_blocks.0.0',
             'input_blocks.1.0',
             'input_blocks.2.0',
@@ -40,13 +71,9 @@ class AestheticReplicator:
             'input_blocks.9.0',
             'input_blocks.10.0',
             'input_blocks.11.0',
-            
-            # Common middle block patterns
             'middle_block.0',
             'middle_block.1',
             'middle_block.2',
-            
-            # Common output block patterns
             'output_blocks.0',
             'output_blocks.1',
             'output_blocks.2',
@@ -59,8 +86,7 @@ class AestheticReplicator:
             'output_blocks.9',
             'output_blocks.10',
             'output_blocks.11',
-            
-            # Try different attention layer patterns
+            # Common attention patterns
             'attn1',
             'attn2',
             'transformer_blocks.0.attn1',
@@ -75,17 +101,16 @@ class AestheticReplicator:
         self,
         aesthetic_strength: float = 0.5,
         feature_layers: list = None,
-        blend_mode: str = 'aggressive'
+        blend_mode: str = 'aggressive',
+        unet_model = None  # Pass UNet model for layer inspection
     ):
         """
         aesthetic_strength: How strongly to apply aesthetic guidance (0.0-2.0, higher = more aggressive)
         feature_layers: Which UNet layers to target for aesthetic guidance
         blend_mode: How to blend aesthetic features ('aggressive', 'adaptive', 'linear', 'attention')
+        unet_model: Optional UNet model for automatic layer discovery
         """
         self.aesthetic_strength = aesthetic_strength
-        # Auto-detect UNet structure or use provided layers
-        self.feature_layers = feature_layers or self._get_default_layers()
-        self.auto_detect_layers = feature_layers is None
         self.blend_mode = blend_mode
         self.reference_latent = None
         self.reference_features = {}
@@ -98,8 +123,18 @@ class AestheticReplicator:
         self.layer_activations = {}
         self.reference_activations = {}
         self.current_timestep = 0
+        
+        # Initialize with auto-detected or provided layers
+        if feature_layers is not None:
+            self.feature_layers = feature_layers
+            self.auto_detect_layers = False
+        else:
+            self.feature_layers = self._get_default_layers(unet_model)
+            self.auto_detect_layers = True
+            
+        logger.info(f"[LFL] Initialized with {len(self.feature_layers)} feature layers")
 
-    def set_reference_image(self, image_path: str, vae=None):
+    def set_reference_image(self, image_path: str, vae=None, unet_model=None):
         """Set the reference image for aesthetic replication."""
         try:
             if isinstance(image_path, str):
@@ -133,57 +168,55 @@ class AestheticReplicator:
                         image_tensor = image_tensor.permute(2, 0, 1)  # HWC -> CHW
                     image_tensor = image_tensor.unsqueeze(0)  # CHW -> BCHW
                     
-                    # Normalize to [0, 1] or [-1, 1] range expected by VAE
-                    # Try both ranges since different VAEs expect different ranges
-                    for scale_range in [1.0, 2.0]:
-                        try:
-                            scaled_tensor = image_tensor * scale_range - (scale_range / 2.0)
-                            
-                            # Move to appropriate device
-                            device = None
-                            if hasattr(vae, 'device'):
-                                device = vae.device
-                            elif hasattr(vae, 'first_stage_model') and hasattr(vae.first_stage_model, 'parameters'):
-                                device = next(vae.first_stage_model.parameters()).device
-                            elif hasattr(vae, 'parameters'):
-                                device = next(vae.parameters()).device
-                            
-                            if device is not None:
-                                scaled_tensor = scaled_tensor.to(device)
-                            
-                            logger.info(f"[LFL] Attempting VAE encode with scale_range [{scale_range-1}, {scale_range}] on device {device}")
-                            
-                            # Try different VAE interfaces
-                            with torch.no_grad():
-                                if hasattr(vae, 'encode'):
-                                    # Standard VAE interface
-                                    encoded = vae.encode(scaled_tensor)
-                                    if hasattr(encoded, 'sample'):
-                                        self.reference_latent = encoded.sample()
-                                    elif hasattr(encoded, 'latent_dist'):
-                                        self.reference_latent = encoded.latent_dist.sample()
-                                    else:
-                                        self.reference_latent = encoded
-                                elif hasattr(vae, 'first_stage_model'):
-                                    # ComfyUI style VAE
-                                    if hasattr(vae.first_stage_model, 'encode'):
-                                        self.reference_latent = vae.first_stage_model.encode(scaled_tensor)
-                                    elif callable(vae.first_stage_model):
-                                        self.reference_latent = vae.first_stage_model(scaled_tensor)
-                                    else:
-                                        continue
-                                elif callable(vae):
-                                    # Direct callable VAE
-                                    self.reference_latent = vae(scaled_tensor)
-                                else:
-                                    continue
-                                
-                                logger.info(f"[LFL] Successfully encoded reference image to latent space: {self.reference_latent.shape}")
+                    # Get device from VAE
+                    device = None
+                    if hasattr(vae, 'device'):
+                        device = vae.device
+                    elif hasattr(vae, 'first_stage_model') and hasattr(vae.first_stage_model, 'parameters'):
+                        device = next(vae.first_stage_model.parameters()).device
+                    elif hasattr(vae, 'parameters'):
+                        device = next(vae.parameters()).device
+                    
+                    if device is not None:
+                        image_tensor = image_tensor.to(device)
+                    
+                    # Try different VAE interfaces with proper error handling
+                    with torch.no_grad():
+                        # Try standard diffusers VAE
+                        if hasattr(vae, 'encode'):
+                            try:
+                                encoded = vae.encode(image_tensor * 2.0 - 1.0)  # Scale to [-1, 1]
+                                if hasattr(encoded, 'latent_dist'):
+                                    self.reference_latent = encoded.latent_dist.sample()
+                                    logger.info(f"[LFL] Encoded with diffusers VAE: {self.reference_latent.shape}")
+                                    return True
+                            except Exception as e:
+                                logger.debug(f"[LFL] Diffusers VAE encode failed: {e}")
+                        
+                        # Try ComfyUI style VAE
+                        if hasattr(vae, 'first_stage_model'):
+                            try:
+                                first_stage = vae.first_stage_model
+                                if hasattr(first_stage, 'encode'):
+                                    self.reference_latent = first_stage.encode(image_tensor * 2.0 - 1.0)
+                                    if hasattr(self.reference_latent, 'sample'):
+                                        self.reference_latent = self.reference_latent.sample()
+                                    logger.info(f"[LFL] Encoded with ComfyUI VAE: {self.reference_latent.shape}")
+                                    return True
+                            except Exception as e:
+                                logger.debug(f"[LFL] ComfyUI VAE encode failed: {e}")
+                        
+                        # Try direct call if VAE is callable
+                        if callable(vae):
+                            try:
+                                self.reference_latent = vae(image_tensor * 2.0 - 1.0)
+                                logger.info(f"[LFL] Encoded with callable VAE: {self.reference_latent.shape}")
                                 return True
-                                
-                        except Exception as e:
-                            logger.debug(f"[LFL] VAE encode attempt failed with scale_range [{scale_range-1}, {scale_range}]: {str(e)}")
-                            continue
+                            except Exception as e:
+                                logger.debug(f"[LFL] Callable VAE encode failed: {e}")
+                    
+                    # If we get here, all VAE encode attempts failed
+                    raise Exception("All VAE encode attempts failed")
                     
                     # If we get here, all VAE encode attempts failed
                     raise Exception("All VAE encode attempts failed")
