@@ -608,31 +608,41 @@ class AestheticReplicator:
 
     def _prepare_unet_inputs(self, unet_model, latent, timestep):
         """Prepare inputs for different UNet variants"""
-        # Basic input preparation
-        inputs = {
-            'sample': latent,
-            'timestep': timestep,
-            'return_dict': False
-        }
+        batch_size = latent.shape[0]
+        device = latent.device
         
-        # Check if model expects encoder_hidden_states
-        forward_params = []
+        # Try to determine the expected input signature
         if hasattr(unet_model, 'forward'):
             import inspect
             sig = inspect.signature(unet_model.forward)
-            forward_params = list(sig.parameters.keys())
-        
-        if 'encoder_hidden_states' in forward_params:
-            # Create a dummy embedding if needed
-            batch_size = latent.shape[0]
-            hidden_size = 768  # Default for SDXL
-            if hasattr(unet_model, 'config') and hasattr(unet_model.config, 'cross_attention_dim'):
-                hidden_size = unet_model.config.cross_attention_dim
-            dummy_embeddings = torch.randn((batch_size, 77, hidden_size), 
-                                         device=latent.device)
-            inputs['encoder_hidden_states'] = dummy_embeddings
-        
-        return inputs
+            param_names = list(sig.parameters.keys())
+            
+            # Check for different UNet signatures
+            if 'x' in param_names and 't' in param_names:
+                # Original DDPM-style: forward(x, t)
+                return (latent, timestep)
+                
+            elif 'sample' in param_names and 'timestep' in param_names:
+                # Diffusers-style: forward(sample, timestep, encoder_hidden_states, ...)
+                inputs = {
+                    'sample': latent,
+                    'timestep': timestep,
+                    'return_dict': False
+                }
+                
+                # Add encoder hidden states if expected
+                if 'encoder_hidden_states' in param_names:
+                    hidden_size = 768  # Default for SDXL
+                    if hasattr(unet_model, 'config') and hasattr(unet_model.config, 'cross_attention_dim'):
+                        hidden_size = unet_model.config.cross_attention_dim
+                    inputs['encoder_hidden_states'] = torch.randn(
+                        (batch_size, 77, hidden_size), 
+                        device=device
+                    )
+                return inputs
+                
+        # Default to positional arguments as a fallback
+        return (latent, timestep)
 
     def extract_reference_activations(self, unet_model, timestep=0):
         """Extract activations from the reference latent by forwarding through UNet"""
@@ -677,14 +687,23 @@ class AestheticReplicator:
                 inputs = self._prepare_unet_inputs(unet_model, self.reference_latent, timestep)
                 
                 # Try different calling conventions
-                if hasattr(unet_model, 'forward'):
-                    _ = unet_model.forward(**inputs)
-                elif hasattr(unet_model, '__call__'):
-                    _ = unet_model(**inputs)
-                elif hasattr(unet_model, 'model') and hasattr(unet_model.model, '__call__'):
-                    _ = unet_model.model(**inputs)
+                if isinstance(inputs, dict):
+                    # Handle keyword arguments
+                    if hasattr(unet_model, 'forward'):
+                        _ = unet_model.forward(**inputs)
+                    else:
+                        _ = unet_model(**inputs)
                 else:
-                    raise RuntimeError("Could not determine how to call the UNet model")
+                    # Handle positional arguments
+                    if hasattr(unet_model, 'forward'):
+                        _ = unet_model.forward(*inputs)
+                    else:
+                        _ = unet_model(*inputs)
+                        
+                # If we get here, the forward pass succeeded
+                if self.verbose:
+                    logger.info("[LFL] Successfully ran UNet forward pass")
+                    
                 
             except Exception as e:
                 logger.error(f"[LFL] UNet forward pass failed during reference extraction: {str(e)}", exc_info=self.verbose)
