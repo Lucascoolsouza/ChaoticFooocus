@@ -100,7 +100,7 @@ def texture_std_penalty(img_tensor):
 def run_clip_guidance_loop(
     latent, vae, clip_model, clip_preprocess, text_prompt, async_task,
     steps=30, disco_scale=5.0, cutn=12, tv_scale=0.0, range_scale=0.0, # tv_scale will control texture penalty
-    n_candidates=8, blend_factor=0.5
+    n_candidates=8, blend_factor=0.2  # More conservative default
 ):
     """
     CLIP guidance on the latent space using a gradient-free search method.
@@ -123,8 +123,9 @@ def run_clip_guidance_loop(
             text_features = clip_model.encode_text(text_tokens).float()
             text_features = text_features / text_features.norm(dim=-1, keepdim=True)
 
-        # 2. Set up for latent space optimization
-        noise_strength = disco_scale / 4.0
+        # 2. Set up for latent space optimization with more conservative parameters
+        # Reduce noise strength significantly to avoid generating pure noise
+        noise_strength = min(disco_scale / 10.0, 0.1)  # Much more conservative
         
         cut_size = clip_model.visual.input_resolution
         make_cutouts = SimpleMakeCutouts(cut_size, cutn)
@@ -134,8 +135,18 @@ def run_clip_guidance_loop(
         )
         
         current_latent = latent_tensor.clone()
+        # Use more conservative blend factor to preserve original structure
+        blend_factor = min(blend_factor, 0.2)  # Much more conservative blending
 
+        # Check if we're starting with a reasonable latent (not pure noise)
+        latent_std = current_latent.std().item()
+        if latent_std > 2.0:  # If latent seems like pure noise
+            print(f"[Disco] Warning: Input latent has high std ({latent_std:.2f}), reducing noise strength further")
+            noise_strength *= 0.5  # Further reduce noise strength
+        
         print(f"[Disco] Starting latent search: {steps} steps, {n_candidates} candidates, noise strength {noise_strength:.4f}")
+        print(f"[Disco] Using conservative blend factor: {blend_factor:.2f}")
+        print(f"[Disco] Input latent std: {latent_std:.3f}")
         if tv_scale > 0:
             print(f"[Disco] Perceptual penalty enabled: scale {tv_scale}")
 
@@ -150,11 +161,11 @@ def run_clip_guidance_loop(
                 decoded_images = vae.decode(candidate_latents)
                 decoded_images = (decoded_images / 2 + 0.5).clamp(0, 1)
 
-                # c. Apply a light denoiser (smoothing) before CLIP scoring
-                smoothed_images = F.avg_pool2d(decoded_images, kernel_size=3, stride=1, padding=1)
-
-                # d. Score decoded images with a composite score
-                cutouts_list = [make_cutouts(img.unsqueeze(0)) for img in smoothed_images]
+                # c. Skip aggressive smoothing that might destroy patterns
+                # Use original decoded images for CLIP scoring to preserve detail
+                
+                # d. Score decoded images with CLIP
+                cutouts_list = [make_cutouts(img.unsqueeze(0)) for img in decoded_images]
                 all_cutouts = torch.cat(cutouts_list, dim=0)
                 
                 normalized_cutouts = normalize(all_cutouts)
@@ -164,19 +175,20 @@ def run_clip_guidance_loop(
                 
                 clip_scores = torch.einsum('cf,bcf->bc', text_features.squeeze(0), image_features).mean(dim=1)
 
-                # Calculate perceptual penalty on the original (non-smoothed) decoded images
-                texture_penalties = texture_std_penalty(decoded_images)
-                
-                # Combine scores: Maximize CLIP score while minimizing texture penalty.
-                # We use tv_scale to control the strength of this penalty.
-                penalty_amount = texture_penalties * (tv_scale / 100.0) # Arbitrary scaling factor
-                total_scores = clip_scores - penalty_amount
+                # Use much lighter texture penalty to avoid over-smoothing
+                if tv_scale > 0:
+                    texture_penalties = texture_std_penalty(decoded_images)
+                    # Reduce penalty strength significantly
+                    penalty_amount = texture_penalties * (tv_scale / 1000.0)  # Much lighter penalty
+                    total_scores = clip_scores - penalty_amount
+                else:
+                    total_scores = clip_scores
 
-                # e. Select the best latent from candidates based on the composite score
+                # e. Select the best latent from candidates
                 best_idx = torch.argmax(total_scores)
                 best_latent = candidate_latents[best_idx]
 
-                # f. Blend the current latent with the best one to guide the search
+                # f. Very conservative blending to preserve original structure
                 current_latent = (1 - blend_factor) * current_latent + blend_factor * best_latent
             
             if i % 5 == 0 or i == steps - 1:
@@ -250,7 +262,7 @@ def run_clip_post_processing(
         
         print(f"[Disco] Starting post-processing optimization...")
         
-        # Optimized random search for post-processing
+        # More conservative post-processing to preserve image structure
         for i in range(steps):
             current_loss = clip_loss(working_image)
             
@@ -258,10 +270,11 @@ def run_clip_post_processing(
             best_image = working_image.clone()
             best_loss = current_loss
             
-            # Try 5 random perturbations for better exploration
-            for attempt in range(5):
-                # Create random perturbation (smaller for post-processing to preserve image quality)
-                perturbation = torch.randn_like(working_image) * 0.03
+            # Try fewer, smaller perturbations to preserve image quality
+            for attempt in range(3):  # Reduced from 5 to 3
+                # Much smaller perturbation to preserve original image structure
+                perturbation_strength = max(0.005, disco_scale / 1000.0)  # Much smaller perturbations
+                perturbation = torch.randn_like(working_image) * perturbation_strength
                 test_image = (working_image + perturbation).clamp(0, 1)
                 
                 # Test this perturbation
@@ -272,8 +285,9 @@ def run_clip_post_processing(
                     best_loss = test_loss
                     best_image = test_image.clone()
             
-            # Update image to best found
-            working_image = best_image
+            # Update image to best found with conservative blending
+            blend_strength = 0.3  # Conservative blending for post-processing
+            working_image = (1 - blend_strength) * working_image + blend_strength * best_image
             
             if i % 5 == 0:
                 print(f"[Disco] Post-processing step {i}, Loss: {best_loss:.4f}")
