@@ -3,6 +3,36 @@ import os
 import torch
 import numpy as np # Added import for numpy
 from PIL import Image # Added import for PIL Image
+import sys
+import os
+
+# Add the extras directory to the path to import debug utilities
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'extras', 'disco_diffusion'))
+
+# Import debug functions
+try:
+    from pipeline_disco import debug_latent_pass, preview_latent
+    DEBUG_AVAILABLE = True
+except ImportError as e:
+    print(f"[Warning] Could not import debug utilities: {e}")
+    DEBUG_AVAILABLE = False
+    
+    # Fallback debug functions if import fails
+    def debug_latent_pass(latent, name="latent"):
+        if latent is None:
+            print(f"[{name}] None")
+            return latent
+        print(f"[{name}] shape={tuple(latent.shape)}, device={latent.device}, dtype={latent.dtype}")
+        return latent
+    
+    def preview_latent(*args, **kwargs):
+        return None
+
+# Print debug status
+print(f"[Disco] Debug utilities {'loaded successfully' if DEBUG_AVAILABLE else 'using fallback'}")
+print(f"[Disco] debug_latent_pass available: {'yes' if 'debug_latent_pass' in globals() else 'no'}")
+print(f"[Disco] preview_latent available: {'yes' if 'preview_latent' in globals() else 'no'}")
+
 import modules.patch
 import modules.config
 import modules.flags
