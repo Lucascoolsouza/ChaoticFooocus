@@ -146,33 +146,52 @@ class AestheticReplicator:
     ):
         """
         aesthetic_strength: How strongly to apply aesthetic guidance (0.0-2.0, higher = more aggressive)
-        feature_layers: Which UNet layers to target for aesthetic guidance
-        blend_mode: How to blend aesthetic features ('aggressive', 'adaptive', 'linear', 'attention')
-        unet_model: Optional UNet model for automatic layer discovery
+        feature_layers: List of layer names to extract features from (if None, will try to auto-detect)
+        blend_mode: How to blend reference features ('aggressive', 'adaptive', 'attention', or 'linear')
+        unet_model: Optional UNet model for automatic layer detection
+        verbose: Whether to print debug information
         """
         self.aesthetic_strength = aesthetic_strength
         self.blend_mode = blend_mode
-        self.reference_latent = None
-        self.reference_features = {}
         self.enabled = True
-        self.vae = None
+        self.current_timestep = 0
+        self.verbose = verbose
         
-        # UNet hook management
-        self.hooked_unet = None
-        self.hook_handles = []
+        # Initialize layer activations
         self.layer_activations = {}
         self.reference_activations = {}
-        self.current_timestep = 0
+        self.reference_latent = None
+        self.hook_handles = []
+        self.hooks = []  # For reference activation extraction
+        self.hooked_unet = None
         
-        # Initialize with auto-detected or provided layers
+        # Set feature layers (either provided or auto-detect from UNet)
         if feature_layers is not None:
             self.feature_layers = feature_layers
-            self.auto_detect_layers = False
-        else:
+        elif unet_model is not None:
             self.feature_layers = self._get_default_layers(unet_model)
-            self.auto_detect_layers = True
+        else:
+            # Fallback to common SDXL layer names
+            self.feature_layers = [
+                'input_blocks.0.0', 'input_blocks.1.0', 'input_blocks.2.0',
+                'middle_block.0', 'middle_block.1', 'middle_block.2',
+                'output_blocks.3', 'output_blocks.4', 'output_blocks.5',
+                'attn1', 'attn2', 'transformer_blocks.0.attn1', 'transformer_blocks.0.attn2'
+            ]
             
-        logger.info(f"[LFL] Initialized with {len(self.feature_layers)} feature layers")
+        if self.verbose:
+            logger.info(f"[LFL] AGGRESSIVE Aesthetic Replication initialized: strength={aesthetic_strength}, mode={blend_mode}")
+            logger.debug(f"[LFL] Using feature layers: {self.feature_layers}")
+
+    def _remove_hooks(self):
+        """Remove all registered hooks."""
+        for hook in self.hooks:
+            try:
+                hook.remove()
+            except Exception as e:
+                if self.verbose:
+                    logger.warning(f"[LFL] Error removing hook: {e}")
+        self.hooks = []
 
     def set_reference_image(self, image_path: str, vae=None, unet_model=None):
         """Set the reference image for aesthetic replication."""
