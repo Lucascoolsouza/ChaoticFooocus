@@ -139,20 +139,35 @@ class AestheticReplicator:
         features = {}
         
         try:
-            # Basic statistical features
+            # Basic statistical features (channel-wise)
             features['mean'] = torch.mean(latent, dim=[2, 3], keepdim=True)
             features['std'] = torch.std(latent, dim=[2, 3], keepdim=True)
             features['energy'] = torch.mean(latent ** 2, dim=[2, 3], keepdim=True)
             
-            # Frequency domain features
-            fft = torch.fft.fft2(latent)
-            features['freq_magnitude'] = torch.abs(fft)
-            features['freq_phase'] = torch.angle(fft)
+            # Global statistics
+            features['global_mean'] = torch.mean(latent)
+            features['global_std'] = torch.std(latent)
+            features['global_min'] = torch.min(latent)
+            features['global_max'] = torch.max(latent)
             
-            # Spatial gradient features
-            grad_x = torch.diff(latent, dim=3, prepend=latent[:, :, :, :1])
-            grad_y = torch.diff(latent, dim=2, prepend=latent[:, :, :1, :])
-            features['gradient_magnitude'] = torch.sqrt(grad_x**2 + grad_y**2)
+            # Spatial gradient features (more robust)
+            try:
+                if latent.shape[2] > 1 and latent.shape[3] > 1:
+                    grad_x = torch.diff(latent, dim=3, prepend=latent[:, :, :, :1])
+                    grad_y = torch.diff(latent, dim=2, prepend=latent[:, :, :1, :])
+                    features['gradient_magnitude'] = torch.sqrt(grad_x**2 + grad_y**2 + 1e-8)
+                    features['gradient_mean'] = torch.mean(features['gradient_magnitude'], dim=[2, 3], keepdim=True)
+            except Exception as grad_e:
+                logger.debug(f"[LFL] Gradient computation failed: {grad_e}")
+            
+            # Frequency domain features (simplified and more robust)
+            try:
+                if latent.shape[2] > 4 and latent.shape[3] > 4:  # Only for reasonably sized tensors
+                    fft = torch.fft.fft2(latent)
+                    features['freq_magnitude'] = torch.abs(fft)
+                    features['freq_energy'] = torch.mean(features['freq_magnitude'], dim=[2, 3], keepdim=True)
+            except Exception as fft_e:
+                logger.debug(f"[LFL] FFT computation failed: {fft_e}")
             
             return features
             
@@ -166,9 +181,29 @@ class AestheticReplicator:
             return torch.zeros_like(current_latent)
         
         try:
+            # Ensure reference latent matches current latent dimensions
+            reference_latent = self.reference_latent
+            if reference_latent.shape != current_latent.shape:
+                # Resize reference latent to match current latent
+                reference_latent = F.interpolate(
+                    reference_latent, 
+                    size=current_latent.shape[2:], 
+                    mode='bilinear', 
+                    align_corners=False
+                )
+                # Ensure channel count matches
+                if reference_latent.shape[1] != current_latent.shape[1]:
+                    if reference_latent.shape[1] < current_latent.shape[1]:
+                        # Repeat channels if reference has fewer
+                        repeat_factor = current_latent.shape[1] // reference_latent.shape[1]
+                        reference_latent = reference_latent.repeat(1, repeat_factor, 1, 1)
+                    else:
+                        # Truncate channels if reference has more
+                        reference_latent = reference_latent[:, :current_latent.shape[1], :, :]
+            
             # Extract features from current and reference latents
             current_features = self.extract_aesthetic_features(current_latent)
-            reference_features = self.extract_aesthetic_features(self.reference_latent)
+            reference_features = self.extract_aesthetic_features(reference_latent)
             
             if not current_features or not reference_features:
                 return torch.zeros_like(current_latent)
@@ -176,29 +211,45 @@ class AestheticReplicator:
             # Compute guidance based on feature differences
             guidance = torch.zeros_like(current_latent)
             
-            # Statistical guidance
+            # Statistical guidance - ensure shapes match
             if 'mean' in current_features and 'mean' in reference_features:
-                mean_diff = reference_features['mean'] - current_features['mean']
-                guidance += mean_diff * 0.3
+                ref_mean = reference_features['mean']
+                cur_mean = current_features['mean']
+                if ref_mean.shape == cur_mean.shape:
+                    mean_diff = ref_mean - cur_mean
+                    guidance += mean_diff * 0.3
             
             if 'std' in current_features and 'std' in reference_features:
-                std_diff = reference_features['std'] - current_features['std']
-                guidance += std_diff * 0.2
+                ref_std = reference_features['std']
+                cur_std = current_features['std']
+                if ref_std.shape == cur_std.shape:
+                    std_diff = ref_std - cur_std
+                    guidance += std_diff * 0.2
             
-            # Frequency domain guidance
-            if 'freq_magnitude' in current_features and 'freq_magnitude' in reference_features:
-                # Match frequency characteristics
-                freq_diff = reference_features['freq_magnitude'] - current_features['freq_magnitude']
-                freq_guidance = torch.fft.ifft2(freq_diff * torch.exp(1j * current_features['freq_phase']))
-                guidance += freq_guidance.real * 0.1
+            # Energy-based guidance
+            if 'energy' in current_features and 'energy' in reference_features:
+                ref_energy = reference_features['energy']
+                cur_energy = current_features['energy']
+                if ref_energy.shape == cur_energy.shape:
+                    energy_diff = ref_energy - cur_energy
+                    guidance += energy_diff * 0.1
+            
+            # Direct latent space guidance (most important)
+            latent_diff = reference_latent - current_latent
+            guidance += latent_diff * 0.4
             
             # Apply aesthetic strength
             guidance *= self.aesthetic_strength
+            
+            # Clamp guidance to prevent extreme values
+            guidance = torch.clamp(guidance, -1.0, 1.0)
             
             return guidance
             
         except Exception as e:
             logger.warning(f"[LFL] Error computing aesthetic guidance: {e}")
+            import traceback
+            traceback.print_exc()
             return torch.zeros_like(current_latent)
 
     def __call__(self, x: torch.Tensor, denoised: torch.Tensor) -> torch.Tensor:
