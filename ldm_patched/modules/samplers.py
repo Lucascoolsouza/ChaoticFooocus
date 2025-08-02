@@ -537,7 +537,8 @@ KSAMPLER_NAMES = ["euler", "euler_ancestral","euler_chaotic","euler_triangle_wav
     "euler_chaos_steps",
     "dalle_mini",
     "vgan_pixel",
-    "pixel_32x32",]
+    "pixel_32x32",
+    "neural_echo",]
 
 class KSAMPLER(Sampler):
     def __init__(self, sampler_function, extra_options={}, inpaint_options={}):
@@ -604,6 +605,33 @@ def ksampler(sampler_name, extra_options={}, inpaint_options={}):
         sampler_function = getattr(k_diffusion_sampling, "sample_euler_drunk_guidance")
     elif sampler_name == "euler_chaos_steps":
         sampler_function = getattr(k_diffusion_sampling, "sample_euler_chaos_steps")
+    elif sampler_name == "neural_echo":
+        # Neural Echo sampler - uses euler as base with echo enhancement
+        def neural_echo_function(model, noise, sigmas, extra_args, callback, disable):
+            # Use euler as the base sampler
+            base_function = getattr(k_diffusion_sampling, "sample_euler")
+            
+            # Create enhanced callback that applies neural echo
+            original_callback = callback
+            
+            def echo_callback(d):
+                if original_callback is not None:
+                    # Apply neural echo enhancement here if enabled
+                    try:
+                        from modules.neural_echo_sampler import get_neural_echo_sampler, apply_neural_echo
+                        neural_echo = get_neural_echo_sampler()
+                        if neural_echo and neural_echo.enabled:
+                            # Apply echo to the denoised sample
+                            if 'denoised' in d and 'x' in d:
+                                d['x'] = apply_neural_echo(d['x'], d['denoised'])
+                    except Exception as e:
+                        print(f"[Neural Echo] Error in callback: {e}")
+                    
+                    original_callback(d)
+            
+            return base_function(model, noise, sigmas, extra_args=extra_args, callback=echo_callback, disable=disable)
+        
+        sampler_function = neural_echo_function
     else:
         sampler_function = getattr(k_diffusion_sampling, "sample_{}".format(sampler_name))
 
