@@ -11,6 +11,12 @@ from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
+# Check NAG availability
+try:
+    from . import NAG_AVAILABLE
+except ImportError:
+    NAG_AVAILABLE = False
+
 # Global NAG configuration
 _nag_config = {
     'enabled': False,
@@ -155,6 +161,9 @@ def enable_nag(scale: float = 1.5, tau: float = 5.0, alpha: float = 0.5,
     """
     Enable NAG with the specified parameters
     """
+    if not NAG_AVAILABLE:
+        raise RuntimeError("NAG is not available due to dependency conflicts. Please update transformers/peft versions.")
+    
     set_nag_config(
         enabled=True,
         scale=scale,

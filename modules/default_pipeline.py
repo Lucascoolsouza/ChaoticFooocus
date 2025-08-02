@@ -409,18 +409,32 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         # NAG Integration
         if nag_enabled and nag_scale > 1.0:
             try:
-                from extras.nag.nag_integration import enable_nag
+                from extras.nag.nag_integration import enable_nag, NAG_AVAILABLE
                 
-                print(f"[NAG] Enabling NAG with scale={nag_scale}, tau={nag_tau}, alpha={nag_alpha}")
-                print(f"[NAG] NAG negative prompt: '{nag_negative_prompt}'")
-                
-                enable_nag(
-                    scale=nag_scale,
-                    tau=nag_tau,
-                    alpha=nag_alpha,
-                    negative_prompt=nag_negative_prompt,
-                    end=nag_end
-                )
+                if not NAG_AVAILABLE:
+                    print(f"[NAG] NAG disabled due to dependency version conflict.")
+                    print(f"[NAG] This is usually caused by incompatible transformers/peft versions.")
+                    print(f"[NAG] Suggested fix: pip install transformers>=4.44.0 peft>=0.12.0")
+                    print(f"[NAG] Continuing without NAG...")
+                else:
+                    print(f"[NAG] Enabling NAG with scale={nag_scale}, tau={nag_tau}, alpha={nag_alpha}")
+                    print(f"[NAG] NAG negative prompt: '{nag_negative_prompt}'")
+                    
+                    enable_nag(
+                        scale=nag_scale,
+                        tau=nag_tau,
+                        alpha=nag_alpha,
+                        negative_prompt=nag_negative_prompt,
+                        end=nag_end
+                    )
+            except ImportError as e:
+                if "EncoderDecoderCache" in str(e) or "transformers" in str(e):
+                    print(f"[NAG] NAG disabled due to dependency version conflict.")
+                    print(f"[NAG] Suggested fix: pip install transformers>=4.44.0 peft>=0.12.0")
+                else:
+                    print(f"[NAG] Import error: {e}")
+            except RuntimeError as e:
+                print(f"[NAG] {e}")
             except Exception as e:
                 print(f"[NAG] Error enabling NAG: {e}")
                 import traceback
