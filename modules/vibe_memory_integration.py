@@ -85,10 +85,9 @@ def apply_vibe_filtering(latent_samples, vae_model, async_task):
                 if decoded.dim() == 4:
                     decoded = decoded.squeeze(0)
                 
-                # Get embedding and score
+                # Get embedding and score - pass the embedding directly
                 embedding = vibe.tensor_to_embedding(decoded)
-                embedding_tensor = torch.tensor(embedding, device=latent_samples.device)
-                score = vibe.score(embedding_tensor)
+                score = vibe.score(embedding)  # Pass the list directly, score() handles conversion
                 
                 logger.info(f"[VibeMemory] Attempt {retry_count + 1}, Score: {score:.3f}")
                 
@@ -106,6 +105,8 @@ def apply_vibe_filtering(latent_samples, vae_model, async_task):
                     
     except Exception as e:
         logger.warning(f"[VibeMemory] Error during filtering: {e}")
+        import traceback
+        traceback.print_exc()
     
     return latent_samples
 
@@ -164,10 +165,89 @@ def clear_memory():
         return False
     
     try:
-        vibe.data = {"liked": [], "disliked": []}
-        vibe._save()
-        logger.info("[VibeMemory] Cleared all memory data")
-        return True
+        return vibe.clear_all()
     except Exception as e:
         logger.error(f"[VibeMemory] Failed to clear memory: {e}")
         return False
+
+def optimize_memory():
+    """Optimize the vibe memory by removing duplicates and updating weights."""
+    vibe = get_vibe_memory()
+    if not vibe:
+        return {"error": "Vibe memory not available"}
+    
+    try:
+        return vibe.optimize_memory()
+    except Exception as e:
+        logger.error(f"[VibeMemory] Failed to optimize memory: {e}")
+        return {"error": str(e)}
+
+def get_memory_health():
+    """Get health metrics for the memory system."""
+    vibe = get_vibe_memory()
+    if not vibe:
+        return {"error": "Vibe memory not available"}
+    
+    try:
+        return vibe.get_memory_health()
+    except Exception as e:
+        logger.error(f"[VibeMemory] Failed to get health metrics: {e}")
+        return {"error": str(e)}
+
+def export_memory(export_path):
+    """Export memory data to a file."""
+    vibe = get_vibe_memory()
+    if not vibe:
+        return False
+    
+    try:
+        return vibe.export_data(export_path)
+    except Exception as e:
+        logger.error(f"[VibeMemory] Failed to export memory: {e}")
+        return False
+
+def import_memory(import_path, merge=True):
+    """Import memory data from a file."""
+    vibe = get_vibe_memory()
+    if not vibe:
+        return False
+    
+    try:
+        return vibe.import_data(import_path, merge)
+    except Exception as e:
+        logger.error(f"[VibeMemory] Failed to import memory: {e}")
+        return False
+
+def score_image_path(image_path):
+    """Score an image from file path."""
+    if not PIL_AVAILABLE:
+        return 0.0
+        
+    vibe = get_vibe_memory()
+    if not vibe:
+        return 0.0
+    
+    try:
+        image = Image.open(image_path)
+        embedding = vibe.image_to_embedding(image)
+        return vibe.score(embedding)
+    except Exception as e:
+        logger.error(f"[VibeMemory] Failed to score image: {e}")
+        return 0.0
+
+def find_similar_images(image_path, threshold=0.8, limit=10):
+    """Find similar images in memory."""
+    if not PIL_AVAILABLE:
+        return {"liked": [], "disliked": []}
+        
+    vibe = get_vibe_memory()
+    if not vibe:
+        return {"liked": [], "disliked": []}
+    
+    try:
+        image = Image.open(image_path)
+        embedding = vibe.image_to_embedding(image)
+        return vibe.find_similar_memories(embedding, threshold, limit)
+    except Exception as e:
+        logger.error(f"[VibeMemory] Failed to find similar images: {e}")
+        return {"liked": [], "disliked": []}
