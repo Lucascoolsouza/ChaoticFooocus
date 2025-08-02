@@ -647,8 +647,6 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         # Disco Diffusion: Distortion was already applied during generation
         if disco_enabled and disco_scale > 0:
             print(f"[Disco] Distortion effects applied during generation with scale={disco_scale}")
-                import traceback
-                traceback.print_exc()
         
         # TPG Cleanup
         if tpg_enabled and tpg_scale > 0:
