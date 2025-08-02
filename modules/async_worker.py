@@ -369,6 +369,29 @@ class AsyncTask:
         
         print(f"[DEBUG] Vibe Memory params: enabled={self.vibe_memory_enabled}, threshold={self.vibe_memory_threshold}, max_retries={self.vibe_memory_max_retries}")
 
+        # LFL (Latent Feedback Loop) parameters
+        print(f"[DEBUG] Args remaining before LFL: {len(args)}")
+        lfl_params = []
+        try:
+            for i in range(4):
+                param = args.pop()
+                lfl_params.append(param)
+                print(f"[DEBUG] Popped LFL param {i}: {param} (type: {type(param)})")
+        except IndexError as e:
+            print(f"[DEBUG] Error popping LFL parameter {i}: {e}")
+            print(f"[DEBUG] Args remaining: {len(args)}")
+            # Fill remaining with defaults
+            while len(lfl_params) < 4:
+                lfl_params.append(None)
+        
+        # Assign in correct order matching webui ctrls order with defaults
+        self.lfl_enabled = lfl_params[0] if lfl_params[0] is not None else False
+        self.lfl_echo_strength = lfl_params[1] if lfl_params[1] is not None else 0.05
+        self.lfl_decay_factor = lfl_params[2] if lfl_params[2] is not None else 0.9
+        self.lfl_max_memory = lfl_params[3] if lfl_params[3] is not None else 20
+        
+        print(f"[DEBUG] LFL params: enabled={self.lfl_enabled}, echo_strength={self.lfl_echo_strength}, decay_factor={self.lfl_decay_factor}, max_memory={self.lfl_max_memory}")
+
         # Performance selection (added at the end to match webui.py ctrls order)
         self.performance_selection = Performance(args.pop())
         self.steps = self.performance_selection.steps()
@@ -603,9 +626,24 @@ def worker():
             disco_cutn=async_task.disco_cutn,
             disco_tv_scale=async_task.disco_tv_scale,
             disco_range_scale=async_task.disco_range_scale,
+            
+            lfl_enabled=async_task.lfl_enabled,
+            lfl_echo_strength=async_task.lfl_echo_strength,
+            lfl_decay_factor=async_task.lfl_decay_factor,
+            lfl_max_memory=async_task.lfl_max_memory,
+            
             force_grid_checkbox=async_task.force_grid_checkbox
         )
         
+        if imgs is None:
+            imgs = []
+
+        del positive_cond, negative_cond  # Save memory
+        if inpaint_worker.current_task is not None:
+            imgs = [inpaint_worker.current_task.post_process(x) for x in imgs]
+        
+        current_progress = int(base_progress + (100 - preparation_steps) / float(all_steps) * steps)
+
         # Apply vibe memory filtering if enabled
         try:
             from modules.vibe_memory_integration import is_vibe_memory_enabled, get_vibe_memory
@@ -637,16 +675,6 @@ def worker():
                         print("[VibeMemory] All images rejected, keeping original set")
         except Exception as e:
             print(f"[VibeMemory] Error in vibe filtering: {e}")
-
-        if imgs is None:
-            imgs = []
-
-        del positive_cond, negative_cond  # Save memory
-        if inpaint_worker.current_task is not None:
-            imgs = [inpaint_worker.current_task.post_process(x) for x in imgs]
-        
-
-        current_progress = int(base_progress + (100 - preparation_steps) / float(all_steps) * steps)
         if modules.config.default_black_out_nsfw or async_task.black_out_nsfw:
             progressbar(async_task, current_progress, 'Checking for NSFW content ...')
             imgs = default_censor(imgs)

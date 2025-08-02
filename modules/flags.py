@@ -16,8 +16,9 @@ tghqface8x = 'TGHQFace8x'
 remove_background = 'Remove Background'
 seamless_tiling = 'Seamless Tiling'
 vibe_memory = 'Vibe Memory'
+latent_feedback_loop = 'Latent Feedback Loop'
 
-uov_list = [disabled, subtle_variation, strong_variation, upscale_15, upscale_2, upscale_fast, ultrasharp, realistic_rescaler, latent_upscale, pixelsharpen, tghqface8x, remove_background, seamless_tiling, vibe_memory]
+uov_list = [disabled, subtle_variation, strong_variation, upscale_15, upscale_2, upscale_fast, ultrasharp, realistic_rescaler, latent_upscale, pixelsharpen, tghqface8x, remove_background, seamless_tiling, vibe_memory, latent_feedback_loop]
 
 enhancement_uov_before = "Before First Enhancement"
 enhancement_uov_after = "After Last Enhancement"

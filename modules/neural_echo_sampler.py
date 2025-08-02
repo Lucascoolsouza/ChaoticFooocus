@@ -1,5 +1,5 @@
 """
-Latent Feedback Loop (LFL) - Neural Echo Sampler
+Neural Echo Sampler - Latent Feedback Loop (LFL) Integration
 Adds fading memory (echo) of denoised latents to the diffusion process.
 """
 
@@ -84,6 +84,18 @@ class NeuralEchoSampler:
         if not enabled:
             self.reset()
 
+    def update_parameters(self, echo_strength: float = None, decay_factor: float = None, max_memory: int = None):
+        """Update sampler parameters during runtime."""
+        if echo_strength is not None:
+            self.echo_strength = echo_strength
+        if decay_factor is not None:
+            self.decay_factor = decay_factor
+        if max_memory is not None:
+            self.max_memory = max_memory
+            # Trim history if new max_memory is smaller
+            if len(self.history) > self.max_memory:
+                self.history = self.history[-self.max_memory:]
+
 
 # Global instance for integration
 neural_echo_sampler = None
@@ -114,3 +126,20 @@ def apply_neural_echo(x: torch.Tensor, denoised: torch.Tensor) -> torch.Tensor:
     if neural_echo_sampler and neural_echo_sampler.enabled:
         return neural_echo_sampler(x, denoised)
     return x
+
+
+def is_neural_echo_enabled(async_task) -> bool:
+    """Check if neural echo is enabled for the given task."""
+    return getattr(async_task, 'lfl_enabled', False)
+
+
+def setup_neural_echo_for_task(async_task):
+    """Setup neural echo sampler for a specific task."""
+    if not is_neural_echo_enabled(async_task):
+        return None
+    
+    echo_strength = getattr(async_task, 'lfl_echo_strength', 0.05)
+    decay_factor = getattr(async_task, 'lfl_decay_factor', 0.9)
+    max_memory = int(getattr(async_task, 'lfl_max_memory', 20))
+    
+    return initialize_neural_echo(echo_strength, decay_factor, max_memory)

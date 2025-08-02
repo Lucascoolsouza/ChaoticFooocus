@@ -1495,6 +1495,43 @@ with shared.gradio_root:
                     vibe_like_btn.click(like_current_image, outputs=vibe_memory_stats, queue=False, show_progress=False)
                     vibe_dislike_btn.click(dislike_current_image, outputs=vibe_memory_stats, queue=False, show_progress=False)
                 
+                with gr.Accordion(label='Latent Feedback Loop (LFL)', open=False):
+                    lfl_enabled = gr.Checkbox(label='Enable Latent Feedback Loop', value=False,
+                                            info='Add fading memory (echo) of denoised latents to improve coherence')
+                    
+                    with gr.Row(visible=False) as lfl_controls:
+                        with gr.Column():
+                            lfl_echo_strength = gr.Slider(label='Echo Strength', minimum=0.001, maximum=0.2, step=0.001,
+                                                        value=0.05, info='Global multiplier on the summed echo')
+                            lfl_decay_factor = gr.Slider(label='Decay Factor', minimum=0.1, maximum=0.99, step=0.01,
+                                                       value=0.9, info='Weight multiplier per step (older = weaker)')
+                            lfl_max_memory = gr.Slider(label='Max Memory', minimum=5, maximum=50, step=1,
+                                                     value=20, info='Maximum number of steps to remember')
+                    
+                    lfl_status = gr.Textbox(label='LFL Status', interactive=False, 
+                                          value='Latent Feedback Loop: Disabled', visible=False)
+                    
+                    def update_lfl_visibility(enabled):
+                        return [gr.update(visible=enabled)] * 2
+                    
+                    def update_lfl_status(enabled, echo_strength, decay_factor, max_memory):
+                        if not enabled:
+                            return "Latent Feedback Loop: Disabled"
+                        return f"LFL: Enabled | Echo: {echo_strength:.3f} | Decay: {decay_factor:.2f} | Memory: {int(max_memory)}"
+                    
+                    lfl_enabled.change(update_lfl_visibility, 
+                                     inputs=lfl_enabled,
+                                     outputs=[lfl_controls, lfl_status],
+                                     queue=False, show_progress=False)
+                    
+                    # Update status when parameters change
+                    lfl_inputs = [lfl_enabled, lfl_echo_strength, lfl_decay_factor, lfl_max_memory]
+                    for input_component in lfl_inputs:
+                        input_component.change(update_lfl_status,
+                                             inputs=lfl_inputs,
+                                             outputs=lfl_status,
+                                             queue=False, show_progress=False)
+                
                 dev_mode = gr.Checkbox(label='Developer Debug Mode', value=modules.config.default_developer_debug_mode_checkbox, container=False)
 
                 with gr.Column(visible=modules.config.default_developer_debug_mode_checkbox) as dev_tools:
@@ -1845,6 +1882,9 @@ with shared.gradio_root:
         
         # Vibe Memory controls
         ctrls += [vibe_memory_enabled, vibe_memory_threshold, vibe_memory_max_retries]
+        
+        # LFL controls
+        ctrls += [lfl_enabled, lfl_echo_strength, lfl_decay_factor, lfl_max_memory]
         
         ctrls += [performance_selection]
 
