@@ -23,28 +23,52 @@ class AestheticReplicator:
 
     def _get_default_layers(self) -> list:
         """
-        Returns a list of default UNet layer paths to target for aesthetic replication.
+        Returns a list of SDXL UNet layer paths to target for aesthetic replication.
         These layers are chosen to capture both high-level structure and fine details.
         """
         return [
-            # Input blocks
-            'input_blocks.0.0',
-            'input_blocks.1.0',
-            'input_blocks.2.0',
-            'input_blocks.3.0',
+            # Input blocks (downsampling path)
+            'input_blocks.0.0',  # Initial conv
+            'input_blocks.1.0',  # First down block
+            'input_blocks.2.0',  # Second down block
+            'input_blocks.3.0',  # Third down block
+            'input_blocks.4.1',  # First attention block
+            'input_blocks.5.1',  # Fourth down block
+            'input_blocks.6.1',  # Second attention block
+            'input_blocks.7.1',  # Fifth down block
+            'input_blocks.8.1',  # Third attention block
+            'input_blocks.9.1',  # Sixth down block
+            'input_blocks.10.1', # Fourth attention block
+            'input_blocks.11.1', # Seventh down block
+            
             # Middle blocks
-            'middle_block.0',
-            'middle_block.1',
-            'middle_block.2',
-            # Output blocks
-            'output_blocks.0.0',
-            'output_blocks.1.0',
-            'output_blocks.2.0',
-            'output_blocks.3.0',
-            # Skip connections
-            'skip_connections.0',
-            'skip_connections.1',
-            'skip_connections.2',
+            'middle_block.0',    # Middle block first part
+            'middle_block.1',    # Middle block attention
+            'middle_block.2',    # Middle block second part
+            
+            # Output blocks (upsampling path)
+            'output_blocks.0.0',  # First up block
+            'output_blocks.1.0',  # First up block attention
+            'output_blocks.2.0',  # Second up block
+            'output_blocks.3.0',  # Second up block attention
+            'output_blocks.4.0',  # Third up block
+            'output_blocks.5.0',  # Third up block attention
+            'output_blocks.6.0',  # Fourth up block
+            'output_blocks.7.0',  # Fourth up block attention
+            'output_blocks.8.0',  # Fifth up block
+            'output_blocks.9.0',  # Fifth up block attention
+            'output_blocks.10.0', # Sixth up block
+            'output_blocks.11.0', # Final output block
+            
+            # Cross-attention layers (important for text guidance)
+            'input_blocks.4.1.transformer_blocks.0.attn2',
+            'input_blocks.5.1.transformer_blocks.0.attn2',
+            'input_blocks.7.1.transformer_blocks.0.attn2',
+            'input_blocks.8.1.transformer_blocks.0.attn2',
+            'middle_block.1.transformer_blocks.0.attn2',
+            'output_blocks.3.0.transformer_blocks.0.attn2',
+            'output_blocks.4.0.transformer_blocks.0.attn2',
+            'output_blocks.5.0.transformer_blocks.0.attn2'
         ]
 
     def __init__(
