@@ -33,18 +33,9 @@ class AestheticReplicator:
         blend_mode: How to blend aesthetic features ('aggressive', 'adaptive', 'linear', 'attention')
         """
         self.aesthetic_strength = aesthetic_strength
-        self.feature_layers = feature_layers or [
-            'down_blocks.0.resnets.0',
-            'down_blocks.0.resnets.1', 
-            'down_blocks.1.resnets.0',
-            'down_blocks.1.resnets.1',
-            'mid_block.resnets.0',
-            'mid_block.resnets.1',
-            'up_blocks.0.resnets.0',
-            'up_blocks.0.resnets.1',
-            'up_blocks.1.resnets.0',
-            'up_blocks.1.resnets.1'
-        ]
+        # Auto-detect UNet structure or use provided layers
+        self.feature_layers = feature_layers or self._get_default_layers()
+        self.auto_detect_layers = feature_layers is None
         self.blend_mode = blend_mode
         self.reference_latent = None
         self.reference_features = {}
