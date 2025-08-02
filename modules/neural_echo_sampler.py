@@ -31,48 +31,35 @@ class NeuralEchoSampler:
         self.decay_factor = decay_factor
         self.max_memory = max_memory
         self.history: List[torch.Tensor] = []
-        self.enabled = True
 
-    def compute_echo(self) -> Optional[torch.Tensor]:
+    def compute_echo(self) -> torch.Tensor:
         """Return weighted sum of all stored denoised tensors."""
-        if not self.history or not self.enabled:
+        if not self.history:
             return None
-        
-        try:
-            weights = [self.decay_factor ** i for i in range(len(self.history))]
-            # Reverse so most recent has largest weight
-            weights.reverse()
-            echo = sum(h * w for h, w in zip(self.history, weights))
-            return echo
-        except Exception as e:
-            logger.warning(f"Error computing echo: {e}")
-            return None
+        weights = [self.decay_factor ** i for i in range(len(self.history))]
+        # Reverse so most recent has largest weight
+        weights.reverse()
+        echo = sum(h * w for h, w in zip(self.history, weights))
+        return echo
 
     def __call__(self, x: torch.Tensor, denoised: torch.Tensor) -> torch.Tensor:
         """
         Call this right after sampler.step returns the denoised latent.
         Returns the modified latent with echo added.
         """
-        if not self.enabled:
-            return x
-            
-        try:
-            # 1. Store denoised to memory
-            self.history.append(denoised.clone().detach())
-            if len(self.history) > self.max_memory:
-                self.history.pop(0)
+        # 1. Store denoised to memory
+        self.history.append(denoised.clone())
+        if len(self.history) > self.max_memory:
+            self.history.pop(0)
 
-            # 2. Compute echo
-            echo = self.compute_echo()
-            if echo is None:
-                return x  # first step, no echo yet
+        # 2. Compute echo
+        echo = self.compute_echo()
+        if echo is None:
+            return x  # first step, no echo yet
 
-            # 3. Blend echo into current latent
-            x = x + echo * self.echo_strength
-            return x
-        except Exception as e:
-            logger.warning(f"Error in neural echo sampler: {e}")
-            return x
+        # 3. Blend echo into current latent
+        x = x + echo * self.echo_strength
+        return x
 
     def reset(self):
         """Clear the memory history."""
