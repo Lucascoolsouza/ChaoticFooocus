@@ -23,52 +23,52 @@ class AestheticReplicator:
 
     def _get_default_layers(self) -> list:
         """
-        Returns a list of SDXL UNet layer paths to target for aesthetic replication.
-        These layers are chosen to capture both high-level structure and fine details.
+        Returns a list of common layer patterns to try for different UNet architectures.
+        The actual layers will be verified and filtered when hooking the UNet.
         """
         return [
-            # Input blocks (downsampling path)
-            'input_blocks.0.0',  # Initial conv
-            'input_blocks.1.0',  # First down block
-            'input_blocks.2.0',  # Second down block
-            'input_blocks.3.0',  # Third down block
-            'input_blocks.4.1',  # First attention block
-            'input_blocks.5.1',  # Fourth down block
-            'input_blocks.6.1',  # Second attention block
-            'input_blocks.7.1',  # Fifth down block
-            'input_blocks.8.1',  # Third attention block
-            'input_blocks.9.1',  # Sixth down block
-            'input_blocks.10.1', # Fourth attention block
-            'input_blocks.11.1', # Seventh down block
+            # Common input block patterns
+            'input_blocks.0.0',
+            'input_blocks.1.0',
+            'input_blocks.2.0',
+            'input_blocks.3.0',
+            'input_blocks.4.0',
+            'input_blocks.5.0',
+            'input_blocks.6.0',
+            'input_blocks.7.0',
+            'input_blocks.8.0',
+            'input_blocks.9.0',
+            'input_blocks.10.0',
+            'input_blocks.11.0',
             
-            # Middle blocks
-            'middle_block.0',    # Middle block first part
-            'middle_block.1',    # Middle block attention
-            'middle_block.2',    # Middle block second part
+            # Common middle block patterns
+            'middle_block.0',
+            'middle_block.1',
+            'middle_block.2',
             
-            # Output blocks (upsampling path)
-            'output_blocks.0.0',  # First up block
-            'output_blocks.1.0',  # First up block attention
-            'output_blocks.2.0',  # Second up block
-            'output_blocks.3.0',  # Second up block attention
-            'output_blocks.4.0',  # Third up block
-            'output_blocks.5.0',  # Third up block attention
-            'output_blocks.6.0',  # Fourth up block
-            'output_blocks.7.0',  # Fourth up block attention
-            'output_blocks.8.0',  # Fifth up block
-            'output_blocks.9.0',  # Fifth up block attention
-            'output_blocks.10.0', # Sixth up block
-            'output_blocks.11.0', # Final output block
+            # Common output block patterns
+            'output_blocks.0',
+            'output_blocks.1',
+            'output_blocks.2',
+            'output_blocks.3',
+            'output_blocks.4',
+            'output_blocks.5',
+            'output_blocks.6',
+            'output_blocks.7',
+            'output_blocks.8',
+            'output_blocks.9',
+            'output_blocks.10',
+            'output_blocks.11',
             
-            # Cross-attention layers (important for text guidance)
-            'input_blocks.4.1.transformer_blocks.0.attn2',
-            'input_blocks.5.1.transformer_blocks.0.attn2',
-            'input_blocks.7.1.transformer_blocks.0.attn2',
-            'input_blocks.8.1.transformer_blocks.0.attn2',
-            'middle_block.1.transformer_blocks.0.attn2',
-            'output_blocks.3.0.transformer_blocks.0.attn2',
-            'output_blocks.4.0.transformer_blocks.0.attn2',
-            'output_blocks.5.0.transformer_blocks.0.attn2'
+            # Try different attention layer patterns
+            'attn1',
+            'attn2',
+            'transformer_blocks.0.attn1',
+            'transformer_blocks.0.attn2',
+            'attn_block.0',
+            'attn_block.1',
+            'attention.0',
+            'attention.1'
         ]
 
     def __init__(
@@ -118,76 +118,90 @@ class AestheticReplicator:
             # Store VAE for encoding
             self.vae = vae
             
-            # Convert to tensor and encode to latent space
+            # Try to encode with VAE if available
             if vae is not None:
-                # Resize image to standard size for encoding
-                image = image.resize((512, 512), Image.Resampling.LANCZOS)
-                
-                # Convert PIL to tensor with proper format
-                image_array = np.array(image).astype(np.float32) / 255.0
-                image_tensor = torch.from_numpy(image_array)
-                
-                # Ensure correct tensor format: [H, W, C] -> [1, C, H, W]
-                if len(image_tensor.shape) == 3:
-                    image_tensor = image_tensor.permute(2, 0, 1)  # HWC -> CHW
-                image_tensor = image_tensor.unsqueeze(0)  # CHW -> BCHW
-                
-                # Normalize to [-1, 1] range expected by VAE
-                image_tensor = image_tensor * 2.0 - 1.0
-                
-                # Move to appropriate device
-                device = None
-                if hasattr(vae, 'device'):
-                    device = vae.device
-                elif hasattr(vae, 'first_stage_model') and hasattr(vae.first_stage_model, 'parameters'):
-                    device = next(vae.first_stage_model.parameters()).device
-                elif hasattr(vae, 'parameters'):
-                    device = next(vae.parameters()).device
-                
-                if device is not None:
-                    image_tensor = image_tensor.to(device)
-                
-                logger.info(f"[LFL] Image tensor prepared: shape={image_tensor.shape}, dtype={image_tensor.dtype}, device={image_tensor.device}")
-                
-                # Encode to latent space
-                with torch.no_grad():
-                    try:
-                        if hasattr(vae, 'encode'):
-                            # Standard VAE interface
-                            encoded = vae.encode(image_tensor)
-                            if hasattr(encoded, 'sample'):
-                                self.reference_latent = encoded.sample()
-                            elif hasattr(encoded, 'latent_dist'):
-                                self.reference_latent = encoded.latent_dist.sample()
-                            else:
-                                self.reference_latent = encoded
-                        elif hasattr(vae, 'first_stage_model'):
-                            # ComfyUI style VAE
-                            self.reference_latent = vae.first_stage_model.encode(image_tensor)
-                        elif callable(vae):
-                            # Direct callable VAE
-                            self.reference_latent = vae(image_tensor)
-                        else:
-                            logger.error("[LFL] Unknown VAE interface")
-                            return False
-                        
-                        logger.info(f"[LFL] Reference image encoded to latent space: {self.reference_latent.shape}")
-                        return True
-                        
-                    except Exception as encode_error:
-                        logger.error(f"[LFL] VAE encoding failed: {encode_error}")
-                        # Fallback: create a mock latent for testing
-                        self.reference_latent = torch.randn(1, 4, 64, 64)
-                        if device is not None:
-                            self.reference_latent = self.reference_latent.to(device)
-                        logger.warning(f"[LFL] Using mock reference latent: {self.reference_latent.shape}")
-                        return True
-                        
-            else:
-                logger.warning("[LFL] No VAE provided, using mock reference latent")
-                # Create a mock latent for testing without VAE
-                self.reference_latent = torch.randn(1, 4, 64, 64)
-                return True
+                try:
+                    # Resize image to standard size for encoding
+                    image = image.resize((512, 512), Image.Resampling.LANCZOS)
+                    
+                    # Convert PIL to tensor with proper format
+                    image_array = np.array(image).astype(np.float32) / 255.0
+                    image_tensor = torch.from_numpy(image_array)
+                    
+                    # Ensure correct tensor format: [H, W, C] -> [1, C, H, W]
+                    if len(image_tensor.shape) == 3:
+                        image_tensor = image_tensor.permute(2, 0, 1)  # HWC -> CHW
+                    image_tensor = image_tensor.unsqueeze(0)  # CHW -> BCHW
+                    
+                    # Normalize to [0, 1] or [-1, 1] range expected by VAE
+                    # Try both ranges since different VAEs expect different ranges
+                    for scale_range in [1.0, 2.0]:
+                        try:
+                            scaled_tensor = image_tensor * scale_range - (scale_range / 2.0)
+                            
+                            # Move to appropriate device
+                            device = None
+                            if hasattr(vae, 'device'):
+                                device = vae.device
+                            elif hasattr(vae, 'first_stage_model') and hasattr(vae.first_stage_model, 'parameters'):
+                                device = next(vae.first_stage_model.parameters()).device
+                            elif hasattr(vae, 'parameters'):
+                                device = next(vae.parameters()).device
+                            
+                            if device is not None:
+                                scaled_tensor = scaled_tensor.to(device)
+                            
+                            logger.info(f"[LFL] Attempting VAE encode with scale_range [{scale_range-1}, {scale_range}] on device {device}")
+                            
+                            # Try different VAE interfaces
+                            with torch.no_grad():
+                                if hasattr(vae, 'encode'):
+                                    # Standard VAE interface
+                                    encoded = vae.encode(scaled_tensor)
+                                    if hasattr(encoded, 'sample'):
+                                        self.reference_latent = encoded.sample()
+                                    elif hasattr(encoded, 'latent_dist'):
+                                        self.reference_latent = encoded.latent_dist.sample()
+                                    else:
+                                        self.reference_latent = encoded
+                                elif hasattr(vae, 'first_stage_model'):
+                                    # ComfyUI style VAE
+                                    if hasattr(vae.first_stage_model, 'encode'):
+                                        self.reference_latent = vae.first_stage_model.encode(scaled_tensor)
+                                    elif callable(vae.first_stage_model):
+                                        self.reference_latent = vae.first_stage_model(scaled_tensor)
+                                    else:
+                                        continue
+                                elif callable(vae):
+                                    # Direct callable VAE
+                                    self.reference_latent = vae(scaled_tensor)
+                                else:
+                                    continue
+                                
+                                logger.info(f"[LFL] Successfully encoded reference image to latent space: {self.reference_latent.shape}")
+                                return True
+                                
+                        except Exception as e:
+                            logger.debug(f"[LFL] VAE encode attempt failed with scale_range [{scale_range-1}, {scale_range}]: {str(e)}")
+                            continue
+                    
+                    # If we get here, all VAE encode attempts failed
+                    raise Exception("All VAE encode attempts failed")
+                    
+                except Exception as encode_error:
+                    logger.error(f"[LFL] VAE encoding failed: {encode_error}")
+                    # Fallback: create a mock latent for testing
+                    device = next(vae.parameters()).device if hasattr(vae, 'parameters') else None
+                    self.reference_latent = torch.randn(1, 4, 64, 64)
+                    if device is not None:
+                        self.reference_latent = self.reference_latent.to(device)
+                    logger.warning(f"[LFL] Using mock reference latent: {self.reference_latent.shape}")
+                    return True
+            
+            # Fallback if no VAE or VAE encoding failed
+            logger.warning("[LFL] No VAE provided or VAE encoding failed, using mock reference latent")
+            self.reference_latent = torch.randn(1, 4, 64, 64)
+            return True
                 
         except Exception as e:
             logger.error(f"[LFL] Error setting reference image: {e}")
