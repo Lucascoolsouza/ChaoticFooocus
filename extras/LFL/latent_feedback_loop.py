@@ -5,14 +5,57 @@ Uses aggressive UNet layer hooks for maximum aesthetic impact.
 """
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional, Dict, List
-import logging
-from PIL import Image
+from typing import List, Dict, Optional, Union, Callable, Any
 import numpy as np
-import weakref
+from PIL import Image
+import os
+import logging
+
+# Type aliases
+Tensor = torch.Tensor
 
 logger = logging.getLogger(__name__)
+
+def list_unet_layers(unet_model: nn.Module, max_layers: int = 50) -> List[str]:
+    """
+    List all available layers in a UNet model, with optional depth limiting.
+    
+    Args:
+        unet_model: The UNet model to inspect
+        max_layers: Maximum number of layers to return (None for all)
+        
+    Returns:
+        List of layer names that can be used for feature extraction
+    """
+    layers = []
+    print("\n=== AVAILABLE UNET LAYERS ===")
+    for name, module in unet_model.named_modules():
+        # Skip empty names and modules without parameters
+        if not name or not list(module.parameters()):
+            continue
+            
+        # Skip very small modules (like activations)
+        if hasattr(module, 'weight') and hasattr(module.weight, 'shape'):
+            if len(module.weight.shape) < 2:  # Skip 1D layers
+                continue
+                
+        layers.append(name)
+        if max_layers and len(layers) >= max_layers:
+            print(f"Showing first {max_layers} layers. Use list_unet_layers(model, max_layers=None) to see all.")
+            break
+            
+    # Print in a readable format
+    for i, layer in enumerate(layers, 1):
+        print(f"{i:3d}. {layer}")
+    
+    print("\nSuggested layers for feature extraction:")
+    suggested = [l for l in layers if any(x in l for x in ['conv_in', 'down', 'mid', 'up', 'out'])]
+    for i, layer in enumerate(suggested[:10], 1):  # Show first 10 suggestions
+        print(f"- {layer}")
+    
+    return layers
 
 
 class AestheticReplicator:
@@ -45,11 +88,7 @@ class AestheticReplicator:
         if unet_model is not None:
             try:
                 # Try to get layer names from the actual model
-                layer_names = []
-                for name, _ in unet_model.named_modules():
-                    if name and len(name.split('.')) > 2:  # Only include deeper layers
-                        layer_names.append(name)
-                
+                layer_names = list_unet_layers(unet_model)
                 if layer_names:
                     logger.info(f"[LFL] Discovered {len(layer_names)} potential layers in UNet")
                     return layer_names
@@ -102,7 +141,8 @@ class AestheticReplicator:
         aesthetic_strength: float = 0.5,
         feature_layers: list = None,
         blend_mode: str = 'aggressive',
-        unet_model = None  # Pass UNet model for layer inspection
+        unet_model = None,  # Pass UNet model for layer inspection
+        verbose: bool = True
     ):
         """
         aesthetic_strength: How strongly to apply aesthetic guidance (0.0-2.0, higher = more aggressive)
@@ -530,74 +570,115 @@ class AestheticReplicator:
         else:
             return 1.0
 
-    def extract_reference_activations(self, unet_model, reference_noise):
-        """Extract reference activations by running reference through UNet."""
-        if self.reference_latent is None:
-            return
-            
-        logger.info("[LFL] Extracting reference activations from UNet")
-        
-        # Temporarily store activations during reference pass
-        temp_activations = {}
-        temp_handles = []
-        
-        def create_capture_hook(layer_name):
-            def hook_fn(module, input, output):
-                temp_activations[layer_name] = output.detach().clone()
-                return output
-            return hook_fn
-        
-        # Apply capture hooks
-        for layer_name in self.feature_layers:
+    def _get_module_by_name(self, model, layer_name):
+        """Safely get a submodule by its full name"""
+        module = model
+        for part in layer_name.split('.'):
             try:
-                module = self._get_module_by_name(unet_model, layer_name)
-                if module is not None:
-                    handle = module.register_forward_hook(create_capture_hook(layer_name))
-                    temp_handles.append(handle)
-            except Exception as e:
-                logger.warning(f"[LFL] Failed to add capture hook for {layer_name}: {e}")
-        
-        try:
-            # Run reference latent through UNet to capture activations
-            with torch.no_grad():
-                # Create reference noise with same shape as current generation
-                ref_noise = reference_noise.clone()
-                if self.reference_latent.shape != ref_noise.shape:
-                    ref_latent = F.interpolate(
-                        self.reference_latent,
-                        size=ref_noise.shape[2:],
-                        mode='bilinear',
-                        align_corners=False
-                    )
-                    if ref_latent.shape[1] != ref_noise.shape[1]:
-                        if ref_latent.shape[1] < ref_noise.shape[1]:
-                            repeat_factor = ref_noise.shape[1] // ref_latent.shape[1]
-                            ref_latent = ref_latent.repeat(1, repeat_factor, 1, 1)
-                        else:
-                            ref_latent = ref_latent[:, :ref_noise.shape[1], :, :]
+                if hasattr(module, '__getitem__') and part.isdigit():
+                    module = module[int(part)]
                 else:
-                    ref_latent = self.reference_latent
-                
-                # Use a dummy timestep for reference extraction
-                dummy_timestep = torch.tensor([500], device=ref_latent.device)
-                
-                # Run through UNet (this will trigger our capture hooks)
-                try:
-                    _ = unet_model(ref_latent, dummy_timestep)
-                except Exception as e:
-                    logger.warning(f"[LFL] UNet forward pass failed during reference extraction: {e}")
+                    module = getattr(module, part)
+                if module is None:
+                    return None
+            except (AttributeError, KeyError, IndexError):
+                if self.verbose:
+                    logger.warning(f"[LFL] Could not find layer: {layer_name}")
+                return None
+        return module
+
+    def _prepare_unet_inputs(self, unet_model, latent, timestep):
+        """Prepare inputs for different UNet variants"""
+        # Basic input preparation
+        inputs = {
+            'sample': latent,
+            'timestep': timestep,
+            'return_dict': False
+        }
+        
+        # Check if model expects encoder_hidden_states
+        forward_params = []
+        if hasattr(unet_model, 'forward'):
+            import inspect
+            sig = inspect.signature(unet_model.forward)
+            forward_params = list(sig.parameters.keys())
+        
+        if 'encoder_hidden_states' in forward_params:
+            # Create a dummy embedding if needed
+            batch_size = latent.shape[0]
+            hidden_size = 768  # Default for SDXL
+            if hasattr(unet_model, 'config') and hasattr(unet_model.config, 'cross_attention_dim'):
+                hidden_size = unet_model.config.cross_attention_dim
+            dummy_embeddings = torch.randn((batch_size, 77, hidden_size), 
+                                         device=latent.device)
+            inputs['encoder_hidden_states'] = dummy_embeddings
+        
+        return inputs
+
+    def extract_reference_activations(self, unet_model, timestep=0):
+        """Extract activations from the reference latent by forwarding through UNet"""
+        if self.reference_latent is None:
+            logger.warning("[LFL] No reference latent available. Call set_reference_image() first.")
+            return {}
             
-            # Store captured activations
-            self.reference_activations = temp_activations.copy()
-            logger.info(f"[LFL] Captured {len(self.reference_activations)} reference activations")
+        # Move to same device as UNet if needed
+        device = next(unet_model.parameters()).device
+        self.reference_latent = self.reference_latent.to(device)
+        
+        # Create timestep tensor
+        if isinstance(timestep, int):
+            timestep = torch.tensor([timestep], device=device, dtype=torch.long)
+        
+        # Clear any previous hooks
+        self._remove_hooks()
+        
+        # Dict to store activations
+        self.reference_activations = {}
+        
+        # Register hooks for each target layer
+        self.hooks = []
+        for layer_name in self.feature_layers:
+            module = self._get_module_by_name(unet_model, layer_name)
+            if module is not None:
+                def hook_fn(module, input, output, layer_name=layer_name):
+                    if isinstance(output, (list, tuple)):
+                        output = output[0]
+                    self.reference_activations[layer_name] = output.detach()
+                
+                # Register hook
+                hook = module.register_forward_hook(hook_fn)
+                self.hooks.append(hook)
+            elif self.verbose:
+                logger.warning(f"[LFL] Could not find layer: {layer_name}")
+        
+        # Forward pass through UNet
+        with torch.no_grad():
+            try:
+                # Prepare inputs
+                inputs = self._prepare_unet_inputs(unet_model, self.reference_latent, timestep)
+                
+                # Try different calling conventions
+                if hasattr(unet_model, 'forward'):
+                    _ = unet_model.forward(**inputs)
+                elif hasattr(unet_model, '__call__'):
+                    _ = unet_model(**inputs)
+                elif hasattr(unet_model, 'model') and hasattr(unet_model.model, '__call__'):
+                    _ = unet_model.model(**inputs)
+                else:
+                    raise RuntimeError("Could not determine how to call the UNet model")
+                
+            except Exception as e:
+                logger.error(f"[LFL] UNet forward pass failed during reference extraction: {str(e)}", exc_info=self.verbose)
+                self._remove_hooks()
+                return {}
+        
+        # Clean up hooks
+        self._remove_hooks()
+        
+        if not self.reference_activations and self.verbose:
+            logger.warning("[LFL] No activations were captured. Check layer names and model architecture.")
             
-        finally:
-            # Remove capture hooks
-            for handle in temp_handles:
-                try:
-                    handle.remove()
-                except:
-                    pass
+        return self.reference_activations
 
     def set_current_timestep(self, timestep):
         """Update current timestep for adaptive blending."""
