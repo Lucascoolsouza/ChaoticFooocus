@@ -228,8 +228,8 @@ def inject_disco_distortion(latent_samples, disco_scale=5.0, distortion_type='ps
         x_coords = torch.linspace(-1, 1, width, device=device)
         y_grid, x_grid = torch.meshgrid(y_coords, x_coords, indexing='ij')
         
-        # ULTRA AGGRESSIVE scaling - 10x more intense
-        base_scale = disco_scale * intensity_multiplier * 10.0
+        # ULTRA AGGRESSIVE scaling 
+        base_scale = disco_scale * intensity_multiplier 
         
         # Apply different distortion types based on preset
         if distortion_type == 'psychedelic':
