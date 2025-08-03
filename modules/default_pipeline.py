@@ -794,7 +794,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                                                 preview = (decoded.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
                                             else:
                                                 print(f"[Disco] Unexpected debug tensor shape: {decoded.shape}")
-                                                continue
+                                                return  # Exit the function instead of continue
                                             Image.fromarray(preview).save(f"debug_step_{step:03d}.png")
                                             print(f"[Disco] Saved debug preview for step {step}")
                                     except Exception as e:
