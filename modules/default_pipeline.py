@@ -545,10 +545,10 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         if disco_enabled and disco_scale > 0:
             try:
                 from extras.disco_diffusion.pipeline_disco import inject_disco_distortion
-                print(f"[Disco] Initial light injection - main effects during first 50% of generation")
+                print(f"[Disco] AGGRESSIVE initial injection - scale={disco_scale}, preset={disco_preset}")
                 
-                # Light initial injection - main effect comes from continuous first-half injection
-                initial_scale = disco_scale * 0.3  # Much lighter initial injection
+                # More aggressive initial injection for visible effects
+                initial_scale = disco_scale * 1.0  # Full scale initial injection
                 
                 # Debug: Print latent stats before distortion
                 print("\n[Disco] === INITIAL LATENT BEFORE DISTORTION ===")
@@ -562,7 +562,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                     initial_latent['samples'],
                     disco_scale=initial_scale,
                     distortion_type=disco_preset if disco_preset != 'custom' else 'psychedelic',
-                    intensity_multiplier=0.5,  # Light initial touch
+                    intensity_multiplier=1.0,  # Full intensity for visible effects
                     test_mode=test_mode  # Disable test mode for normal operation
                 )
                 
@@ -589,10 +589,13 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                         print(f"Mean: {decoded.mean().item():.4f}, Std: {decoded.std().item():.4f}, "
                               f"Min: {decoded.min().item():.4f}, Max: {decoded.max().item():.4f}")
                         
-                        # Save preview
+                        # Save preview with timestamp
+                        import time
+                        timestamp = int(time.time())
                         preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-                        Image.fromarray(preview).save("debug_vae_output.png")
-                        print("[Disco] Saved VAE debug preview to debug_vae_output.png")
+                        filename = f"disco_initial_latent_{timestamp}.png"
+                        Image.fromarray(preview).save(filename)
+                        print(f"[Disco] ⭐ SAVED DISCO INITIAL LATENT to {filename} ⭐")
                     except Exception as e:
                         print(f"[Disco] Error during VAE debug: {e}")
                 
@@ -774,7 +777,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                                 if step % 5 == 0:  # Save every 5 steps
                                     try:
                                         with torch.no_grad():
-                                            decoded = vae_decode(enhanced_x0)
+                                            decoded = core.decode_vae(final_vae, enhanced_x0)
                                             preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
                                             Image.fromarray(preview).save(f"debug_step_{step:03d}.png")
                                             print(f"[Disco] Saved debug preview for step {step}")
@@ -798,9 +801,19 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                         if step == halfway_point + 1:
                             print(f"[Disco] Reached 50% mark - stopping disco injection to let image settle")
                 
-                # Call the original callback
+                # Call the original callback with disco-enhanced x0
                 if original_callback is not None:
-                    original_callback(step, enhanced_x0, x, total_steps, preview_image)
+                    # Generate preview from disco-enhanced latent if disco is active
+                    disco_preview = None
+                    if disco_enabled and disco_scale > 0 and step <= int(total_steps * 0.5):
+                        try:
+                            with torch.no_grad():
+                                decoded = core.decode_vae(final_vae, enhanced_x0)
+                                disco_preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                        except Exception as e:
+                            print(f"[Disco] Error generating disco preview: {e}")
+                    
+                    original_callback(step, enhanced_x0, x, total_steps, disco_preview or preview_image)
             
             return disco_enhanced_callback
         
