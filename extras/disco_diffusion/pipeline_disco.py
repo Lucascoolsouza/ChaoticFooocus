@@ -626,7 +626,7 @@ def run_clip_post_processing(
     except Exception as e:
         logger.error(f"CLIP post-processing failed: {e}", exc_info=True)
         return image_tensord
-ef preview_latent(latent: torch.Tensor, title: str = "Latent Preview") -> Image.Image:
+def preview_latent(latent: torch.Tensor, title: str = "Latent Preview") -> Image.Image:
     """Create a preview of a latent tensor.
     
     Args:
