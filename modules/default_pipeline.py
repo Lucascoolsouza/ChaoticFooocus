@@ -541,46 +541,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         else:
             initial_latent = latent
 
-        # Disco Diffusion Integration
-        if disco_enabled and disco_scale > 0:
-            try:
-                from modules.disco_daemon import disco_daemon
-                
-                # Configure disco daemon
-                disco_daemon.update_settings(
-                    enabled=True,
-                    disco_scale=disco_scale,
-                    distortion_type=disco_preset if disco_preset != 'custom' else 'psychedelic',
-                    intensity_multiplier=1.0
-                )
-                
-                print(f"[Disco] Applying initial distortion - scale={disco_scale}, preset={disco_preset}")
-                
-                # Apply disco distortion to initial latent
-                initial_latent['samples'] = disco_daemon.process_latent(initial_latent['samples'])
-                
-                # Save debug preview
-                try:
-                    with torch.no_grad():
-                        decoded = core.decode_vae(final_vae, initial_latent['samples'])
-                        if decoded.dim() == 4:
-                            preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-                        elif decoded.dim() == 3:
-                            preview = (decoded.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-                        else:
-                            preview = None
-                        
-                        if preview is not None:
-                            import time
-                            timestamp = int(time.time())
-                            filename = f"disco_initial_{timestamp}.png"
-                            Image.fromarray(preview).save(filename)
-                            print(f"[Disco] Saved initial disco latent to {filename}")
-                except Exception as e:
-                    print(f"[Disco] Error saving debug preview: {e}")
-                
-            except Exception as e:
-                print(f"[Disco] Error in disco integration: {e}")
+        # Disco will be applied as post-processing after image generation
 
         minmax_sigmas = calculate_sigmas(sampler=sampler_name, scheduler=scheduler_name, model=final_unet.model, steps=steps, denoise=denoise)
         
@@ -712,26 +673,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                         print(f"[LFL] Error in aesthetic replication callback: {e}")
                         enhanced_x0 = x0
                 
-                # Apply disco distortion during first half of generation
-                if disco_enabled and disco_scale > 0 and step <= int(total_steps * 0.5):
-                    try:
-                        from modules.disco_daemon import disco_daemon
-                        
-                        # Reduce intensity as generation progresses
-                        progress = step / total_steps
-                        intensity = 1.0 - (progress * 0.5)  # 1.0 to 0.5
-                        
-                        # Update disco daemon intensity
-                        disco_daemon.intensity_multiplier = intensity
-                        
-                        # Apply disco to the denoised prediction
-                        enhanced_x0 = disco_daemon.process_latent(enhanced_x0)
-                        
-                        if step % 10 == 0:  # Log every 10 steps
-                            print(f"[Disco] Step {step}/{total_steps} - intensity {intensity:.2f}")
-                        
-                    except Exception as e:
-                        print(f"[Disco] Error in callback: {e}")
+                # Disco will be applied as post-processing - no need to process during generation
                 
                 # Call original callback
                 if original_callback is not None:
@@ -761,7 +703,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             callback_function=enhanced_callback
         )['samples']
         
-        # Convert latents to images (no more disco injection after sampling)
+        # Convert latents to images
         if ksampler_imgs is not None:
             latent_dict = {'samples': ksampler_imgs}
             imgs = core.decode_vae(target_vae, latent_dict)
@@ -769,9 +711,45 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         else:
             imgs = []
         
-        # Disco effects were applied during first 50% of generation only
-        if disco_enabled and disco_scale > 0:
-            print(f"[Disco] Disco effects applied during first 50% of generation with scale={disco_scale}")
+        # Apply Disco Post-Processing to final images
+        if disco_enabled and disco_scale > 0 and len(imgs) > 0:
+            try:
+                from modules.disco_post_processor import disco_post_processor
+                
+                # Configure post-processor
+                disco_post_processor.configure(
+                    enabled=True,
+                    disco_scale=disco_scale,
+                    distortion_type=disco_preset if disco_preset != 'custom' else 'psychedelic',
+                    intensity=1.0,
+                    blend_factor=0.6  # Strong blend for visible effects
+                )
+                
+                print(f"[Disco] Applying post-processing to {len(imgs)} images...")
+                
+                # Process each image
+                processed_imgs = []
+                for i, img in enumerate(imgs):
+                    processed_img = disco_post_processor.process(img)
+                    processed_imgs.append(processed_img)
+                    
+                    # Save comparison images for debugging
+                    try:
+                        import time
+                        timestamp = int(time.time())
+                        Image.fromarray(img).save(f"debug_original_{i}_{timestamp}.png")
+                        Image.fromarray(processed_img).save(f"debug_disco_{i}_{timestamp}.png")
+                        print(f"[Disco] Saved comparison images for image {i}")
+                    except Exception as e:
+                        print(f"[Disco] Error saving debug images: {e}")
+                
+                imgs = processed_imgs
+                print(f"[Disco] Post-processing completed successfully")
+                
+            except Exception as e:
+                print(f"[Disco] Error in post-processing: {e}")
+                import traceback
+                traceback.print_exc()
         
         # TPG Cleanup
         if tpg_enabled and tpg_scale > 0:
