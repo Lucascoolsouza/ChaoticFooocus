@@ -778,7 +778,14 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                                     try:
                                         with torch.no_grad():
                                             decoded = core.decode_vae(final_vae, enhanced_x0)
-                                            preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                                            # Handle different tensor shapes safely
+                                            if decoded.dim() == 4:  # [B, C, H, W]
+                                                preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                                            elif decoded.dim() == 3:  # [C, H, W]
+                                                preview = (decoded.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                                            else:
+                                                print(f"[Disco] Unexpected debug tensor shape: {decoded.shape}")
+                                                continue
                                             Image.fromarray(preview).save(f"debug_step_{step:03d}.png")
                                             print(f"[Disco] Saved debug preview for step {step}")
                                     except Exception as e:
@@ -809,7 +816,13 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                         try:
                             with torch.no_grad():
                                 decoded = core.decode_vae(final_vae, enhanced_x0)
-                                disco_preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                                # Handle different tensor shapes safely
+                                if decoded.dim() == 4:  # [B, C, H, W]
+                                    disco_preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                                elif decoded.dim() == 3:  # [C, H, W]
+                                    disco_preview = (decoded.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                                else:
+                                    print(f"[Disco] Unexpected decoded tensor shape: {decoded.shape}")
                         except Exception as e:
                             print(f"[Disco] Error generating disco preview: {e}")
                     
