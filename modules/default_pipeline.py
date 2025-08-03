@@ -573,7 +573,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                     # Save the test result for comparison
                     with torch.no_grad():
                         try:
-                            decoded = vae_decode(initial_latent['samples'])
+                            decoded = core.decode_vae(final_vae, initial_latent['samples'])
                             preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
                             Image.fromarray(preview).save("test_mode_result.png")
                             print("[Disco] Saved test mode result to test_mode_result.png")
@@ -587,7 +587,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 # Debug: Run through VAE to check effect
                 with torch.no_grad():
                     try:
-                        decoded = vae_decode(initial_latent['samples'])
+                        decoded = core.decode_vae(final_vae, initial_latent['samples'])
                         print("\n[Disco] === VAE DECODED IMAGE STATS ===")
                         print(f"Mean: {decoded.mean().item():.4f}, Std: {decoded.std().item():.4f}, "
                               f"Min: {decoded.min().item():.4f}, Max: {decoded.max().item():.4f}")
