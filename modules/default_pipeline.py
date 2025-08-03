@@ -6,12 +6,9 @@ from PIL import Image # Added import for PIL Image
 import sys
 import os
 
-# Add the extras directory to the path to import debug utilities
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'extras', 'disco_diffusion'))
-
-# Import debug functions
+# Import debug functions from disco diffusion
 try:
-    from pipeline_disco import debug_latent_pass, preview_latent
+    from extras.disco_diffusion.pipeline_disco import debug_latent_pass, preview_latent
     DEBUG_AVAILABLE = True
 except ImportError as e:
     print(f"[Warning] Could not import debug utilities: {e}")

@@ -1,113 +1,52 @@
 # Disco Diffusion Integration for Fooocus
-# Handles integration with the main pipeline
+# Handles the integration of disco effects into the main pipeline
 
 import torch
 import logging
-from .pipeline_disco import disco_settings, run_clip_guidance_loop
-import clip
+from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
 class DiscoIntegration:
-    """Handles integration of Disco Diffusion with Fooocus pipeline"""
+    """Manages disco diffusion integration with the main pipeline."""
     
     def __init__(self):
-        self.is_initialized = False
-        self.clip_model = None
-        self.clip_preprocess = None
-
-    def initialize_disco(self, **kwargs):
-        """Initialize disco diffusion with AGGRESSIVE parameters"""
-        # Load aggressive presets
-        from . import get_disco_presets
-        presets = get_disco_presets()
+        self.enabled = False
+        self.settings = {}
         
-        # If a preset is specified, use its aggressive values
-        preset_name = kwargs.get('disco_preset', 'psychedelic')
-        if preset_name in presets:
-            preset_values = presets[preset_name].copy()
-            # Override with any custom values
-            preset_values.update(kwargs)
-            disco_settings.update(**preset_values)
-            print(f"[Disco] AGGRESSIVE mode initialized with preset '{preset_name}': {preset_values}")
-        else:
-            disco_settings.update(**kwargs)
-            print(f"[Disco] Initialized with custom settings: {kwargs}")
+    def configure(self, **kwargs):
+        """Configure disco settings."""
+        self.settings.update(kwargs)
+        self.enabled = kwargs.get('disco_enabled', False)
         
-        self.is_initialized = True
-
-    def _load_clip_model(self):
-        if self.clip_model is None:
-            try:
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-                model_name = getattr(disco_settings, 'disco_clip_model', 'RN50')
-                self.clip_model, self.clip_preprocess = clip.load(model_name, device=device)
-                self.clip_model.eval()
-                print(f"[Disco] CLIP model '{model_name}' loaded successfully on {device}.")
-            except Exception as e:
-                logger.error(f"Failed to load CLIP model: {e}", exc_info=True)
-                self.clip_model = None
-
-    def run_disco_guidance(self, latent, vae, text_prompt, async_task=None):
-        """Run the pre-sampling CLIP guidance loop."""
-        if not self.is_initialized or not getattr(disco_settings, 'disco_enabled', False):
-            return latent
-
-        self._load_clip_model()
-        if self.clip_model is None:
-            logger.error("Cannot run Disco guidance without a CLIP model.")
-            return latent
-
-        return run_clip_guidance_loop(
-            latent=latent,
-            vae=vae,
-            clip_model=self.clip_model,
-            clip_preprocess=self.clip_preprocess,
-            text_prompt=text_prompt,
-            async_task=async_task,
-            steps=getattr(disco_settings, 'steps', 50),  # Use aggressive preset steps
-            disco_scale=getattr(disco_settings, 'disco_scale', 15.0),  # Much higher default
-            cutn=getattr(disco_settings, 'cutn', 24),  # More cutouts
-            tv_scale=getattr(disco_settings, 'tv_scale', 300.0),  # Higher TV scale
-            range_scale=getattr(disco_settings, 'range_scale', 100.0)  # Higher range scale
-        )
-
-    def run_disco_post_processing(self, image_tensor, text_prompt, async_task=None):
-        """Run CLIP guidance on a generated image (post-processing)"""
-        if not self.is_initialized or not getattr(disco_settings, 'disco_enabled', False):
-            return image_tensor
-
-        self._load_clip_model()
-        if self.clip_model is None:
-            logger.error("Cannot run Disco post-processing without a CLIP model.")
-            return image_tensor
-
-        # Use the post-processing version of the CLIP guidance
-        from .pipeline_disco import run_clip_post_processing
-        
-        return run_clip_post_processing(
-            image_tensor=image_tensor,
-            clip_model=self.clip_model,
-            clip_preprocess=self.clip_preprocess,
-            text_prompt=text_prompt,
-            async_task=async_task,
-            steps=getattr(disco_settings, 'steps', 50),  # Use aggressive preset steps
-            disco_scale=getattr(disco_settings, 'disco_scale', 15.0),  # Much higher default
-            cutn=getattr(disco_settings, 'cutn', 24)  # More cutouts for aggressive effect
-        )
-
-    def deactivate_after_generation(self):
-        """Clean up after generation is complete"""
-        # Clean up CLIP model to free memory if needed
-        if self.clip_model is not None:
-            # Move to CPU to free GPU memory
-            try:
-                self.clip_model.cpu()
-                print("[Disco] CLIP model moved to CPU to free GPU memory")
-            except Exception as e:
-                logger.warning(f"Failed to move CLIP model to CPU: {e}")
-        
-        print("[Disco] Deactivated after generation")
+    def apply_to_latent(self, latent_samples, **kwargs):
+        """Apply disco distortion to latent samples."""
+        if not self.enabled:
+            return latent_samples
+            
+        try:
+            from .pipeline_disco import inject_disco_distortion
+            
+            return inject_disco_distortion(
+                latent_samples,
+                disco_scale=kwargs.get('disco_scale', 5.0),
+                distortion_type=kwargs.get('disco_preset', 'psychedelic'),
+                intensity_multiplier=kwargs.get('intensity_multiplier', 1.0),
+                test_mode=kwargs.get('test_mode', False)
+            )
+        except Exception as e:
+            logger.error(f"Failed to apply disco distortion: {e}")
+            return latent_samples
 
 # Global integration instance
 disco_integration = DiscoIntegration()
+
+def apply_disco_to_pipeline(pipeline, **kwargs):
+    """Apply disco effects to the pipeline."""
+    disco_integration.configure(**kwargs)
+    return disco_integration
+
+def cleanup_disco_from_pipeline(pipeline):
+    """Clean up disco effects from the pipeline."""
+    disco_integration.enabled = False
+    disco_integration.settings.clear()

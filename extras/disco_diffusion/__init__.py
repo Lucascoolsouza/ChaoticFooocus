@@ -1,7 +1,7 @@
 # Disco Diffusion Extension for Fooocus
 
 from .pipeline_disco import disco_settings, DiscoTransforms
-from .disco_integration import disco_integration
+from .disco_integration import disco_integration, apply_disco_to_pipeline, cleanup_disco_from_pipeline
 
 def get_disco_presets():
     """Get aggressive disco diffusion presets with high impact values"""
