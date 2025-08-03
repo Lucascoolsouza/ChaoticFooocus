@@ -592,10 +592,19 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                         # Save preview with timestamp
                         import time
                         timestamp = int(time.time())
-                        preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-                        filename = f"disco_initial_latent_{timestamp}.png"
-                        Image.fromarray(preview).save(filename)
-                        print(f"[Disco] ⭐ SAVED DISCO INITIAL LATENT to {filename} ⭐")
+                        # Handle different tensor shapes safely
+                        if decoded.dim() == 4:  # [B, C, H, W]
+                            preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                        elif decoded.dim() == 3:  # [C, H, W]
+                            preview = (decoded.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                        else:
+                            print(f"[Disco] Unexpected initial latent tensor shape: {decoded.shape}")
+                            preview = None
+                        
+                        if preview is not None:
+                            filename = f"disco_initial_latent_{timestamp}.png"
+                            Image.fromarray(preview).save(filename)
+                            print(f"[Disco] ⭐ SAVED DISCO INITIAL LATENT to {filename} ⭐")
                     except Exception as e:
                         print(f"[Disco] Error during VAE debug: {e}")
                 
