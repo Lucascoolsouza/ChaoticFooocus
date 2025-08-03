@@ -554,8 +554,8 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 print("\n[Disco] === INITIAL LATENT BEFORE DISTORTION ===")
                 debug_latent_pass(initial_latent['samples'], "Initial Latent")
                 
-                # Apply distortion with test mode enabled
-                test_mode = True  # Set to True to test inversion, False for normal operation
+                # Apply distortion - disable test mode for normal operation
+                test_mode = False  # Set to True to test inversion, False for normal operation
                 print("\n[Disco] ===== TEST MODE ENABLED =====" if test_mode else "\n[Disco] ===== NORMAL MODE =====")
                 
                 initial_latent['samples'] = inject_disco_distortion(
@@ -563,7 +563,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                     disco_scale=initial_scale,
                     distortion_type=disco_preset if disco_preset != 'custom' else 'psychedelic',
                     intensity_multiplier=0.5,  # Light initial touch
-                    test_mode=test_mode  # Enable test mode to verify distortion application
+                    test_mode=test_mode  # Disable test mode for normal operation
                 )
                 
                 if test_mode:
