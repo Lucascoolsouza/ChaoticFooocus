@@ -541,77 +541,46 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         else:
             initial_latent = latent
 
-        # Disco Diffusion: Light initial injection (main effect during first 50% of generation)
+        # Disco Diffusion Integration
         if disco_enabled and disco_scale > 0:
             try:
-                from extras.disco_diffusion.pipeline_disco import inject_disco_distortion
-                print(f"[Disco] AGGRESSIVE initial injection - scale={disco_scale}, preset={disco_preset}")
+                from modules.disco_daemon import disco_daemon
                 
-                # More aggressive initial injection for visible effects
-                initial_scale = disco_scale * 1.0  # Full scale initial injection
-                
-                # Debug: Print latent stats before distortion
-                print("\n[Disco] === INITIAL LATENT BEFORE DISTORTION ===")
-                debug_latent_pass(initial_latent['samples'], "Initial Latent")
-                
-                # Apply distortion - disable test mode for normal operation
-                test_mode = False  # Set to True to test inversion, False for normal operation
-                print("\n[Disco] ===== TEST MODE ENABLED =====" if test_mode else "\n[Disco] ===== NORMAL MODE =====")
-                
-                initial_latent['samples'] = inject_disco_distortion(
-                    initial_latent['samples'],
-                    disco_scale=initial_scale,
+                # Configure disco daemon
+                disco_daemon.update_settings(
+                    enabled=True,
+                    disco_scale=disco_scale,
                     distortion_type=disco_preset if disco_preset != 'custom' else 'psychedelic',
-                    intensity_multiplier=1.0,  # Full intensity for visible effects
-                    test_mode=test_mode  # Disable test mode for normal operation
+                    intensity_multiplier=1.0
                 )
                 
-                if test_mode:
-                    # Save the test result for comparison
+                print(f"[Disco] Applying initial distortion - scale={disco_scale}, preset={disco_preset}")
+                
+                # Apply disco distortion to initial latent
+                initial_latent['samples'] = disco_daemon.process_latent(initial_latent['samples'])
+                
+                # Save debug preview
+                try:
                     with torch.no_grad():
-                        try:
-                            decoded = core.decode_vae(final_vae, initial_latent['samples'])
-                            preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-                            Image.fromarray(preview).save("test_mode_result.png")
-                            print("[Disco] Saved test mode result to test_mode_result.png")
-                        except Exception as e:
-                            print(f"[Disco] Error saving test mode result: {e}")
-                
-                # Debug: Print latent stats after distortion
-                print("[Disco] === LATENT AFTER DISTORTION ===")
-                debug_latent_pass(initial_latent['samples'], "Distorted Latent")
-                
-                # Debug: Run through VAE to check effect
-                with torch.no_grad():
-                    try:
                         decoded = core.decode_vae(final_vae, initial_latent['samples'])
-                        print("\n[Disco] === VAE DECODED IMAGE STATS ===")
-                        print(f"Mean: {decoded.mean().item():.4f}, Std: {decoded.std().item():.4f}, "
-                              f"Min: {decoded.min().item():.4f}, Max: {decoded.max().item():.4f}")
-                        
-                        # Save preview with timestamp
-                        import time
-                        timestamp = int(time.time())
-                        # Handle different tensor shapes safely
-                        if decoded.dim() == 4:  # [B, C, H, W]
+                        if decoded.dim() == 4:
                             preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-                        elif decoded.dim() == 3:  # [C, H, W]
+                        elif decoded.dim() == 3:
                             preview = (decoded.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
                         else:
-                            print(f"[Disco] Unexpected initial latent tensor shape: {decoded.shape}")
                             preview = None
                         
                         if preview is not None:
-                            filename = f"disco_initial_latent_{timestamp}.png"
+                            import time
+                            timestamp = int(time.time())
+                            filename = f"disco_initial_{timestamp}.png"
                             Image.fromarray(preview).save(filename)
-                            print(f"[Disco] ⭐ SAVED DISCO INITIAL LATENT to {filename} ⭐")
-                    except Exception as e:
-                        print(f"[Disco] Error during VAE debug: {e}")
-                
-                print(f"\n[Disco] Light initial injection completed (scale={initial_scale:.1f}) - continuous effects will apply during first 50%")
+                            print(f"[Disco] Saved initial disco latent to {filename}")
+                except Exception as e:
+                    print(f"[Disco] Error saving debug preview: {e}")
                 
             except Exception as e:
-                print(f"[Disco] Error injecting distortion: {e}")
+                print(f"[Disco] Error in disco integration: {e}")
 
         minmax_sigmas = calculate_sigmas(sampler=sampler_name, scheduler=scheduler_name, model=final_unet.model, steps=steps, denoise=denoise)
         
@@ -724,18 +693,17 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         # Create enhanced callback with Neural Echo and AGGRESSIVE Disco injection
         enhanced_callback = callback
         
-        def create_disco_enhanced_callback(original_callback, aesthetic_replicator, disco_enabled, disco_scale, disco_preset, lfl_hooked):
-            def disco_enhanced_callback(step, x0, x, total_steps, preview_image=None):
+        def create_enhanced_callback(original_callback, aesthetic_replicator, disco_enabled, disco_scale, disco_preset, lfl_hooked):
+            def enhanced_callback(step, x0, x, total_steps, preview_image=None):
                 # Update timestep for adaptive aesthetic blending
                 if lfl_hooked:
                     try:
-                        # Convert step to approximate timestep (1000 -> 0)
                         timestep = int(1000 * (1.0 - step / total_steps))
                         set_aesthetic_timestep(timestep)
                     except Exception as e:
-                        pass  # Silent fail for timestep updates
+                        pass
                 
-                # Apply aesthetic replication if enabled (fallback callback method)
+                # Apply aesthetic replication if enabled
                 enhanced_x0 = x0
                 if aesthetic_replicator is not None and not lfl_hooked:
                     try:
@@ -744,103 +712,35 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                         print(f"[LFL] Error in aesthetic replication callback: {e}")
                         enhanced_x0 = x0
                 
-                # AGGRESSIVE Disco injection during FIRST HALF of generation (0-50%)
-                if disco_enabled and disco_scale > 0:
-                    # Only apply during first 50% of generation steps
-                    halfway_point = int(total_steps * 0.5)
-                    
-                    if step <= halfway_point:
-                        # Apply every few steps during first half for continuous effect
-                        injection_frequency = max(1, int(total_steps * 0.05))  # Every 5% of total steps
+                # Apply disco distortion during first half of generation
+                if disco_enabled and disco_scale > 0 and step <= int(total_steps * 0.5):
+                    try:
+                        from modules.disco_daemon import disco_daemon
                         
-                        if step % injection_frequency == 0 or step == 1:  # Always inject on first step
-                            try:
-                                from extras.disco_diffusion.pipeline_disco import inject_disco_distortion
-                                
-                                # Calculate intensity based on position in first half
-                                progress_in_first_half = step / halfway_point  # 0.0 to 1.0
-                                
-                                # Start strong and gradually reduce intensity
-                                intensity_curve = 1.0 - (progress_in_first_half * 0.5)  # 1.0 to 0.5
-                                mid_sampling_scale = disco_scale * intensity_curve * 1.5
-                                
-                                print(f"[Disco] FIRST-HALF INJECTION at step {step}/{total_steps} ({step/total_steps*100:.1f}%) - intensity {intensity_curve:.2f}")
-                                
-                                # Debug: Print before distortion
-                                print(f"\n[Disco] === STEP {step}/{total_steps} - BEFORE DISTORTION ===")
-                                debug_latent_pass(enhanced_x0, f"Step {step} - Before")
-                                
-                                # Apply to the denoised prediction (x0)
-                                enhanced_x0 = inject_disco_distortion(
-                                    enhanced_x0,
-                                    disco_scale=mid_sampling_scale,
-                                    distortion_type=disco_preset if disco_preset != 'custom' else 'psychedelic',
-                                    intensity_multiplier=intensity_curve * 1.5
-                                )
-                                
-                                # Debug: Print after distortion
-                                print(f"[Disco] === STEP {step}/{total_steps} - AFTER DISTORTION ===")
-                                debug_latent_pass(enhanced_x0, f"Step {step} - After")
-                                
-                                # Save intermediate latent for debugging
-                                if step % 5 == 0:  # Save every 5 steps
-                                    try:
-                                        with torch.no_grad():
-                                            decoded = core.decode_vae(final_vae, enhanced_x0)
-                                            # Handle different tensor shapes safely
-                                            if decoded.dim() == 4:  # [B, C, H, W]
-                                                preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-                                            elif decoded.dim() == 3:  # [C, H, W]
-                                                preview = (decoded.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-                                            else:
-                                                print(f"[Disco] Unexpected debug tensor shape: {decoded.shape}")
-                                                return  # Exit the function instead of continue
-                                            Image.fromarray(preview).save(f"debug_step_{step:03d}.png")
-                                            print(f"[Disco] Saved debug preview for step {step}")
-                                    except Exception as e:
-                                        print(f"[Disco] Error saving debug preview: {e}")
-                                
-                                # For high scales, also apply to noisy latent but with less intensity
-                                if disco_scale >= 15.0 and step <= int(total_steps * 0.3):  # Only first 30% for noisy latent
-                                    x = inject_disco_distortion(
-                                        x,
-                                        disco_scale=mid_sampling_scale * 0.6,
-                                        distortion_type=disco_preset if disco_preset != 'custom' else 'psychedelic',
-                                        intensity_multiplier=intensity_curve
-                                    )
-                                    print(f"[Disco] Also applied to noisy latent (reduced intensity)")
-                                
-                            except Exception as e:
-                                print(f"[Disco] Error in first-half injection: {e}")
-                    else:
-                        # After 50%, no more disco injection - let it settle
-                        if step == halfway_point + 1:
-                            print(f"[Disco] Reached 50% mark - stopping disco injection to let image settle")
+                        # Reduce intensity as generation progresses
+                        progress = step / total_steps
+                        intensity = 1.0 - (progress * 0.5)  # 1.0 to 0.5
+                        
+                        # Update disco daemon intensity
+                        disco_daemon.intensity_multiplier = intensity
+                        
+                        # Apply disco to the denoised prediction
+                        enhanced_x0 = disco_daemon.process_latent(enhanced_x0)
+                        
+                        if step % 10 == 0:  # Log every 10 steps
+                            print(f"[Disco] Step {step}/{total_steps} - intensity {intensity:.2f}")
+                        
+                    except Exception as e:
+                        print(f"[Disco] Error in callback: {e}")
                 
-                # Call the original callback with disco-enhanced x0
+                # Call original callback
                 if original_callback is not None:
-                    # Generate preview from disco-enhanced latent if disco is active
-                    disco_preview = None
-                    if disco_enabled and disco_scale > 0 and step <= int(total_steps * 0.5):
-                        try:
-                            with torch.no_grad():
-                                decoded = core.decode_vae(final_vae, enhanced_x0)
-                                # Handle different tensor shapes safely
-                                if decoded.dim() == 4:  # [B, C, H, W]
-                                    disco_preview = (decoded[0].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-                                elif decoded.dim() == 3:  # [C, H, W]
-                                    disco_preview = (decoded.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
-                                else:
-                                    print(f"[Disco] Unexpected decoded tensor shape: {decoded.shape}")
-                        except Exception as e:
-                            print(f"[Disco] Error generating disco preview: {e}")
-                    
-                    original_callback(step, enhanced_x0, x, total_steps, disco_preview or preview_image)
+                    original_callback(step, enhanced_x0, x, total_steps, preview_image)
             
-            return disco_enhanced_callback
+            return enhanced_callback
         
         # Create the enhanced callback
-        enhanced_callback = create_disco_enhanced_callback(callback, aesthetic_replicator, disco_enabled, disco_scale, disco_preset, lfl_hooked)
+        enhanced_callback = create_enhanced_callback(callback, aesthetic_replicator, disco_enabled, disco_scale, disco_preset, lfl_hooked)
 
         # Use sampler (with or without guidance)
         ksampler_imgs = core.ksampler(

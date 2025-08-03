@@ -1,210 +1,218 @@
-import cv2
-import numpy as np
 import torch
-from PIL import Image
+import torch.nn.functional as F
+import numpy as np
+import math
 import logging
+from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-def apply_disco_post_processing(image, disco_scale=5.0, distortion_type='psychedelic', 
-                               intensity=1.0, blend_factor=0.5):
+def apply_disco_distortion(latent_samples, disco_scale=5.0, distortion_type='psychedelic', 
+                          intensity_multiplier=1.0, test_mode=False):
     """
-    Apply disco diffusion-style post-processing effects to a final image.
-    This works on the actual RGB image, not latent space.
+    Apply disco diffusion-style distortions to latent space.
     
     Args:
-        image: Input image as numpy array [H, W, C] in 0-255 range
-        disco_scale: Strength of the disco effect
+        latent_samples: Input latent tensor [B,C,H,W]
+        disco_scale: Overall strength of the distortion
         distortion_type: Type of distortion ('psychedelic', 'fractal', 'kaleidoscope', etc.)
-        intensity: Overall intensity multiplier
-        blend_factor: How much to blend with original (0.0 = no effect, 1.0 = full effect)
+        intensity_multiplier: Additional multiplier for intensity
+        test_mode: If True, applies simple inversion for testing
     
     Returns:
-        Enhanced image as numpy array [H, W, C] in 0-255 range
+        Distorted latent tensor
     """
-    if image is None or disco_scale <= 0:
-        return image
-    
-    # Convert to float for processing
-    image_float = image.astype(np.float32) / 255.0
-    H, W, C = image_float.shape
-    
-    # Create coordinate grids
-    y_coords = np.linspace(-1, 1, H)
-    x_coords = np.linspace(-1, 1, W)
-    y_grid, x_grid = np.meshgrid(y_coords, x_coords, indexing='ij')
-    
-    # Scale the effect
-    base_scale = disco_scale * intensity * 0.1  # Scale down for image space
-    
-    # Apply different distortion types
-    if distortion_type == 'psychedelic':
-        # Psychedelic swirl and wave distortions
-        radius = np.sqrt(x_grid**2 + y_grid**2)
-        angle = np.arctan2(y_grid, x_grid)
+    if test_mode:
+        print(f"[Disco] TEST MODE: Inverting latents")
+        return -latent_samples
         
-        # Swirl distortion
-        swirl_strength = base_scale * 0.5
-        new_angle = angle + swirl_strength * np.exp(-radius * 2.0)
+    if disco_scale <= 0:
+        return latent_samples
         
-        # Wave distortions
-        wave_freq = base_scale * 2.0
-        wave_amp = base_scale * 0.2
-        x_wave = x_grid + wave_amp * np.sin(wave_freq * y_grid)
-        y_wave = y_grid + wave_amp * np.cos(wave_freq * x_grid)
-        
-        # Combine
-        new_x = radius * np.cos(new_angle) + x_wave * 0.5
-        new_y = radius * np.sin(new_angle) + y_wave * 0.5
-        
-    elif distortion_type == 'fractal':
-        # Fractal-like recursive distortions
-        scale1 = base_scale * 0.8
-        scale2 = base_scale * 0.5
-        scale3 = base_scale * 0.3
-        
-        new_x = x_grid + scale1 * np.sin(3 * x_grid) * np.cos(2 * y_grid)
-        new_y = y_grid + scale1 * np.cos(3 * y_grid) * np.sin(2 * x_grid)
-        
-        # Add finer details
-        new_x += scale2 * np.sin(7 * new_x) * np.cos(5 * new_y)
-        new_y += scale2 * np.cos(7 * new_y) * np.sin(5 * new_x)
-        
-        new_x += scale3 * np.sin(13 * new_x) * np.cos(11 * new_y)
-        new_y += scale3 * np.cos(13 * new_y) * np.sin(11 * new_x)
-        
-    elif distortion_type == 'kaleidoscope':
-        # Kaleidoscope-like symmetrical distortions
-        radius = np.sqrt(x_grid**2 + y_grid**2)
-        angle = np.arctan2(y_grid, x_grid)
-        
-        # Create kaleidoscope effect
-        n_mirrors = 6
-        mirror_angle = 2 * np.pi / n_mirrors
-        folded_angle = np.abs((angle % mirror_angle) - mirror_angle/2)
-        
-        # Radial modulation
-        radial_mod = 1 + base_scale * 0.3 * np.sin(radius * 4)
-        
-        new_x = radius * np.cos(folded_angle) * radial_mod
-        new_y = radius * np.sin(folded_angle) * radial_mod
-        
-    elif distortion_type == 'wave':
-        # Simple wave distortions
-        wave_freq = base_scale * 1.5
-        wave_amp = base_scale * 0.3
-        
-        new_x = x_grid + wave_amp * np.sin(wave_freq * y_grid)
-        new_y = y_grid + wave_amp * np.sin(wave_freq * x_grid)
-        
-    else:  # default psychedelic
-        radius = np.sqrt(x_grid**2 + y_grid**2)
-        angle = np.arctan2(y_grid, x_grid)
-        
-        swirl_strength = base_scale * 0.6
-        new_angle = angle + swirl_strength * np.exp(-radius * 2.0)
-        
-        new_x = radius * np.cos(new_angle)
-        new_y = radius * np.sin(new_angle)
-    
-    # Clamp coordinates
-    new_x = np.clip(new_x, -1, 1)
-    new_y = np.clip(new_y, -1)
-    
-    # Convert to pixel coordinates
-    pixel_x = ((new_x + 1) * 0.5 * (W - 1)).astype(np.float32)
-    pixel_y = ((new_y + 1) * 0.5 * (H - 1)).astype(np.float32)
-    
-    # Apply distortion using OpenCV remap
     try:
-        distorted = cv2.remap(image_float, pixel_x, pixel_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+        device = latent_samples.device
+        batch_size, channels, height, width = latent_samples.shape
+        
+        # Create coordinate grids for spatial transformations
+        y_coords = torch.linspace(-1, 1, height, device=device)
+        x_coords = torch.linspace(-1, 1, width, device=device)
+        y_grid, x_grid = torch.meshgrid(y_coords, x_coords, indexing='ij')
+        
+        # Scale the distortion
+        base_scale = disco_scale * intensity_multiplier * 0.1  # More reasonable scaling
+        
+        # Apply different distortion types
+        if distortion_type == 'psychedelic':
+            # Psychedelic swirl and wave distortions
+            radius = torch.sqrt(x_grid**2 + y_grid**2)
+            angle = torch.atan2(y_grid, x_grid)
+            
+            # Swirl distortion
+            swirl_strength = base_scale * 2.0
+            new_angle = angle + swirl_strength * torch.exp(-radius * 2.0)
+            
+            # Wave distortions
+            wave_freq = base_scale * 8.0
+            wave_amp = base_scale * 0.3
+            x_wave = x_grid + wave_amp * torch.sin(wave_freq * y_grid)
+            y_wave = y_grid + wave_amp * torch.cos(wave_freq * x_grid)
+            
+            # Combine
+            new_x = radius * torch.cos(new_angle) + x_wave * 0.5
+            new_y = radius * torch.sin(new_angle) + y_wave * 0.5
+            
+        elif distortion_type == 'fractal':
+            # Fractal-like recursive distortions
+            scale1 = base_scale * 2.0
+            scale2 = base_scale * 1.5
+            scale3 = base_scale * 1.0
+            
+            new_x = x_grid + scale1 * torch.sin(3 * x_grid) * torch.cos(2 * y_grid)
+            new_y = y_grid + scale1 * torch.cos(3 * y_grid) * torch.sin(2 * x_grid)
+            
+            # Add finer details
+            new_x += scale2 * torch.sin(7 * new_x) * torch.cos(5 * new_y)
+            new_y += scale2 * torch.cos(7 * new_y) * torch.sin(5 * new_x)
+            
+            new_x += scale3 * torch.sin(13 * new_x) * torch.cos(11 * new_y)
+            new_y += scale3 * torch.cos(13 * new_y) * torch.sin(11 * new_x)
+            
+        elif distortion_type == 'kaleidoscope':
+            # Kaleidoscope-like symmetrical distortions
+            radius = torch.sqrt(x_grid**2 + y_grid**2)
+            angle = torch.atan2(y_grid, x_grid)
+            
+            # Create kaleidoscope effect
+            n_mirrors = 6
+            mirror_angle = 2 * math.pi / n_mirrors
+            folded_angle = torch.abs((angle % mirror_angle) - mirror_angle/2)
+            
+            # Radial modulation
+            radial_mod = 1 + base_scale * 0.5 * torch.sin(radius * 6)
+            
+            new_x = radius * torch.cos(folded_angle) * radial_mod
+            new_y = radius * torch.sin(folded_angle) * radial_mod
+            
+        elif distortion_type == 'wave':
+            # Simple wave distortions
+            wave_freq = base_scale * 6.0
+            wave_amp = base_scale * 0.4
+            
+            new_x = x_grid + wave_amp * torch.sin(wave_freq * y_grid)
+            new_y = y_grid + wave_amp * torch.sin(wave_freq * x_grid)
+            
+        else:  # default - psychedelic
+            radius = torch.sqrt(x_grid**2 + y_grid**2)
+            angle = torch.atan2(y_grid, x_grid)
+            
+            swirl_strength = base_scale * 2.0
+            new_angle = angle + swirl_strength * torch.exp(-radius * 2.0)
+            
+            wave_amp = base_scale * 0.3
+            wave_freq = base_scale * 6.0
+            new_x = radius * torch.cos(new_angle) + wave_amp * torch.sin(wave_freq * y_grid)
+            new_y = radius * torch.sin(new_angle) + wave_amp * torch.cos(wave_freq * x_grid)
+        
+        # Clamp coordinates to valid range
+        new_x = torch.clamp(new_x, -1.5, 1.5)
+        new_y = torch.clamp(new_y, -1.5, 1.5)
+        
+        # Apply grid sampling
+        grid = torch.stack((new_x, new_y), dim=-1)
+        grid = grid.unsqueeze(0).repeat(batch_size, 1, 1, 1)
+        
+        # Sample from the original latent using the distortion grid
+        result = F.grid_sample(
+            latent_samples, 
+            grid, 
+            mode='bilinear', 
+            padding_mode='reflection',
+            align_corners=False
+        )
         
         # Blend with original
-        result = (1.0 - blend_factor) * image_float + blend_factor * distorted
+        blend_factor = min(0.6, intensity_multiplier * 0.4)
+        result = latent_samples * (1.0 - blend_factor) + result * blend_factor
         
-        # Add some color enhancement for disco effect
-        if distortion_type in ['psychedelic', 'scientific']:
-            # Enhance saturation
-            hsv = cv2.cvtColor(result, cv2.COLOR_RGB2HSV)
-            hsv[:, :, 1] = np.clip(hsv[:, :, 1] * (1.0 + base_scale * 0.2), 0, 1)
-            result = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
-        
-        # Convert back to uint8
-        result = np.clip(result, 0, 1)
-        result = (result * 255).astype(np.uint8)
-        
+        print(f"[Disco] Applied {distortion_type} distortion (scale={disco_scale:.1f}, blend={blend_factor:.2f})")
         return result
         
     except Exception as e:
-        logger.error(f"Disco post-processing failed: {e}")
-        return image
+        logger.error(f"Disco distortion failed: {e}")
+        return latent_samples
 
 class DiscoDaemon:
-    """Disco Diffusion post-processing daemon similar to DetailDaemon"""
+    """Disco Diffusion daemon for applying psychedelic distortions to latents."""
     
     def __init__(self):
         self.enabled = False
         self.disco_scale = 5.0
         self.distortion_type = 'psychedelic'
-        self.intensity = 1.0
-        self.blend_factor = 0.5
-        self.apply_to_final = True  # Apply to final image
-        self.apply_to_preview = False  # Apply to preview images
+        self.intensity_multiplier = 1.0
+        self.test_mode = False
+        
+        # Animation parameters
+        self.animation_mode = 'none'
+        self.zoom_factor = 1.02
+        self.rotation_speed = 0.1
+        self.translation_x = 0.0
+        self.translation_y = 0.0
+        
+        # Visual parameters
+        self.color_coherence = 0.5
+        self.saturation_boost = 1.2
+        self.contrast_boost = 1.1
+        self.symmetry_mode = 'none'
+        self.fractal_octaves = 3
     
-    def process(self, image):
-        """Process an image with disco effects if enabled"""
-        if self.enabled and image is not None and self.disco_scale > 0:
-            return apply_disco_post_processing(
-                image,
-                disco_scale=self.disco_scale,
-                distortion_type=self.distortion_type,
-                intensity=self.intensity,
-                blend_factor=self.blend_factor
-            )
-        return image
+    def process_latent(self, latent_samples):
+        """Process latent samples with disco distortion if enabled."""
+        if not self.enabled or latent_samples is None:
+            return latent_samples
+            
+        return apply_disco_distortion(
+            latent_samples,
+            disco_scale=self.disco_scale,
+            distortion_type=self.distortion_type,
+            intensity_multiplier=self.intensity_multiplier,
+            test_mode=self.test_mode
+        )
     
-    def configure(self, enabled=None, disco_scale=None, distortion_type=None, 
-                  intensity=None, blend_factor=None, apply_to_final=None, apply_to_preview=None):
-        """Configure the disco daemon settings"""
-        if enabled is not None:
-            self.enabled = enabled
-        if disco_scale is not None:
-            self.disco_scale = disco_scale
-        if distortion_type is not None:
-            self.distortion_type = distortion_type
-        if intensity is not None:
-            self.intensity = intensity
-        if blend_factor is not None:
-            self.blend_factor = blend_factor
-        if apply_to_final is not None:
-            self.apply_to_final = apply_to_final
-        if apply_to_preview is not None:
-            self.apply_to_preview = apply_to_preview
+    def update_settings(self, **kwargs):
+        """Update disco daemon settings."""
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+        
+        status = f"Disco Daemon: {'Enabled' if self.enabled else 'Disabled'}"
+        if self.enabled:
+            status += f", Scale: {self.disco_scale}, Type: {self.distortion_type}"
+        
+        return status
 
 # Create a global instance
 disco_daemon = DiscoDaemon()
 
-def update_disco_daemon_settings(enabled, disco_scale, distortion_type, intensity, blend_factor):
-    """Update the disco daemon settings"""
-    disco_daemon.configure(
+def update_disco_daemon_settings(enabled, disco_scale, distortion_type, intensity_multiplier=1.0,
+                                animation_mode='none', zoom_factor=1.02, rotation_speed=0.1,
+                                translation_x=0.0, translation_y=0.0, color_coherence=0.5,
+                                saturation_boost=1.2, contrast_boost=1.1, symmetry_mode='none',
+                                fractal_octaves=3, test_mode=False):
+    """Update the disco daemon settings."""
+    return disco_daemon.update_settings(
         enabled=enabled,
         disco_scale=disco_scale,
         distortion_type=distortion_type,
-        intensity=intensity,
-        blend_factor=blend_factor
-    )
-    
-    return f"Disco Daemon: {'Enabled' if enabled else 'Disabled'}, Scale: {disco_scale}, Type: {distortion_type}"
-
-def apply_disco_to_image(image, disco_params):
-    """Apply disco effects to an image using provided parameters"""
-    if not disco_params.get('disco_enabled', False):
-        return image
-    
-    return apply_disco_post_processing(
-        image,
-        disco_scale=disco_params.get('disco_scale', 5.0),
-        distortion_type=disco_params.get('disco_preset', 'psychedelic'),
-        intensity=disco_params.get('intensity_multiplier', 1.0),
-        blend_factor=disco_params.get('blend_factor', 0.5)
+        intensity_multiplier=intensity_multiplier,
+        animation_mode=animation_mode,
+        zoom_factor=zoom_factor,
+        rotation_speed=rotation_speed,
+        translation_x=translation_x,
+        translation_y=translation_y,
+        color_coherence=color_coherence,
+        saturation_boost=saturation_boost,
+        contrast_boost=contrast_boost,
+        symmetry_mode=symmetry_mode,
+        fractal_octaves=fractal_octaves,
+        test_mode=test_mode
     )
