@@ -3141,28 +3141,7 @@ def sample_restart(model, x, sigmas, extra_args=None, callback=None, disable=Non
     return x
 
 
-@torch.no_grad()
-def sample_disco_diffusion(model, x, sigmas, extra_args=None, callback=None, disable=None, s_noise=1., 
-                          frequency_factor=1.0, color_intensity=2.0, pattern_strength=0.8, time_mixing=0.3):
-    """Implements a disco diffusion-like sampling method that creates colorful, psychedelic patterns.
-    
-    This sampler introduces periodic patterns and color variations during the denoising process
-    to create vibrant, hallucinogenic-like images similar to the original disco diffusion.
-    The effect is strongest at the beginning and gradually weakens toward the end.
-    
-    Args:
-        model: The denoising model
-        x: Initial noise tensor
-        sigmas: Noise schedule
-        extra_args: Additional arguments for the model
-        callback: Callback function
-        disable: Disable progress bar
-        s_noise: Noise multiplier
-        frequency_factor: Controls the frequency of patterns (higher = more detailed patterns)
-        color_intensity: Controls color saturation and vibrancy
-        pattern_strength: Strength of the disco patterns
-        time_mixing: How much patterns change over time (higher = more temporal variation)
-    """
+# Disco diffusion sampling method removed
     extra_args = {} if extra_args is None else extra_args
     s_in = x.new_ones([x.shape[0]])
     
@@ -3449,7 +3428,7 @@ def sample_heun_disco(model, x, sigmas, extra_args=None, callback=None, disable=
         return F.interpolate(latent, size=target_shape[-2:], mode='bilinear', align_corners=False)
     
     def generate_disco_patterns(coords, t, frequency_factor=1.0, color_intensity=1.0):
-        """Generate disco patterns at given coordinates and time"""
+        """"Generate disco patterns at given coordinates and time"""
         # Create radial patterns
         radial = torch.sqrt(coords[:, 0]**2 + coords[:, 1]**2)
         

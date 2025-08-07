@@ -1233,129 +1233,7 @@ with shared.gradio_root:
                                              outputs=nag_status,
                                              queue=False, show_progress=False)
                 
-                with gr.Accordion(label='Disco Diffusion (Psychedelic Effects)', open=False):
-                    disco_enabled = gr.Checkbox(label='Enable Disco Diffusion', value=modules.config.default_disco_enabled,
-                                               info='Enable psychedelic disco diffusion effects')
-                    disco_scale = gr.Slider(label='Disco Scale', minimum=0.0, maximum=1.0, step=0.01,
-                                           value=modules.config.default_disco_scale, visible=False,
-                                           info='Overall strength of disco effects (80% = strong CLIP guidance)')
-                    disco_preset = gr.Dropdown(label='Disco Preset', 
-                                              choices=modules.flags.disco_presets,
-                                              value=modules.config.default_disco_preset, visible=False,
-                                              info='Predefined disco effect combinations')
-                    disco_transforms = gr.CheckboxGroup(label='Transform Effects', 
-                                                       choices=modules.flags.disco_transforms, 
-                                                       value=modules.config.default_disco_transforms, visible=False,
-                                                       info='Which transformation effects to apply')
-                    disco_seed = gr.Number(label='Disco Seed', value=modules.config.default_disco_seed, visible=False,
-                                          info='Seed for disco effects (leave empty for random)')
-                    
-                    disco_clip_model = gr.Dropdown(label='CLIP Model', 
-                                                   choices=modules.flags.disco_clip_models,
-                                                   value=modules.config.default_disco_clip_model, visible=False,
-                                                   info='CLIP model for semantic guidance (RN50=fast, ViT-L/14=quality)')
-                    
-                    with gr.Accordion(label='CLIP Guidance Settings', open=False, visible=False) as disco_guidance_accordion:
-                        disco_guidance_steps = gr.Slider(label='Guidance Steps', minimum=10, maximum=500, step=1,
-                                                          value=modules.config.default_disco_guidance_steps,
-                                                          info='Number of steps for the CLIP guidance pre-sampling loop.')
-                        disco_cutn = gr.Slider(label='Cutouts', minimum=1, maximum=64, step=1,
-                                               value=modules.config.default_disco_cutn,
-                                               info='Number of cutouts for CLIP analysis.')
-                        disco_tv_scale = gr.Slider(label='TV Scale', minimum=0, maximum=1000, step=1,
-                                                   value=modules.config.default_disco_tv_scale,
-                                                   info='Total variation loss scale.')
-                        disco_range_scale = gr.Slider(label='Range Scale', minimum=0, maximum=1000, step=1,
-                                                      value=modules.config.default_disco_range_scale,
-                                                      info='Range loss scale.')
-
-                    with gr.Accordion(label='Animation & Movement', open=False, visible=False) as disco_animation_accordion:
-                        disco_animation_mode = gr.Dropdown(label='Animation Mode', 
-                                                          choices=modules.flags.disco_animation_modes,
-                                                          value=modules.config.default_disco_animation_mode,
-                                                          info='Type of animation effect')
-                        disco_zoom_factor = gr.Slider(label='Zoom Factor', minimum=1.0, maximum=1.1, step=0.001,
-                                                     value=modules.config.default_disco_zoom_factor,
-                                                     info='Zoom intensity for fractal effects')
-                        disco_rotation_speed = gr.Slider(label='Rotation Speed', minimum=0.0, maximum=1.0, step=0.01,
-                                                         value=modules.config.default_disco_rotation_speed,
-                                                         info='Speed of rotation effects')
-                        disco_translation_x = gr.Slider(label='Translation X', minimum=-1.0, maximum=1.0, step=0.01,
-                                                        value=modules.config.default_disco_translation_x,
-                                                        info='Horizontal movement amplitude')
-                        disco_translation_y = gr.Slider(label='Translation Y', minimum=-1.0, maximum=1.0, step=0.01,
-                                                        value=modules.config.default_disco_translation_y,
-                                                        info='Vertical movement amplitude')
-                    
-                    with gr.Accordion(label='Color & Visual Effects', open=False, visible=False) as disco_visual_accordion:
-                        disco_color_coherence = gr.Slider(label='Color Coherence', minimum=0.0, maximum=1.0, step=0.01,
-                                                          value=modules.config.default_disco_color_coherence,
-                                                          info='How much to preserve original colors (higher = more original)')
-                        disco_saturation_boost = gr.Slider(label='Saturation Boost', minimum=0.5, maximum=2.0, step=0.01,
-                                                           value=modules.config.default_disco_saturation_boost,
-                                                           info='Increase color saturation')
-                        disco_contrast_boost = gr.Slider(label='Contrast Boost', minimum=0.5, maximum=2.0, step=0.01,
-                                                         value=modules.config.default_disco_contrast_boost,
-                                                         info='Increase image contrast')
-                        disco_symmetry_mode = gr.Dropdown(label='Symmetry Mode', 
-                                                         choices=modules.flags.disco_symmetry_modes,
-                                                         value=modules.config.default_disco_symmetry_mode,
-                                                         info='Apply symmetry effects')
-                        disco_fractal_octaves = gr.Slider(label='Fractal Octaves', minimum=1, maximum=6, step=1,
-                                                          value=modules.config.default_disco_fractal_octaves,
-                                                          info='Complexity of fractal effects')
-                    
-                    disco_status = gr.Textbox(label='Disco Status', interactive=False, 
-                                             value='Disco Diffusion: Disabled', visible=False)
-                    
-                    def update_disco_visibility(enabled):
-                        return [gr.update(visible=enabled)] * 8
-                    
-                    def update_disco_preset(preset):
-                        if preset == 'custom':
-                            return gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
-                        
-                        from extras.disco_diffusion import get_disco_presets
-                        presets = get_disco_presets()
-                        
-                        if preset in presets:
-                            p = presets[preset]
-                            return (gr.update(value=p.get('disco_scale', 0.5)), 
-                                   gr.update(value=p.get('disco_transforms', ['spherical', 'color_shift'])),
-                                   gr.update(value=p.get('disco_saturation_boost', 1.2)),
-                                   gr.update(value=p.get('disco_contrast_boost', 1.1)),
-                                   gr.update(value=p.get('disco_symmetry_mode', 'none')))
-                        
-                        return gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
-                    
-                    def update_disco_status(enabled, scale, preset, transforms, saturation, contrast, clip_model):
-                        if not enabled:
-                            return "Disco Diffusion: Disabled"
-                        
-                        transform_str = ", ".join(transforms) if transforms else "none"
-                        return f"Disco: {preset.title()} | Scale: {scale} | CLIP: {clip_model} | Effects: {transform_str} | Sat: {saturation} | Con: {contrast}"
-                    
-                    disco_enabled.change(update_disco_visibility, 
-                                        inputs=disco_enabled,
-                                        outputs=[disco_scale, disco_preset, disco_transforms, disco_seed, 
-                                                disco_clip_model, disco_animation_accordion, disco_visual_accordion, disco_guidance_accordion],
-                                        queue=False, show_progress=False)
-                    
-                    disco_preset.change(update_disco_preset,
-                                       inputs=disco_preset,
-                                       outputs=[disco_scale, disco_transforms, disco_saturation_boost, 
-                                               disco_contrast_boost, disco_symmetry_mode],
-                                       queue=False, show_progress=False)
-                    
-                    # Update status when any disco parameter changes
-                    disco_inputs = [disco_enabled, disco_scale, disco_preset, disco_transforms, 
-                                   disco_saturation_boost, disco_contrast_boost, disco_clip_model]
-                    for input_component in disco_inputs:
-                        input_component.change(
-                            update_disco_status,
-                                             inputs=disco_inputs,
-                                             outputs=disco_status,
-                                             queue=False, show_progress=False)
+                # Disco Diffusion UI removed
                 
                 with gr.Accordion(label='Detail Enhancement', open=False):
                     detail_daemon_enabled = gr.Checkbox(label='Enable Detail Daemon', value=False,
@@ -1408,6 +1286,117 @@ with shared.gradio_root:
                             outputs=detail_daemon_status,
                             queue=False
                         )
+                
+                with gr.Accordion(label='Psychedelic Enhancement', open=False):
+                    psychedelic_daemon_enabled = gr.Checkbox(label='Enable Psychedelic Daemon', value=False,
+                                                            info='Apply psychedelic disco diffusion style effects')
+                    
+                    # Main parameters
+                    psychedelic_daemon_intensity = gr.Slider(label='Intensity', minimum=0.0, maximum=1.0, step=0.01,
+                                                           value=0.45, info='Overall psychedelic effect intensity')
+                    psychedelic_daemon_color_shift = gr.Slider(label='Color Shift', minimum=0.0, maximum=1.0, step=0.01,
+                                                             value=0.3, info='RGB channel displacement amount')
+                    psychedelic_daemon_fractal_depth = gr.Slider(label='Fractal Depth', minimum=0.0, maximum=1.0, step=0.01,
+                                                               value=0.6, info='Fractal pattern complexity')
+                    
+                    # Timing controls
+                    with gr.Row():
+                        psychedelic_daemon_start = gr.Slider(label='Start', minimum=0.0, maximum=1.0, step=0.01,
+                                                           value=0.15, info='Start position for effects')
+                        psychedelic_daemon_end = gr.Slider(label='End', minimum=0.0, maximum=1.0, step=0.01,
+                                                         value=0.9, info='End position for effects')
+                        psychedelic_daemon_peak = gr.Slider(label='Peak', minimum=0.0, maximum=1.0, step=0.01,
+                                                          value=0.5, info='Peak intensity position')
+                    
+                    # Mode selection
+                    psychedelic_daemon_mode = gr.Dropdown(label='Mode', 
+                                                        choices=['kaleidoscope', 'fluid', 'fractal', 'both'], 
+                                                        value='kaleidoscope', info='Psychedelic effect type')
+                    
+                    with gr.Accordion(label='Advanced Controls', open=False):
+                        with gr.Row():
+                            psychedelic_daemon_bias = gr.Slider(label='Bias', minimum=0.0, maximum=1.0, step=0.01,
+                                                              value=0.85, info='Effect bias strength')
+                            psychedelic_daemon_flow_multiplier = gr.Slider(label='Flow Multiplier', minimum=0.1, maximum=3.0, step=0.1,
+                                                                         value=1.2, info='Flow dynamics strength')
+                        
+                        with gr.Row():
+                            psychedelic_daemon_wave_frequency = gr.Slider(label='Wave Frequency', minimum=0.1, maximum=5.0, step=0.1,
+                                                                        value=2.5, info='Wave pattern frequency')
+                            psychedelic_daemon_saturation_boost = gr.Slider(label='Saturation Boost', minimum=0.0, maximum=1.0, step=0.01,
+                                                                          value=0.4, info='Color saturation enhancement')
+                        
+                        with gr.Row():
+                            psychedelic_daemon_hue_rotation = gr.Slider(label='Hue Rotation', minimum=0.0, maximum=1.0, step=0.01,
+                                                                       value=0.2, info='Dynamic hue shifting')
+                            psychedelic_daemon_contrast_waves = gr.Slider(label='Contrast Waves', minimum=0.0, maximum=1.0, step=0.01,
+                                                                        value=0.3, info='Rhythmic contrast changes')
+                        
+                        with gr.Row():
+                            psychedelic_daemon_detail_recursion = gr.Slider(label='Detail Recursion', minimum=1, maximum=10, step=1,
+                                                                          value=3, info='Recursive enhancement levels')
+                            psychedelic_daemon_chromatic_aberration = gr.Checkbox(label='Chromatic Aberration', value=True, 
+                                                                                 info='Color channel separation')
+                        
+                        with gr.Row():
+                            psychedelic_daemon_smooth = gr.Checkbox(label='Smooth', value=True, info='Apply smoothing')
+                            psychedelic_daemon_fade = gr.Slider(label='Fade', minimum=0, maximum=1.0, step=0.01,
+                                                              value=0.15, info='Edge fade amount')
+                    
+                    # Preset buttons
+                    with gr.Row():
+                        psychedelic_preset_disco = gr.Button("Disco Preset", size="sm", variant="primary")
+                        psychedelic_preset_fluid = gr.Button("Fluid Preset", size="sm", variant="secondary")
+                        psychedelic_preset_fractal = gr.Button("Fractal Preset", size="sm", variant="secondary")
+                    
+                    psychedelic_daemon_status = gr.Textbox(label='Status', interactive=False, 
+                                                         value='Psychedelic Daemon: Disabled, Mode: kaleidoscope, Intensity: 0.45')
+                    
+                    def update_psychedelic_daemon_settings_ui(enabled, intensity, color_shift, fractal_depth, start, end, peak,
+                                                            bias, flow_multiplier, wave_frequency, saturation_boost, hue_rotation,
+                                                            contrast_waves, detail_recursion, chromatic_aberration, smooth, fade, mode):
+                        from modules.psychedelic_daemon import update_psychedelic_daemon_settings
+                        return update_psychedelic_daemon_settings(enabled, intensity, color_shift, fractal_depth, start, end, peak,
+                                                                bias, flow_multiplier, wave_frequency, saturation_boost, hue_rotation,
+                                                                contrast_waves, detail_recursion, chromatic_aberration, smooth, fade, mode)
+                    
+                    def apply_psychedelic_preset(preset_name):
+                        from modules.psychedelic_daemon import apply_preset
+                        return apply_preset(preset_name)
+                    
+                    # Update on any parameter change
+                    psychedelic_inputs = [psychedelic_daemon_enabled, psychedelic_daemon_intensity, psychedelic_daemon_color_shift, 
+                                        psychedelic_daemon_fractal_depth, psychedelic_daemon_start, psychedelic_daemon_end, 
+                                        psychedelic_daemon_peak, psychedelic_daemon_bias, psychedelic_daemon_flow_multiplier,
+                                        psychedelic_daemon_wave_frequency, psychedelic_daemon_saturation_boost, 
+                                        psychedelic_daemon_hue_rotation, psychedelic_daemon_contrast_waves, 
+                                        psychedelic_daemon_detail_recursion, psychedelic_daemon_chromatic_aberration,
+                                        psychedelic_daemon_smooth, psychedelic_daemon_fade, psychedelic_daemon_mode]
+                    
+                    for input_component in psychedelic_inputs:
+                        input_component.change(
+                            update_psychedelic_daemon_settings_ui,
+                            inputs=psychedelic_inputs,
+                            outputs=psychedelic_daemon_status,
+                            queue=False
+                        )
+                    
+                    # Preset button handlers
+                    psychedelic_preset_disco.click(
+                        lambda: apply_psychedelic_preset("disco"),
+                        outputs=psychedelic_daemon_status,
+                        queue=False
+                    )
+                    psychedelic_preset_fluid.click(
+                        lambda: apply_psychedelic_preset("fluid"),
+                        outputs=psychedelic_daemon_status,
+                        queue=False
+                    )
+                    psychedelic_preset_fractal.click(
+                        lambda: apply_psychedelic_preset("fractal"),
+                        outputs=psychedelic_daemon_status,
+                        queue=False
+                    )
                 
                 with gr.Accordion(label='Confuse VAE', open=False):
                     artistic_strength = gr.Slider(label='Artistic Strength', minimum=0.0, maximum=10.0, step=0.01,
@@ -1858,6 +1847,14 @@ with shared.gradio_root:
                   detail_daemon_bias, detail_daemon_base_multiplier, detail_daemon_start_offset, detail_daemon_end_offset, 
                   detail_daemon_exponent, detail_daemon_fade, detail_daemon_mode, detail_daemon_smooth]
         
+        ctrls += [psychedelic_daemon_enabled, psychedelic_daemon_intensity, psychedelic_daemon_color_shift, 
+                  psychedelic_daemon_fractal_depth, psychedelic_daemon_start, psychedelic_daemon_end, 
+                  psychedelic_daemon_peak, psychedelic_daemon_bias, psychedelic_daemon_flow_multiplier,
+                  psychedelic_daemon_wave_frequency, psychedelic_daemon_saturation_boost, 
+                  psychedelic_daemon_hue_rotation, psychedelic_daemon_contrast_waves, 
+                  psychedelic_daemon_detail_recursion, psychedelic_daemon_chromatic_aberration,
+                  psychedelic_daemon_smooth, psychedelic_daemon_fade, psychedelic_daemon_mode]
+        
         # TPG controls
         ctrls += [tpg_enabled, tpg_scale, tpg_applied_layers, tpg_shuffle_strength, tpg_adaptive_strength]
         
@@ -1868,18 +1865,14 @@ with shared.gradio_root:
         # NAG controls
         ctrls += [nag_enabled, nag_scale, nag_tau, nag_alpha, nag_negative_prompt, nag_end]
         
-        # Disco Diffusion controls
-        ctrls += [disco_enabled, disco_scale, disco_preset, disco_transforms, disco_seed,
-                  disco_clip_model, disco_animation_mode, disco_zoom_factor, disco_rotation_speed, 
-                  disco_translation_x, disco_translation_y, disco_color_coherence,
-                  disco_saturation_boost, disco_contrast_boost, disco_symmetry_mode, disco_fractal_octaves]
+        # Disco Diffusion controls removed
 
         ctrls += ip_ctrls
         ctrls += [debugging_dino, dino_erode_or_dilate, debugging_enhance_masks_checkbox,
                   enhance_input_image, enhance_checkbox, enhance_uov_method, enhance_bg_removal_model, 
                   enhance_uov_processing_order, enhance_uov_prompt_type, enhance_seamless_tiling_method, enhance_seamless_tiling_overlap]
         ctrls += enhance_ctrls
-        ctrls += [disco_guidance_steps, disco_cutn, disco_tv_scale, disco_range_scale]
+        # Disco guidance controls removed
         
         # Confuse VAE controls (must be after all disco parameters)
         ctrls += [artistic_strength]

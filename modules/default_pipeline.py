@@ -6,29 +6,21 @@ from PIL import Image # Added import for PIL Image
 import sys
 import os
 
-# Import debug functions from disco diffusion
-try:
-    from extras.disco_diffusion.pipeline_disco import debug_latent_pass, preview_latent
-    DEBUG_AVAILABLE = True
-except ImportError as e:
-    print(f"[Warning] Could not import debug utilities: {e}")
-    DEBUG_AVAILABLE = False
-    
-    # Fallback debug functions if import fails
-    def debug_latent_pass(latent, name="latent"):
-        if latent is None:
-            print(f"[{name}] None")
-            return latent
-        print(f"[{name}] shape={tuple(latent.shape)}, device={latent.device}, dtype={latent.dtype}")
-        return latent
-    
-    def preview_latent(*args, **kwargs):
-        return None
+# Debug functions (disco_diffusion removed)
+DEBUG_AVAILABLE = False
 
-# Print debug status
-print(f"[Disco] Debug utilities {'loaded successfully' if DEBUG_AVAILABLE else 'using fallback'}")
-print(f"[Disco] debug_latent_pass available: {'yes' if 'debug_latent_pass' in globals() else 'no'}")
-print(f"[Disco] preview_latent available: {'yes' if 'preview_latent' in globals() else 'no'}")
+# Fallback debug functions
+def debug_latent_pass(latent, name="latent"):
+    if latent is None:
+        print(f"[{name}] None")
+        return latent
+    print(f"[{name}] shape={tuple(latent.shape)}, device={latent.device}, dtype={latent.dtype}")
+    return latent
+
+def preview_latent(*args, **kwargs):
+    return None
+
+# Debug utilities removed with disco_diffusion
 
 import modules.patch
 import modules.config
@@ -365,7 +357,7 @@ def get_candidate_vae(steps, switch, denoise=1.0, refiner_swap_method='joint'):
 
 @torch.no_grad()
 @torch.inference_mode()
-def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, original_prompt=None, original_negative_prompt=None, detail_daemon_enabled=False, detail_daemon_amount=0.25, detail_daemon_start=0.2, detail_daemon_end=0.8, detail_daemon_bias=0.71, detail_daemon_base_multiplier=0.85, detail_daemon_start_offset=0, detail_daemon_end_offset=-0.15, detail_daemon_exponent=1, detail_daemon_fade=0, detail_daemon_mode='both', detail_daemon_smooth=True, tpg_enabled=False, tpg_scale=3.0, tpg_applied_layers=None, tpg_shuffle_strength=1.0, tpg_adaptive_strength=True, drunk_enabled=False, drunk_attn_noise=0.0, drunk_layer_dropout=0.0, drunk_prompt_noise=0.0, drunk_cognitive_echo=0.0, drunk_dynamic_guidance=0.0, drunk_applied_layers=None, nag_enabled=False, nag_scale=1.5, nag_tau=5.0, nag_alpha=0.5, nag_negative_prompt="", nag_end=1.0, disco_enabled=False, disco_scale=0.5, disco_preset='custom', disco_transforms=None, disco_seed=None, disco_animation_mode='none', disco_zoom_factor=1.02, disco_rotation_speed=0.1, disco_translation_x=0.0, disco_translation_y=0.0, disco_color_coherence=0.5, disco_saturation_boost=1.2, disco_contrast_boost=1.1, disco_symmetry_mode='none', disco_fractal_octaves=3, disco_clip_model='RN50', disco_guidance_steps=100, disco_cutn=16, disco_tv_scale=150.0, disco_range_scale=50.0, lfl_enabled=False, lfl_reference_image=None, lfl_aesthetic_strength=0.3, lfl_blend_mode='adaptive', force_grid_checkbox=False, async_task=None):
+def process_diffusion(positive_cond, negative_cond, steps, switch, width, height, image_seed, callback, sampler_name, scheduler_name, latent=None, denoise=1.0, tiled=False, cfg_scale=7.0, refiner_swap_method='joint', disable_preview=False, original_prompt=None, original_negative_prompt=None, detail_daemon_enabled=False, detail_daemon_amount=0.25, detail_daemon_start=0.2, detail_daemon_end=0.8, detail_daemon_bias=0.71, detail_daemon_base_multiplier=0.85, detail_daemon_start_offset=0, detail_daemon_end_offset=-0.15, detail_daemon_exponent=1, detail_daemon_fade=0, detail_daemon_mode='both', detail_daemon_smooth=True, psychedelic_daemon_enabled=False, psychedelic_daemon_intensity=0.45, psychedelic_daemon_color_shift=0.3, psychedelic_daemon_fractal_depth=0.6, psychedelic_daemon_start=0.15, psychedelic_daemon_end=0.9, psychedelic_daemon_peak=0.5, psychedelic_daemon_bias=0.85, psychedelic_daemon_flow_multiplier=1.2, psychedelic_daemon_wave_frequency=2.5, psychedelic_daemon_saturation_boost=0.4, psychedelic_daemon_hue_rotation=0.2, psychedelic_daemon_contrast_waves=0.3, psychedelic_daemon_detail_recursion=3, psychedelic_daemon_chromatic_aberration=True, psychedelic_daemon_smooth=True, psychedelic_daemon_fade=0.15, psychedelic_daemon_mode='kaleidoscope', tpg_enabled=False, tpg_scale=3.0, tpg_applied_layers=None, tpg_shuffle_strength=1.0, tpg_adaptive_strength=True, drunk_enabled=False, drunk_attn_noise=0.0, drunk_layer_dropout=0.0, drunk_prompt_noise=0.0, drunk_cognitive_echo=0.0, drunk_dynamic_guidance=0.0, drunk_applied_layers=None, nag_enabled=False, nag_scale=1.5, nag_tau=5.0, nag_alpha=0.5, nag_negative_prompt="", nag_end=1.0, lfl_enabled=False, lfl_reference_image=None, lfl_aesthetic_strength=0.3, lfl_blend_mode='adaptive', force_grid_checkbox=False, async_task=None):
     print(f"[PROCESS_DIFFUSION ENTRY]")
 
     force_grid_unet_context = None # Initialize to None for cleanup
@@ -593,6 +585,85 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             
             print(f'[Detail Daemon] Applied sigma multiplier range: {detail_multiplier.min():.3f} - {detail_multiplier.max():.3f}')
         
+        # Apply Psychedelic Daemon sigma manipulation if enabled
+        if psychedelic_daemon_enabled:
+            print(f'[Psychedelic Daemon] Applying psychedelic effects with intensity {psychedelic_daemon_intensity}')
+            
+            # Create a more complex schedule mask for psychedelic effects
+            num_steps = len(minmax_sigmas)
+            step_indices = torch.arange(num_steps, dtype=torch.float32)
+            normalized_steps = step_indices / (num_steps - 1) if num_steps > 1 else torch.zeros_like(step_indices)
+            
+            # Create psychedelic mask based on mode
+            if psychedelic_daemon_mode == 'kaleidoscope':
+                # Radial-like pattern for kaleidoscope effect
+                center = 0.5
+                radial_distance = torch.abs(normalized_steps - center)
+                mask = torch.exp(-((radial_distance - (psychedelic_daemon_peak - center)) ** 2) / (0.2 ** 2))
+                mask = mask * torch.sin(normalized_steps * psychedelic_daemon_wave_frequency * 3.14159) * 0.5 + 0.5
+                
+            elif psychedelic_daemon_mode == 'fluid':
+                # Flowing wave pattern
+                wave1 = torch.sin(normalized_steps * psychedelic_daemon_wave_frequency * 3.14159)
+                wave2 = torch.cos(normalized_steps * psychedelic_daemon_wave_frequency * 2 * 3.14159)
+                mask = (wave1 * wave2 + 1) / 2 * psychedelic_daemon_flow_multiplier
+                
+            elif psychedelic_daemon_mode == 'fractal':
+                # Fractal-like recursive pattern
+                mask = torch.zeros_like(normalized_steps)
+                for i in range(int(psychedelic_daemon_fractal_depth * 5)):
+                    freq = 2 ** (i * 0.5)
+                    fractal_wave = torch.sin(normalized_steps * freq * 3.14159)
+                    mask += fractal_wave * (0.5 ** i)
+                mask = (mask + 1) / 2
+                
+            else:  # 'both' or default
+                # Combination of effects
+                radial_distance = torch.abs(normalized_steps - 0.5)
+                radial_mask = torch.exp(-((radial_distance - (psychedelic_daemon_peak - 0.5)) ** 2) / (0.15 ** 2))
+                wave_mask = torch.sin(normalized_steps * psychedelic_daemon_wave_frequency * 3.14159) * 0.3 + 0.7
+                mask = radial_mask * wave_mask
+            
+            # Apply start/end range
+            if psychedelic_daemon_start > 0 or psychedelic_daemon_end < 1:
+                range_mask = torch.where((normalized_steps >= psychedelic_daemon_start) & 
+                                       (normalized_steps <= psychedelic_daemon_end), 1.0, 0.0)
+                mask = mask * range_mask
+            
+            # Apply peak enhancement
+            peak_enhancement = torch.exp(-((normalized_steps - psychedelic_daemon_peak) ** 2) / (0.1 ** 2))
+            mask = torch.maximum(mask, peak_enhancement * 0.3)
+            
+            # Apply fade (gaussian-like smoothing)
+            if psychedelic_daemon_fade > 0:
+                kernel_size = max(3, int(psychedelic_daemon_fade * 20))
+                if kernel_size % 2 == 0:
+                    kernel_size += 1
+                padding = kernel_size // 2
+                mask_padded = torch.nn.functional.pad(mask.unsqueeze(0).unsqueeze(0), (padding, padding), mode='reflect')
+                mask = torch.nn.functional.avg_pool1d(mask_padded, kernel_size, stride=1, padding=0).squeeze()
+            
+            # Apply smoothing if enabled
+            if psychedelic_daemon_smooth:
+                mask_padded = torch.nn.functional.pad(mask.unsqueeze(0).unsqueeze(0), (2, 2), mode='reflect')
+                mask = torch.nn.functional.avg_pool1d(mask_padded, 5, stride=1, padding=0).squeeze()
+            
+            # Calculate psychedelic multiplier with more aggressive effects
+            # Use intensity to control the strength of sigma manipulation
+            base_multiplier = 0.7  # More aggressive base for psychedelic effects
+            psychedelic_multiplier = torch.lerp(torch.ones_like(mask), 
+                                              torch.full_like(mask, base_multiplier), 
+                                              psychedelic_daemon_intensity * mask)
+            
+            # Apply bias for more dramatic effects
+            psychedelic_multiplier = psychedelic_multiplier * psychedelic_daemon_bias + \
+                                   psychedelic_multiplier * (1 - psychedelic_daemon_bias) * 0.3
+            
+            # Apply the multiplier to sigmas
+            minmax_sigmas = minmax_sigmas * psychedelic_multiplier.to(minmax_sigmas.device)
+            
+            print(f'[Psychedelic Daemon] Applied sigma multiplier range: {psychedelic_multiplier.min():.3f} - {psychedelic_multiplier.max():.3f}')
+        
         positive_sigmas = minmax_sigmas[minmax_sigmas > 0]
         if positive_sigmas.numel() == 0:
             raise ValueError("No positive sigma values found. This indicates an issue with the sampler or model configuration.")
@@ -682,7 +753,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             return enhanced_callback
         
         # Create the enhanced callback
-        enhanced_callback = create_enhanced_callback(callback, aesthetic_replicator, disco_enabled, disco_scale, disco_preset, lfl_hooked)
+        enhanced_callback = create_enhanced_callback(callback, aesthetic_replicator, False, 0, 'custom', lfl_hooked)
 
         # Use sampler (with or without guidance)
         ksampler_imgs = core.ksampler(
@@ -711,45 +782,47 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         else:
             imgs = []
         
-        # Apply Disco Post-Processing to final images
-        if disco_enabled and disco_scale > 0 and len(imgs) > 0:
+        # Apply Psychedelic Daemon post-processing if enabled
+        if psychedelic_daemon_enabled and len(imgs) > 0:
             try:
-                from modules.disco_post_processor import disco_post_processor
+                from modules.psychedelic_daemon import psychedelic_daemon
+                print(f'[Psychedelic Daemon] Applying post-processing effects')
                 
-                # Configure post-processor
-                disco_post_processor.configure(
-                    enabled=True,
-                    disco_scale=disco_scale,
-                    distortion_type=disco_preset if disco_preset != 'custom' else 'psychedelic',
-                    intensity=1.0,
-                    blend_factor=0.6  # Strong blend for visible effects
-                )
-                
-                print(f"[Disco] Applying post-processing to {len(imgs)} images...")
+                # Update daemon settings
+                psychedelic_daemon.enabled = True
+                psychedelic_daemon.intensity = psychedelic_daemon_intensity
+                psychedelic_daemon.color_shift = psychedelic_daemon_color_shift
+                psychedelic_daemon.fractal_depth = psychedelic_daemon_fractal_depth
+                psychedelic_daemon.start = psychedelic_daemon_start
+                psychedelic_daemon.end = psychedelic_daemon_end
+                psychedelic_daemon.peak = psychedelic_daemon_peak
+                psychedelic_daemon.bias = psychedelic_daemon_bias
+                psychedelic_daemon.flow_multiplier = psychedelic_daemon_flow_multiplier
+                psychedelic_daemon.wave_frequency = psychedelic_daemon_wave_frequency
+                psychedelic_daemon.saturation_boost = psychedelic_daemon_saturation_boost
+                psychedelic_daemon.hue_rotation = psychedelic_daemon_hue_rotation
+                psychedelic_daemon.contrast_waves = psychedelic_daemon_contrast_waves
+                psychedelic_daemon.detail_recursion = psychedelic_daemon_detail_recursion
+                psychedelic_daemon.chromatic_aberration = psychedelic_daemon_chromatic_aberration
+                psychedelic_daemon.smooth = psychedelic_daemon_smooth
+                psychedelic_daemon.fade = psychedelic_daemon_fade
+                psychedelic_daemon.mode = psychedelic_daemon_mode
                 
                 # Process each image
                 processed_imgs = []
-                for i, img in enumerate(imgs):
-                    processed_img = disco_post_processor.process(img)
+                for img in imgs:
+                    processed_img = psychedelic_daemon.process(img)
                     processed_imgs.append(processed_img)
-                    
-                    # Save comparison images for debugging
-                    try:
-                        import time
-                        timestamp = int(time.time())
-                        Image.fromarray(img).save(f"debug_original_{i}_{timestamp}.png")
-                        Image.fromarray(processed_img).save(f"debug_disco_{i}_{timestamp}.png")
-                        print(f"[Disco] Saved comparison images for image {i}")
-                    except Exception as e:
-                        print(f"[Disco] Error saving debug images: {e}")
                 
                 imgs = processed_imgs
-                print(f"[Disco] Post-processing completed successfully")
+                print(f'[Psychedelic Daemon] Post-processing completed for {len(imgs)} images')
                 
             except Exception as e:
-                print(f"[Disco] Error in post-processing: {e}")
+                print(f'[Psychedelic Daemon] Error in post-processing: {e}')
                 import traceback
                 traceback.print_exc()
+        
+        # Disco post-processing removed
         
         # TPG Cleanup
         if tpg_enabled and tpg_scale > 0:
@@ -769,14 +842,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             except Exception as e:
                 print(f"[NAG] Error disabling NAG: {e}")
         
-        # Cleanup Disco Diffusion
-        if disco_enabled:
-            try:
-                from extras.disco_diffusion.disco_integration import disco_integration
-                print("[Disco] Disabling Disco Diffusion after generation")
-                disco_integration.deactivate_after_generation()
-            except Exception as e:
-                print(f"[Disco] Error disabling Disco Diffusion: {e}")
+        # Disco Diffusion removed - no cleanup needed
         
         return imgs
     finally:

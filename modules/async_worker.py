@@ -154,6 +154,45 @@ class AsyncTask:
             
             print(f"[DEBUG] Detail daemon params: enabled={self.detail_daemon_enabled}, amount={self.detail_daemon_amount}, mode={self.detail_daemon_mode}")
 
+            # Psychedelic daemon parameters (popped in reverse order from webui.py)
+            print(f"[DEBUG] Args remaining before psychedelic daemon: {len(args)}")
+            
+            # Pop all 18 psychedelic daemon parameters
+            psychedelic_params = []
+            try:
+                for i in range(18):
+                    param = args.pop()
+                    psychedelic_params.append(param)
+                    print(f"[DEBUG] Popped psychedelic param {i}: {param} (type: {type(param)})")
+            except IndexError as e:
+                print(f"[DEBUG] Error popping psychedelic parameter {i}: {e}")
+                print(f"[DEBUG] Args remaining: {len(args)}")
+                # Fill remaining with defaults
+                while len(psychedelic_params) < 18:
+                    psychedelic_params.append(None)
+            
+            # Assign in correct order matching webui ctrls order with defaults
+            self.psychedelic_daemon_enabled = psychedelic_params[0] if psychedelic_params[0] is not None else False
+            self.psychedelic_daemon_intensity = psychedelic_params[1] if psychedelic_params[1] is not None else 0.45
+            self.psychedelic_daemon_color_shift = psychedelic_params[2] if psychedelic_params[2] is not None else 0.3
+            self.psychedelic_daemon_fractal_depth = psychedelic_params[3] if psychedelic_params[3] is not None else 0.6
+            self.psychedelic_daemon_start = psychedelic_params[4] if psychedelic_params[4] is not None else 0.15
+            self.psychedelic_daemon_end = psychedelic_params[5] if psychedelic_params[5] is not None else 0.9
+            self.psychedelic_daemon_peak = psychedelic_params[6] if psychedelic_params[6] is not None else 0.5
+            self.psychedelic_daemon_bias = psychedelic_params[7] if psychedelic_params[7] is not None else 0.85
+            self.psychedelic_daemon_flow_multiplier = psychedelic_params[8] if psychedelic_params[8] is not None else 1.2
+            self.psychedelic_daemon_wave_frequency = psychedelic_params[9] if psychedelic_params[9] is not None else 2.5
+            self.psychedelic_daemon_saturation_boost = psychedelic_params[10] if psychedelic_params[10] is not None else 0.4
+            self.psychedelic_daemon_hue_rotation = psychedelic_params[11] if psychedelic_params[11] is not None else 0.2
+            self.psychedelic_daemon_contrast_waves = psychedelic_params[12] if psychedelic_params[12] is not None else 0.3
+            self.psychedelic_daemon_detail_recursion = psychedelic_params[13] if psychedelic_params[13] is not None else 3
+            self.psychedelic_daemon_chromatic_aberration = psychedelic_params[14] if psychedelic_params[14] is not None else True
+            self.psychedelic_daemon_smooth = psychedelic_params[15] if psychedelic_params[15] is not None else True
+            self.psychedelic_daemon_fade = psychedelic_params[16] if psychedelic_params[16] is not None else 0.15
+            self.psychedelic_daemon_mode = psychedelic_params[17] if psychedelic_params[17] is not None else 'kaleidoscope'
+            
+            print(f"[DEBUG] Psychedelic daemon params: enabled={self.psychedelic_daemon_enabled}, intensity={self.psychedelic_daemon_intensity}, mode={self.psychedelic_daemon_mode}")
+
             # TPG parameters (popped in reverse order from webui.py)
             print(f"[DEBUG] Args remaining before TPG: {len(args)}")
             
@@ -237,41 +276,7 @@ class AsyncTask:
         print(f"[DEBUG] NAG params: enabled={self.nag_enabled}, scale={self.nag_scale}, tau={self.nag_tau}, alpha={self.nag_alpha}")
 
         # Disco Diffusion parameters (popped in reverse order from webui.py)
-        print(f"[DEBUG] Args remaining before Disco: {len(args)}")
-        
-        # Pop all 16 Disco parameters (added CLIP model selection)
-        disco_params = []
-        try:
-            for i in range(16):
-                param = args.pop()
-                disco_params.append(param)
-                print(f"[DEBUG] Popped Disco param {i}: {param} (type: {type(param)})")
-        except IndexError as e:
-            print(f"[DEBUG] Error popping Disco parameter {i}: {e}")
-            print(f"[DEBUG] Args remaining: {len(args)}")
-            # Fill remaining with defaults
-            while len(disco_params) < 16:
-                disco_params.append(None)
-        
-        # Assign in correct order matching webui ctrls order with defaults
-        self.disco_enabled = disco_params[0] if disco_params[0] is not None else False
-        self.disco_scale = disco_params[1] if disco_params[1] is not None else 0.5
-        self.disco_preset = disco_params[2] if disco_params[2] is not None else 'custom'
-        self.disco_transforms = disco_params[3] if disco_params[3] is not None else ['translate', 'rotate', 'zoom']
-        self.disco_seed = disco_params[4] if disco_params[4] is not None else None
-        self.disco_clip_model = disco_params[5] if disco_params[5] is not None else 'RN50'
-        self.disco_animation_mode = disco_params[6] if disco_params[6] is not None else 'none'
-        self.disco_zoom_factor = disco_params[7] if disco_params[7] is not None else 1.02
-        self.disco_rotation_speed = disco_params[8] if disco_params[8] is not None else 0.1
-        self.disco_translation_x = disco_params[9] if disco_params[9] is not None else 0.0
-        self.disco_translation_y = disco_params[10] if disco_params[10] is not None else 0.0
-        self.disco_color_coherence = disco_params[11] if disco_params[11] is not None else 0.5
-        self.disco_saturation_boost = disco_params[12] if disco_params[12] is not None else 1.2
-        self.disco_contrast_boost = disco_params[13] if disco_params[13] is not None else 1.1
-        self.disco_symmetry_mode = disco_params[14] if disco_params[14] is not None else 'none'
-        self.disco_fractal_octaves = disco_params[15] if disco_params[15] is not None else 3
-        
-        print(f"[DEBUG] Disco params: enabled={self.disco_enabled}, scale={self.disco_scale}, preset={self.disco_preset}, clip_model={self.disco_clip_model}")
+        # Disco parameters removed
 
 
 
@@ -336,11 +341,7 @@ class AsyncTask:
         self.images_to_enhance_count = 0
         self.enhance_stats = {}
 
-        # Disco parameters (4 parameters added to match webui.py ctrls order)
-        self.disco_guidance_steps = args.pop()
-        self.disco_cutn = args.pop()
-        self.disco_tv_scale = args.pop()
-        self.disco_range_scale = args.pop()
+        # Disco parameters removed
         
         # Confuse VAE parameters (must be after all disco parameters)
         print(f"[DEBUG] Args remaining before Confuse VAE: {len(args)}")
@@ -585,6 +586,25 @@ def worker():
             detail_daemon_mode=async_task.detail_daemon_mode,
             detail_daemon_smooth=async_task.detail_daemon_smooth,
             
+            psychedelic_daemon_enabled=async_task.psychedelic_daemon_enabled,
+            psychedelic_daemon_intensity=async_task.psychedelic_daemon_intensity,
+            psychedelic_daemon_color_shift=async_task.psychedelic_daemon_color_shift,
+            psychedelic_daemon_fractal_depth=async_task.psychedelic_daemon_fractal_depth,
+            psychedelic_daemon_start=async_task.psychedelic_daemon_start,
+            psychedelic_daemon_end=async_task.psychedelic_daemon_end,
+            psychedelic_daemon_peak=async_task.psychedelic_daemon_peak,
+            psychedelic_daemon_bias=async_task.psychedelic_daemon_bias,
+            psychedelic_daemon_flow_multiplier=async_task.psychedelic_daemon_flow_multiplier,
+            psychedelic_daemon_wave_frequency=async_task.psychedelic_daemon_wave_frequency,
+            psychedelic_daemon_saturation_boost=async_task.psychedelic_daemon_saturation_boost,
+            psychedelic_daemon_hue_rotation=async_task.psychedelic_daemon_hue_rotation,
+            psychedelic_daemon_contrast_waves=async_task.psychedelic_daemon_contrast_waves,
+            psychedelic_daemon_detail_recursion=async_task.psychedelic_daemon_detail_recursion,
+            psychedelic_daemon_chromatic_aberration=async_task.psychedelic_daemon_chromatic_aberration,
+            psychedelic_daemon_smooth=async_task.psychedelic_daemon_smooth,
+            psychedelic_daemon_fade=async_task.psychedelic_daemon_fade,
+            psychedelic_daemon_mode=async_task.psychedelic_daemon_mode,
+            
             tpg_enabled=async_task.tpg_enabled,
             tpg_scale=async_task.tpg_scale,
             tpg_applied_layers=async_task.tpg_applied_layers,
@@ -606,26 +626,7 @@ def worker():
             nag_negative_prompt=async_task.nag_negative_prompt,
             nag_end=async_task.nag_end,
             
-            disco_enabled=async_task.disco_enabled,
-            disco_scale=async_task.disco_scale,
-            disco_preset=async_task.disco_preset,
-            disco_transforms=async_task.disco_transforms,
-            disco_seed=async_task.disco_seed,
-            disco_animation_mode=async_task.disco_animation_mode,
-            disco_zoom_factor=async_task.disco_zoom_factor,
-            disco_rotation_speed=async_task.disco_rotation_speed,
-            disco_translation_x=async_task.disco_translation_x,
-            disco_translation_y=async_task.disco_translation_y,
-            disco_color_coherence=async_task.disco_color_coherence,
-            disco_saturation_boost=async_task.disco_saturation_boost,
-            disco_contrast_boost=async_task.disco_contrast_boost,
-            disco_symmetry_mode=async_task.disco_symmetry_mode,
-            disco_fractal_octaves=async_task.disco_fractal_octaves,
-            disco_clip_model=async_task.disco_clip_model,
-            disco_guidance_steps=async_task.disco_guidance_steps,
-            disco_cutn=async_task.disco_cutn,
-            disco_tv_scale=async_task.disco_tv_scale,
-            disco_range_scale=async_task.disco_range_scale,
+            # Disco parameters removed
             
             lfl_enabled=async_task.lfl_enabled,
             lfl_reference_image=async_task.lfl_reference_image,
