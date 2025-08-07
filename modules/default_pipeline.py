@@ -53,9 +53,9 @@ def apply_psychedelic_latent_effects(latent, progress, params):
         peak = params.get('peak', 0.5)
         intensity = params.get('intensity', 0.45)
         
-        # Create distance from peak for intensity modulation
+        # Create distance from peak for intensity modulation - MUCH stronger
         peak_distance = abs(progress - peak)
-        peak_intensity = intensity * torch.exp(torch.tensor(-peak_distance * 4))  # Gaussian-like peak
+        peak_intensity = intensity * 3.0 * torch.exp(torch.tensor(-peak_distance * 2))  # 3x stronger, wider peak
         
         # Create coordinate grids for spatial effects
         y_coords = torch.linspace(0, 1, H, device=device)
@@ -75,27 +75,27 @@ def apply_psychedelic_latent_effects(latent, progress, params):
             max_radius = torch.sqrt(torch.tensor(center_y**2 + center_x**2, device=device))
             normalized_radius = radius / max_radius
             
-            # Create swirl pattern
+            # Create swirl pattern - MUCH stronger
             angle = torch.atan2(torch.arange(H, device=device)[:, None] - center_y,
                               torch.arange(W, device=device) - center_x)
-            swirl_strength = peak_intensity * 0.1 * normalized_radius
+            swirl_strength = peak_intensity * 0.5 * normalized_radius  # 5x stronger swirl
             
-            # Apply channel mixing based on radial position
+            # Apply channel mixing based on radial position - MUCH stronger
             for c in range(C):
                 channel_offset = c * 2.0 * 3.14159 / C  # Distribute channels around circle
                 channel_swirl = torch.sin(angle + channel_offset + swirl_strength * wave_freq)
-                latent[:, c] = latent[:, c] * (1 + channel_swirl * peak_intensity * 0.05)
+                latent[:, c] = latent[:, c] * (1 + channel_swirl * peak_intensity * 0.3)  # 6x stronger modulation
                 
         elif mode == 'fluid':
             # Flowing wave patterns
             wave_x = torch.sin(X * wave_freq * 2 * 3.14159 + progress * 3.14159) * flow_mult
             wave_y = torch.cos(Y * wave_freq * 2 * 3.14159 + progress * 3.14159) * flow_mult
             
-            # Apply wave-based channel modulation
+            # Apply wave-based channel modulation - MUCH stronger
             for c in range(C):
                 phase_offset = c * 3.14159 / 2  # Different phase for each channel
                 wave_pattern = torch.sin(wave_x + wave_y + phase_offset)
-                latent[:, c] = latent[:, c] * (1 + wave_pattern * peak_intensity * 0.03)
+                latent[:, c] = latent[:, c] * (1 + wave_pattern * peak_intensity * 0.2)  # 7x stronger waves
                 
         elif mode == 'fractal':
             # Fractal-like recursive patterns
@@ -107,9 +107,9 @@ def apply_psychedelic_latent_effects(latent, progress, params):
             
             fractal_pattern = (fractal_pattern + 1) / 2  # Normalize
             
-            # Apply fractal modulation to channels
+            # Apply fractal modulation to channels - MUCH stronger
             for c in range(C):
-                latent[:, c] = latent[:, c] * (1 + fractal_pattern * peak_intensity * 0.04)
+                latent[:, c] = latent[:, c] * (1 + fractal_pattern * peak_intensity * 0.25)  # 6x stronger fractals
                 
         else:  # 'both' or combined effects
             # Combination of radial and wave effects
@@ -124,11 +124,11 @@ def apply_psychedelic_latent_effects(latent, progress, params):
             wave_pattern = torch.sin(Y * wave_freq * 3.14159) * torch.cos(X * wave_freq * 3.14159)
             combined_pattern = radial_pattern * wave_pattern
             
-            # Apply to all channels with slight phase differences
+            # Apply to all channels with slight phase differences - MUCH stronger
             for c in range(C):
                 phase = c * 3.14159 / C
                 channel_pattern = combined_pattern * torch.cos(torch.tensor(phase))
-                latent[:, c] = latent[:, c] * (1 + channel_pattern * peak_intensity * 0.03)
+                latent[:, c] = latent[:, c] * (1 + channel_pattern * peak_intensity * 0.2)  # 7x stronger combined
         
         # Apply bias to enhance effects
         bias = params.get('bias', 0.85)
@@ -706,7 +706,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 center = 0.5
                 radial_distance = torch.abs(normalized_steps - center)
                 mask = torch.exp(-((radial_distance - (psychedelic_daemon_peak - center)) ** 2) / (0.2 ** 2))
-                mask = mask * torch.sin(normalized_steps * psychedelic_daemon_wave_frequency * 3.14159) * 0.5 + 0.5
+                mask = mask * torch.sin(normalized_steps * psychedelic_daemon_wave_frequency * 3.14159) * 0.8 + 0.6  # Stronger waves
                 
             elif psychedelic_daemon_mode == 'fluid':
                 # Flowing wave pattern
@@ -727,7 +727,7 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 # Combination of effects
                 radial_distance = torch.abs(normalized_steps - 0.5)
                 radial_mask = torch.exp(-((radial_distance - (psychedelic_daemon_peak - 0.5)) ** 2) / (0.15 ** 2))
-                wave_mask = torch.sin(normalized_steps * psychedelic_daemon_wave_frequency * 3.14159) * 0.3 + 0.7
+                wave_mask = torch.sin(normalized_steps * psychedelic_daemon_wave_frequency * 3.14159) * 0.6 + 0.8  # Stronger combined waves
                 mask = radial_mask * wave_mask
             
             # Apply start/end range
@@ -736,9 +736,9 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                                        (normalized_steps <= psychedelic_daemon_end), 1.0, 0.0)
                 mask = mask * range_mask
             
-            # Apply peak enhancement
-            peak_enhancement = torch.exp(-((normalized_steps - psychedelic_daemon_peak) ** 2) / (0.1 ** 2))
-            mask = torch.maximum(mask, peak_enhancement * 0.3)
+            # Apply peak enhancement - MUCH stronger
+            peak_enhancement = torch.exp(-((normalized_steps - psychedelic_daemon_peak) ** 2) / (0.15 ** 2))
+            mask = torch.maximum(mask, peak_enhancement * 0.8)  # Much stronger peak enhancement
             
             # Apply fade (gaussian-like smoothing)
             if psychedelic_daemon_fade > 0:
@@ -754,16 +754,16 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                 mask_padded = torch.nn.functional.pad(mask.unsqueeze(0).unsqueeze(0), (2, 2), mode='reflect')
                 mask = torch.nn.functional.avg_pool1d(mask_padded, 5, stride=1, padding=0).squeeze()
             
-            # Calculate psychedelic multiplier with more aggressive effects
+            # Calculate psychedelic multiplier with MUCH more aggressive effects
             # Use intensity to control the strength of sigma manipulation
-            base_multiplier = 0.7  # More aggressive base for psychedelic effects
+            base_multiplier = 0.4  # Much more aggressive base for strong psychedelic effects
             psychedelic_multiplier = torch.lerp(torch.ones_like(mask), 
                                               torch.full_like(mask, base_multiplier), 
-                                              psychedelic_daemon_intensity * mask)
+                                              psychedelic_daemon_intensity * mask * 2.0)  # Double the intensity
             
-            # Apply bias for more dramatic effects
+            # Apply bias for more dramatic effects with stronger modulation
             psychedelic_multiplier = psychedelic_multiplier * psychedelic_daemon_bias + \
-                                   psychedelic_multiplier * (1 - psychedelic_daemon_bias) * 0.3
+                                   psychedelic_multiplier * (1 - psychedelic_daemon_bias) * 0.1  # More extreme bias
             
             # Apply the multiplier to sigmas
             minmax_sigmas = minmax_sigmas * psychedelic_multiplier.to(minmax_sigmas.device)
