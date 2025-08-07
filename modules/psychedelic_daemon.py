@@ -263,12 +263,8 @@ class PsychedelicDaemon:
         self.flow_multiplier = 1.2
         self.wave_frequency = 2.5
         
-        # Offset controls
-        self.start_offset = 0.1
-        self.end_offset = -0.05
-        
-        # Exponential and fade controls
-        self.exponent = 1.3
+        # Note: start_offset, end_offset, exponent are detail_daemon specific
+        # Psychedelic daemon uses different parameters
         self.fade = 0.15
         
         # Psychedelic modes
