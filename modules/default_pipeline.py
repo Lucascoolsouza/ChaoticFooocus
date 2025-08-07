@@ -37,6 +37,112 @@ from modules.util import get_file_from_folder_list, get_enabled_loras
 # Guidance samplers are now integrated into k_diffusion sampling
 # No need for separate sampler classes
 
+def apply_psychedelic_latent_effects(latent, progress, params):
+    """Apply psychedelic effects directly to latent space during diffusion"""
+    if latent is None or params.get('intensity', 0) <= 0:
+        return latent
+    
+    try:
+        import torch
+        
+        # Get latent dimensions
+        B, C, H, W = latent.shape
+        device = latent.device
+        
+        # Calculate effect intensity based on progress and peak
+        peak = params.get('peak', 0.5)
+        intensity = params.get('intensity', 0.45)
+        
+        # Create distance from peak for intensity modulation
+        peak_distance = abs(progress - peak)
+        peak_intensity = intensity * torch.exp(torch.tensor(-peak_distance * 4))  # Gaussian-like peak
+        
+        # Create coordinate grids for spatial effects
+        y_coords = torch.linspace(0, 1, H, device=device)
+        x_coords = torch.linspace(0, 1, W, device=device)
+        Y, X = torch.meshgrid(y_coords, x_coords, indexing='ij')
+        
+        # Apply mode-specific effects
+        mode = params.get('mode', 'kaleidoscope')
+        wave_freq = params.get('wave_frequency', 2.5)
+        flow_mult = params.get('flow_multiplier', 1.2)
+        
+        if mode == 'kaleidoscope':
+            # Radial swirl effect in latent space
+            center_y, center_x = H // 2, W // 2
+            radius = torch.sqrt((torch.arange(H, device=device)[:, None] - center_y)**2 + 
+                              (torch.arange(W, device=device) - center_x)**2)
+            max_radius = torch.sqrt(torch.tensor(center_y**2 + center_x**2, device=device))
+            normalized_radius = radius / max_radius
+            
+            # Create swirl pattern
+            angle = torch.atan2(torch.arange(H, device=device)[:, None] - center_y,
+                              torch.arange(W, device=device) - center_x)
+            swirl_strength = peak_intensity * 0.1 * normalized_radius
+            
+            # Apply channel mixing based on radial position
+            for c in range(C):
+                channel_offset = c * 2.0 * 3.14159 / C  # Distribute channels around circle
+                channel_swirl = torch.sin(angle + channel_offset + swirl_strength * wave_freq)
+                latent[:, c] = latent[:, c] * (1 + channel_swirl * peak_intensity * 0.05)
+                
+        elif mode == 'fluid':
+            # Flowing wave patterns
+            wave_x = torch.sin(X * wave_freq * 2 * 3.14159 + progress * 3.14159) * flow_mult
+            wave_y = torch.cos(Y * wave_freq * 2 * 3.14159 + progress * 3.14159) * flow_mult
+            
+            # Apply wave-based channel modulation
+            for c in range(C):
+                phase_offset = c * 3.14159 / 2  # Different phase for each channel
+                wave_pattern = torch.sin(wave_x + wave_y + phase_offset)
+                latent[:, c] = latent[:, c] * (1 + wave_pattern * peak_intensity * 0.03)
+                
+        elif mode == 'fractal':
+            # Fractal-like recursive patterns
+            fractal_pattern = torch.zeros_like(Y)
+            for i in range(3):  # Limited iterations for performance
+                freq = 2 ** (i * 0.5)
+                fractal_wave = torch.sin(Y * freq * 3.14159) * torch.cos(X * freq * 3.14159)
+                fractal_pattern += fractal_wave * (0.5 ** i)
+            
+            fractal_pattern = (fractal_pattern + 1) / 2  # Normalize
+            
+            # Apply fractal modulation to channels
+            for c in range(C):
+                latent[:, c] = latent[:, c] * (1 + fractal_pattern * peak_intensity * 0.04)
+                
+        else:  # 'both' or combined effects
+            # Combination of radial and wave effects
+            center_y, center_x = H // 2, W // 2
+            radius = torch.sqrt((torch.arange(H, device=device)[:, None] - center_y)**2 + 
+                              (torch.arange(W, device=device) - center_x)**2)
+            max_radius = torch.sqrt(torch.tensor(center_y**2 + center_x**2, device=device))
+            normalized_radius = radius / max_radius
+            
+            # Combine radial and wave patterns
+            radial_pattern = torch.exp(-((normalized_radius - 0.5) ** 2) / (0.3 ** 2))
+            wave_pattern = torch.sin(Y * wave_freq * 3.14159) * torch.cos(X * wave_freq * 3.14159)
+            combined_pattern = radial_pattern * wave_pattern
+            
+            # Apply to all channels with slight phase differences
+            for c in range(C):
+                phase = c * 3.14159 / C
+                channel_pattern = combined_pattern * torch.cos(torch.tensor(phase))
+                latent[:, c] = latent[:, c] * (1 + channel_pattern * peak_intensity * 0.03)
+        
+        # Apply bias to enhance effects
+        bias = params.get('bias', 0.85)
+        if bias != 1.0:
+            # Enhance the modified latent based on bias
+            original_mean = torch.mean(latent, dim=[2, 3], keepdim=True)
+            latent = latent * bias + original_mean * (1 - bias)
+        
+        return latent
+        
+    except Exception as e:
+        print(f"[Psychedelic Daemon] Error in latent effects: {e}")
+        return latent
+
 
 model_base = core.StableDiffusionModel()
 model_refiner = core.StableDiffusionModel()
@@ -722,10 +828,10 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
 
         decoded_latent = None
 
-        # Create enhanced callback with Neural Echo and AGGRESSIVE Disco injection
+        # Create enhanced callback with Neural Echo, LFL, and Psychedelic effects
         enhanced_callback = callback
         
-        def create_enhanced_callback(original_callback, aesthetic_replicator, disco_enabled, disco_scale, disco_preset, lfl_hooked):
+        def create_enhanced_callback(original_callback, aesthetic_replicator, lfl_hooked, psychedelic_enabled, psychedelic_params):
             def enhanced_callback(step, x0, x, total_steps, preview_image=None):
                 # Update timestep for adaptive aesthetic blending
                 if lfl_hooked:
@@ -744,7 +850,20 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
                         print(f"[LFL] Error in aesthetic replication callback: {e}")
                         enhanced_x0 = x0
                 
-                # Disco will be applied as post-processing - no need to process during generation
+                # Apply psychedelic effects during diffusion if enabled
+                if psychedelic_enabled and enhanced_x0 is not None:
+                    try:
+                        # Calculate current progress (0 to 1)
+                        progress = step / total_steps if total_steps > 0 else 0
+                        
+                        # Check if we're in the active range
+                        if psychedelic_params['start'] <= progress <= psychedelic_params['end']:
+                            # Apply psychedelic latent manipulation
+                            enhanced_x0 = apply_psychedelic_latent_effects(
+                                enhanced_x0, progress, psychedelic_params
+                            )
+                    except Exception as e:
+                        print(f"[Psychedelic Daemon] Error in callback: {e}")
                 
                 # Call original callback
                 if original_callback is not None:
@@ -752,8 +871,23 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
             
             return enhanced_callback
         
+        # Prepare psychedelic parameters for callback
+        psychedelic_params = {
+            'intensity': psychedelic_daemon_intensity,
+            'start': psychedelic_daemon_start,
+            'end': psychedelic_daemon_end,
+            'peak': psychedelic_daemon_peak,
+            'mode': psychedelic_daemon_mode,
+            'wave_frequency': psychedelic_daemon_wave_frequency,
+            'flow_multiplier': psychedelic_daemon_flow_multiplier,
+            'bias': psychedelic_daemon_bias
+        } if psychedelic_daemon_enabled else {}
+        
         # Create the enhanced callback
-        enhanced_callback = create_enhanced_callback(callback, aesthetic_replicator, False, 0, 'custom', lfl_hooked)
+        enhanced_callback = create_enhanced_callback(
+            callback, aesthetic_replicator, lfl_hooked, 
+            psychedelic_daemon_enabled, psychedelic_params
+        )
 
         # Use sampler (with or without guidance)
         ksampler_imgs = core.ksampler(
@@ -782,45 +916,8 @@ def process_diffusion(positive_cond, negative_cond, steps, switch, width, height
         else:
             imgs = []
         
-        # Apply Psychedelic Daemon post-processing if enabled
-        if psychedelic_daemon_enabled and len(imgs) > 0:
-            try:
-                from modules.psychedelic_daemon import psychedelic_daemon
-                print(f'[Psychedelic Daemon] Applying post-processing effects')
-                
-                # Update daemon settings
-                psychedelic_daemon.enabled = True
-                psychedelic_daemon.intensity = psychedelic_daemon_intensity
-                psychedelic_daemon.color_shift = psychedelic_daemon_color_shift
-                psychedelic_daemon.fractal_depth = psychedelic_daemon_fractal_depth
-                psychedelic_daemon.start = psychedelic_daemon_start
-                psychedelic_daemon.end = psychedelic_daemon_end
-                psychedelic_daemon.peak = psychedelic_daemon_peak
-                psychedelic_daemon.bias = psychedelic_daemon_bias
-                psychedelic_daemon.flow_multiplier = psychedelic_daemon_flow_multiplier
-                psychedelic_daemon.wave_frequency = psychedelic_daemon_wave_frequency
-                psychedelic_daemon.saturation_boost = psychedelic_daemon_saturation_boost
-                psychedelic_daemon.hue_rotation = psychedelic_daemon_hue_rotation
-                psychedelic_daemon.contrast_waves = psychedelic_daemon_contrast_waves
-                psychedelic_daemon.detail_recursion = psychedelic_daemon_detail_recursion
-                psychedelic_daemon.chromatic_aberration = psychedelic_daemon_chromatic_aberration
-                psychedelic_daemon.smooth = psychedelic_daemon_smooth
-                psychedelic_daemon.fade = psychedelic_daemon_fade
-                psychedelic_daemon.mode = psychedelic_daemon_mode
-                
-                # Process each image
-                processed_imgs = []
-                for img in imgs:
-                    processed_img = psychedelic_daemon.process(img)
-                    processed_imgs.append(processed_img)
-                
-                imgs = processed_imgs
-                print(f'[Psychedelic Daemon] Post-processing completed for {len(imgs)} images')
-                
-            except Exception as e:
-                print(f'[Psychedelic Daemon] Error in post-processing: {e}')
-                import traceback
-                traceback.print_exc()
+        # Psychedelic Daemon is applied during diffusion via sigma manipulation and callback
+        # No post-processing needed as it's integrated into the sampling process
         
         # Disco post-processing removed
         
