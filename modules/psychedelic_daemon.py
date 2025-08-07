@@ -342,9 +342,8 @@ class PsychedelicDaemon:
 psychedelic_daemon = PsychedelicDaemon()
 
 def update_psychedelic_daemon_settings(enabled, intensity, color_shift, fractal_depth, start, end, peak,
-                                     bias, flow_multiplier, wave_frequency, start_offset, end_offset,
-                                     exponent, fade, mode, smooth, chromatic_aberration, saturation_boost,
-                                     hue_rotation, contrast_waves, detail_recursion):
+                                     bias, flow_multiplier, wave_frequency, saturation_boost, hue_rotation,
+                                     contrast_waves, detail_recursion, chromatic_aberration, smooth, fade, mode):
     """Update the psychedelic daemon settings"""
     psychedelic_daemon.enabled = enabled
     psychedelic_daemon.intensity = intensity
@@ -356,9 +355,8 @@ def update_psychedelic_daemon_settings(enabled, intensity, color_shift, fractal_
     psychedelic_daemon.bias = bias
     psychedelic_daemon.flow_multiplier = flow_multiplier
     psychedelic_daemon.wave_frequency = wave_frequency
-    psychedelic_daemon.start_offset = start_offset
-    psychedelic_daemon.end_offset = end_offset
-    psychedelic_daemon.exponent = exponent
+    # Note: start_offset, end_offset, exponent not used in psychedelic daemon
+    # These are detail_daemon specific parameters
     psychedelic_daemon.fade = fade
     psychedelic_daemon.mode = mode
     psychedelic_daemon.smooth = smooth
